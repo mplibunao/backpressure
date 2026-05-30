@@ -92,6 +92,7 @@ Decisions that stay locked and reflected throughout: **port the full catalog bef
 ## Implementation Progress
 
 - 2026-05-30: Items 1, 2, 3, 4, and 9 landed in commit `cc3b87e` (`chore: scaffold backpressure baseline`). Review and refactor gates were clean. Baseline verification passed: `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm pack:dry-run`, `pnpm prose:commit`, and `git diff --check`.
+- 2026-05-30: Items 5, 6, 7, and 8 landed in commit `14cf39a` (`feat: add oxlint plugin substrate`). Review and refactor gates were clean. Verification passed: `pnpm check`, `pnpm pack:dry-run`, packed-consumer runtime and TypeScript smoke, fixture replay, and `git diff --check`.
 
 ## Work Items
 
