@@ -1,11 +1,11 @@
-import type { Plugin } from '@oxlint/plugins';
-
-const plugin = {
-  meta: {
-    name: '@mplibunao/oxlint-standards',
-  },
-  rules: {},
-} satisfies Plugin;
-
-export default plugin;
-export { plugin };
+export { plugin, plugin as default, pluginName } from './plugin.js';
+export { noEffectAsMessage, noEffectAsRule } from './rules/effect/no-effect-as.js';
+export {
+  boundariesPreset,
+  effectPreset,
+  effectReactPreset,
+  generalPreset,
+  type PresetConfig,
+  type RuleConfig,
+  type RuleSeverity,
+} from './presets/index.js';

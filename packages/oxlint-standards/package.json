@@ -3,11 +3,13 @@
   "version": "0.0.0",
   "description": "Opinionated oxlint JS-plugin presets.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mplibunao/backpressure.git",
+    "directory": "packages/oxlint-standards"
+  },
   "files": [
-    "dist/index.d.ts",
-    "dist/index.d.ts.map",
-    "dist/index.js",
-    "dist/index.js.map",
+    "dist",
     "README.md",
     "LICENSE",
     "NOTICE.md"
@@ -25,7 +27,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.build.json --force",
     "pack:dry-run": "pnpm build && npm --cache ../../.npm-cache pack --dry-run",
     "typecheck": "tsc -b"
   }

@@ -4,7 +4,7 @@ Status: baseline current-state design, seeded before rule work.
 
 ## Purpose
 
-`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The first baseline only proves the package shape. Rule logic begins in later work items.
+`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The current substrate proves one source-derived rule, the real oxlint execution path, and the packed-consumer package-loading path before the bulk catalog port begins.
 
 ## Source model
 
@@ -22,13 +22,15 @@ Rules are authored as ESLint-v9-compatible JavaScript plugin rules and loaded by
 
 The plugin package ships compiled `.js` and `.d.ts` files under `dist/`. Consumers should configure oxlint with a standalone `.oxlintrc.json` because plugin resolution through inline vite-plus config is not yet proven.
 
+The alpha API contract is pinned in `docs/references/translation-contract.md`: default plugin export, `meta.name`, `rules`, `create(context)`, `context.report`, `oxlint/plugins-dev` `RuleTester`, and `.oxlintrc.json` `jsPlugins`.
+
 ## Presets
 
 Preset taxonomy is owned by `docs/design-docs/preset-architecture.md`. This design intentionally links that document instead of restating the taxonomy. The key boundary is that `general` remains stack-neutral and Effect-specific carve-outs stay inside `effect`.
 
 ## Validation plan
 
-Later rule work adds three validation layers:
+Rule work now uses three validation layers:
 
 1. RuleTester coverage for each rule.
 2. Real-oxlint fixture replay for parser and engine parity.

@@ -1,12 +1,12 @@
 # Notices
 
-This package includes planned derived work from `@catenarycloud/linteffect`, also known by its source repository `biome-effect-linting-rules`.
+This package includes derived work from `@catenarycloud/linteffect`, also known by its source repository `biome-effect-linting-rules`.
 
 `@catenarycloud/linteffect` is MIT licensed.
 
 Copyright (c) 2026 Roman Naumenko.
 
-The current scaffold contains no ported rule logic.
+The `no-effect-as` rule is derived from the upstream `rules/no-effect-as.grit` diagnostic intent. The GritQL tooling is not copied into this package.
 
 ## Upstream MIT license terms
 

@@ -6,9 +6,18 @@ settings:
 
 catalogs:
   default:
+    '@oxlint/plugins':
+      specifier: 1.58.0
+      version: 1.58.0
     '@types/node':
       specifier: 25.5.2
       version: 25.5.2
+    oxfmt:
+      specifier: 0.43.0
+      version: 0.43.0
+    oxlint:
+      specifier: 1.58.0
+      version: 1.58.0
     typescript:
       specifier: 6.0.2
       version: 6.0.2
@@ -20,9 +29,6 @@ catalogs:
       version: 4.1.2
 
 overrides:
-  '@oxlint/plugins': 1.58.0
-  oxfmt: 0.43.0
-  oxlint: 1.58.0
   oxlint-tsgolint: 0.18.1
 
 importers:
@@ -30,16 +36,16 @@ importers:
   .:
     devDependencies:
       '@oxlint/plugins':
-        specifier: 1.58.0
+        specifier: 'catalog:'
         version: 1.58.0
       '@types/node':
         specifier: 'catalog:'
         version: 25.5.2
       oxfmt:
-        specifier: 0.43.0
+        specifier: 'catalog:'
         version: 0.43.0
       oxlint:
-        specifier: 1.58.0
+        specifier: 'catalog:'
         version: 1.58.0(oxlint-tsgolint@0.18.1)
       typescript:
         specifier: 'catalog:'

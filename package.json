@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm prose",
+    "check": "pnpm lint && pnpm versions:check && pnpm typecheck && pnpm test && pnpm build && pnpm fixture:replay && pnpm smoke:packed-consumer && pnpm pack:dry-run && pnpm prose",
     "check:fix": "vp check --fix",
+    "fixture:replay": "node scripts/fixture-replay.mjs",
     "fmt": "vp fmt",
     "format": "pnpm fmt",
     "lint": "vp lint --max-warnings 0",
@@ -17,8 +18,10 @@
     "prose:commit": "scripts/prose-commit.sh",
     "prose:files": "scripts/prose-files.sh",
     "prose:sync": "scripts/vale-ensure-styles.sh",
+    "smoke:packed-consumer": "node scripts/smoke-packed-consumer.mjs",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "versions:check": "node scripts/version-pins.mjs"
   },
   "devDependencies": {
     "@oxlint/plugins": "catalog:",

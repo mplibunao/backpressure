@@ -16,9 +16,6 @@ minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeStrict: true
 overrides:
-  '@oxlint/plugins': 1.58.0
-  oxfmt: 0.43.0
-  oxlint: 1.58.0
   oxlint-tsgolint: 0.18.1
 packageManagerStrictVersion: true
 strictDepBuilds: true
