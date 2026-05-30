@@ -3,6 +3,7 @@ dist/
 coverage/
 .pnpm-store/
 .stryker-tmp/
+reports/mutation/
 .tsbuildinfo/
 .npm-cache/
 COMMIT_EDITMSG

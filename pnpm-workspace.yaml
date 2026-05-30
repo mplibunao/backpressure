@@ -3,6 +3,8 @@ packages:
 blockExoticSubdeps: true
 catalog:
   '@oxlint/plugins': 1.58.0
+  '@stryker-mutator/core': 9.6.1
+  '@stryker-mutator/vitest-runner': 9.6.1
   '@types/node': 25.5.2
   oxfmt: 0.43.0
   oxlint: 1.58.0
@@ -17,6 +19,11 @@ minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeStrict: true
 overrides:
   oxlint-tsgolint: 0.18.1
+  # Range override (not exact pin): semver is used by pnpm internals and many
+  # transitive deps. A range allows compatible patch releases to coexist without
+  # lockfile churn while blocking the known 6.x API break. Upgrade to an exact
+  # pin if a specific advisory targets a version within this range.
+  semver: '>=7.7.2'
 packageManagerStrictVersion: true
 strictDepBuilds: true
 trustPolicy: no-downgrade

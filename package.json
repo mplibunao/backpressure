@@ -21,11 +21,14 @@
     "prose:sync": "scripts/vale-ensure-styles.sh",
     "smoke:packed-consumer": "node scripts/smoke-packed-consumer.ts",
     "test": "vitest run --passWithNoTests",
+    "test:mutation": "stryker run",
     "typecheck": "tsc -b",
     "versions:check": "node scripts/version-pins.ts"
   },
   "devDependencies": {
     "@oxlint/plugins": "catalog:",
+    "@stryker-mutator/core": "catalog:",
+    "@stryker-mutator/vitest-runner": "catalog:",
     "@types/node": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",

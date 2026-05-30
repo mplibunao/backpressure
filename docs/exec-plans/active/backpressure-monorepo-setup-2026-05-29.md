@@ -260,6 +260,7 @@ The manifest also locks the **2026-05-30 recon additions/corrections**:
 **Key files:** `stryker.config.mjs`, `package.json` (`test:mutation`), `.claude/skills/{mutation-orchestrator,mutation-worker}/SKILL.md`, `docs/references/mutation-testing.md`. Reference (lift from): `tome.nvim/stryker.config.mjs`, `tome.nvim/docs/references/mutation-testing.md`, `tome.nvim/.claude/skills/tome-mutation-{orchestrator,worker}/SKILL.md`, `tome.nvim/docs/exec-plans/active/testing-practices-mutation-foundation.md`.
 **Dependencies:** Items 3, 6, 12, 13, 14.
 **Size:** L.
+**Hardening order** (baseline 68.64%; target 80%+): `utils/side-effects.ts` (59.62%) → `utils/imports.ts` (67.63%) → `utils/effect-ownership.ts` (70.35%) → `utils/ast.ts` (79.07%) → `rule-catalog.ts` (68.03%, scope by rule section). See `docs/references/mutation-sweep-v0-2026-05-31.md` for full baseline data.
 
 ### Item 19 — Finalize release-readiness checks
 **Goal:** Make publishability boring and repeatable.
