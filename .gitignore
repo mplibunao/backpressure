@@ -1,6 +1,15 @@
 node_modules/
 dist/
 coverage/
+.pnpm-store/
 .stryker-tmp/
+.tsbuildinfo/
+.npm-cache/
+COMMIT_EDITMSG
+styles/Google/
+styles/ai-tells/
+styles/ai-tells-commits/
+styles/alex/
+styles/write-good/
 .DS_Store
 *.log

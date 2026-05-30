@@ -1,0 +1,32 @@
+{
+  "name": "@mplibunao/oxlint-standards",
+  "version": "0.0.0",
+  "description": "Opinionated oxlint JS-plugin presets.",
+  "license": "MIT",
+  "files": [
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "dist/index.js.map",
+    "README.md",
+    "LICENSE",
+    "NOTICE.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "pack:dry-run": "pnpm build && npm --cache ../../.npm-cache pack --dry-run",
+    "typecheck": "tsc -b"
+  }
+}

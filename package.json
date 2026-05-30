@@ -1,0 +1,36 @@
+{
+  "name": "backpressure",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MP's monorepo for homegrown code-quality backpressure tooling.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm prose",
+    "check:fix": "vp check --fix",
+    "fmt": "vp fmt",
+    "format": "pnpm fmt",
+    "lint": "vp lint --max-warnings 0",
+    "pack:dry-run": "pnpm -r --if-present pack:dry-run",
+    "prepare": "vp config",
+    "prose": "pnpm prose:files",
+    "prose:commit": "scripts/prose-commit.sh",
+    "prose:files": "scripts/prose-files.sh",
+    "prose:sync": "scripts/vale-ensure-styles.sh",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "catalog:",
+    "@types/node": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@11.4.0"
+}

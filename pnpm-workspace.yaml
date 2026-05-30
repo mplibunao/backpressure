@@ -1,0 +1,26 @@
+packages:
+  - packages/*
+blockExoticSubdeps: true
+catalog:
+  '@oxlint/plugins': 1.58.0
+  '@types/node': 25.5.2
+  oxfmt: 0.43.0
+  oxlint: 1.58.0
+  typescript: 6.0.2
+  vite-plus: 0.1.15
+  vitest: 4.1.2
+catalogMode: strict
+cleanupUnusedCatalogs: true
+dangerouslyAllowAllBuilds: false
+minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeStrict: true
+overrides:
+  '@oxlint/plugins': 1.58.0
+  oxfmt: 0.43.0
+  oxlint: 1.58.0
+  oxlint-tsgolint: 0.18.1
+packageManagerStrictVersion: true
+strictDepBuilds: true
+trustPolicy: no-downgrade
+verifyDepsBeforeRun: warn
