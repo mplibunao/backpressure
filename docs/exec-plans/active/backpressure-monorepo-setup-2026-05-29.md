@@ -89,6 +89,10 @@ The 2026-05-30 cross-repo recon resolved **three decisions at the mid-flow check
 
 Decisions that stay locked and reflected throughout: **port the full catalog before the first npm publish** (pipeline proven locally early via the Item 7 pack-smoke); **one opinionated gen-first `effect` preset** (Item 17 — reconfirmed by all 5 recon repos: gen for logic, pipe for combinator tails); the plan lives in `docs/exec-plans/active/` per MP's docs IA; and **mutation testing is an agent-run workflow (orchestrator/worker, run via delegation)** — never wired into CI, but the v0 full sweep gates the first publish (Item 18). The recon also adds two convergent candidate rules (`prefer-effect-fn`, `no-barrel-import`), a required `effect`-preset noise-suppression config (`require-yield`/`no-shadow` off), and two corrections — never blanket-ban `Data.TaggedError`; keep `prefer-yield-tagged-error`. The repo is reframed as the **`backpressure` monorepo** (ADR 003): v0 = two packages (oxlint-standards, then tsconfig), Effect carve-outs confined to the `effect` preset (so non-Effect projects compose `general` + stack presets cleanly), and a charter broader than lint + tsconfig that does NOT expand v0 scope.
 
+## Implementation Progress
+
+- 2026-05-30: Items 1, 2, 3, 4, and 9 landed in commit `cc3b87e` (`chore: scaffold backpressure baseline`). Review and refactor gates were clean. Baseline verification passed: `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm pack:dry-run`, `pnpm prose:commit`, and `git diff --check`.
+
 ## Work Items
 
 ### Item 1 — Repo shell + docs IA (full lifecycle, not just empty dirs)
