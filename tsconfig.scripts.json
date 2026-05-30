@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "tsBuildInfoFile": "./.tsbuildinfo/scripts.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": [
+    "scripts/*.ts",
+    "packages/oxlint-standards/src/rule-manifest.ts",
+    "packages/oxlint-standards/src/rule-messages.ts"
+  ]
+}

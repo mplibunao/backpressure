@@ -6,7 +6,7 @@ This package includes derived work from `@catenarycloud/linteffect`, also known 
 
 Copyright (c) 2026 Roman Naumenko.
 
-The `no-effect-as` rule is derived from the upstream `rules/no-effect-as.grit` diagnostic intent. The GritQL tooling is not copied into this package.
+The v0 catalog includes ports of the linteffect-derived rule set from `biome-effect-linting-rules` v0.0.6. The package does not copy GritQL tooling. Rule ports are TypeScript AST implementations that preserve this attribution in package artifacts and rule documentation.
 
 ## Upstream MIT license terms
 

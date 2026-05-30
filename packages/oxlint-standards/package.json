@@ -29,6 +29,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.build.json --force",
     "pack:dry-run": "pnpm build && npm --cache ../../.npm-cache pack --dry-run",
+    "pack:dry-run:no-build": "npm --cache ../../.npm-cache pack --dry-run",
     "typecheck": "tsc -b"
   }
 }

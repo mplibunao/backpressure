@@ -1,2 +1,4 @@
-export const noEffectAsMessage =
-  'Rule: avoid Effect.as. Why: it hides sequencing and turns effects into placeholders. Fix: use Effect.map for value mapping or Effect.asVoid after explicit pipeline steps.';
+import { ruleMessage } from '../../rule-messages.js';
+
+// Derives from the central message map so there is one literal source of truth.
+export const noEffectAsMessage = ruleMessage('no-effect-as');

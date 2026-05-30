@@ -1,5 +1,19 @@
-export { plugin, plugin as default, pluginName } from './plugin.js';
-export { noEffectAsMessage, noEffectAsRule } from './rules/effect/no-effect-as.js';
+export { plugin, plugin as default, pluginName, rules } from './plugin.js';
+export {
+  implementedCustomRuleNames,
+  lspOwnedChecks,
+  linteffectSourceRuleNames,
+  ruleManifest,
+} from './rule-manifest.js';
+export type {
+  RuleDisposition,
+  RuleDomain,
+  RuleGating,
+  RuleManifestEntry,
+  RuleParityStatus,
+  RuleSourceOwnership,
+  RuleTestSource,
+} from './rule-manifest.js';
 export {
   boundariesPreset,
   effectPreset,

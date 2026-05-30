@@ -1,20 +1,21 @@
 # Rule pack architecture
 
-Status: baseline current-state design, seeded before rule work.
+Status: current-state design for the group-3 catalog.
 
 ## Purpose
 
-`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The current substrate proves one source-derived rule, the real oxlint execution path, and the packed-consumer package-loading path before the bulk catalog port begins.
+`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The package now has the v0 catalog substrate: 47 linteffect ports, 21 structural executor/recon reimplementations, 1 built-in default, and documented delegation to `@effect/language-service` for 13 semantic checks.
 
 ## Source model
 
-The package combines three rule sources:
+The package combines four rule sources:
 
-- **linteffect port**: GritQL rules from `@catenarycloud/linteffect`, translated into ESTree visitors with MIT attribution.
-- **structural reimplementations**: useful ideas from executor and recon repos, rewritten as this package's own oxlint rules.
-- **recon additions**: rules discovered from current Effect ecosystem patterns, such as barrel-import and function-shape checks.
+- **linteffect port:** GritQL rules from `@catenarycloud/linteffect` v0.0.6, translated into ESTree visitors with MIT attribution. The manifest represents all 50 source rules, ports 47, and explicitly drops `no-if-statement`, `no-effect-fn-generator`, and `no-ternary`.
+- **executor reimplementations:** structural rule ideas rewritten as this package's own oxlint rules. Executor remains an idea source, not a dependency.
+- **recon additions:** current Effect ecosystem patterns, including `effect-no-multiple-provide`, `prefer-effect-fn`, and `no-barrel-import`.
+- **built-in oxlint rules:** `generalPreset` enables built-in `no-nested-ternary` instead of shipping the dropped blanket `no-ternary` rule.
 
-Type-aware Effect semantics are not reimplemented here. The package recommends `@effect/language-service` for semantic checks and keeps this package focused on fast AST-shape backpressure.
+Type-aware Effect semantics are not reimplemented here. The package recommends `@effect/language-service` for semantic checks and keeps this package focused on fast AST-shape backpressure. `no-barrel-import` intentionally overlaps the language service because it gives config-free feedback.
 
 ## Runtime substrate
 
@@ -24,14 +25,19 @@ The plugin package ships compiled `.js` and `.d.ts` files under `dist/`. Consume
 
 The alpha API contract is pinned in `docs/references/translation-contract.md`: default plugin export, `meta.name`, `rules`, `create(context)`, `context.report`, `oxlint/plugins-dev` `RuleTester`, and `.oxlintrc.json` `jsPlugins`.
 
-## Presets
+## Presets and composition
 
-Preset taxonomy is owned by `docs/design-docs/preset-architecture.md`. This design intentionally links that document instead of restating the taxonomy. The key boundary is that `general` remains stack-neutral and Effect-specific carve-outs stay inside `effect`.
+Preset taxonomy is owned by `docs/design-docs/preset-architecture.md`. This design intentionally links that document instead of restating the taxonomy.
 
-## Validation plan
+The key composition rule is that `general` remains stack-neutral. Effect-specific carve-outs, such as `require-yield: off` and `no-shadow: off`, stay inside `effect`. Non-Effect projects should compose `general` and any stack-specific presets they actually use. Future stack opinions such as drizzle, bun, sql, or next rules should become their own presets per ADR 003.
 
-Rule work now uses three validation layers:
+The `effect` preset is gen-first. `pipe` remains valid for combinator tails and wiring, but the catalog nudges business logic toward flat `Effect.gen` and named `Effect.fn` / `Effect.fnUntraced` wrappers.
 
-1. RuleTester coverage for each rule.
-2. Real-oxlint fixture replay for parser and engine parity.
-3. Packed-consumer smoke tests that install the tarball and load the plugin as a consumer would.
+## Validation layers
+
+Rule work uses four validation layers:
+
+1. `scripts/check-rule-inventory.ts` is the catalog contract. It builds and imports the package, verifies implemented custom entries exist in the runtime plugin map, compares linteffect source presets against the actual v0.0.6 configs, and checks source-fixture replay completeness.
+2. RuleTester coverage exists for every implemented custom rule. These tests exercise focused AST semantics and false-positive edges.
+3. Real-oxlint fixture replay proves compiled-plugin behavior. Source fixture parity means every upstream valid/invalid file for a linteffect fixture family is replayed with diagnostic counts. Reference scenario parity means recon, t3code, effect-smol, and executor-derived rules have reviewed valid/invalid scenario matrices. Smoke coverage is only a load/diagnostic sanity check and is not counted as parity.
+4. Packed-consumer smoke tests install the tarball and load the plugin as a consumer would.

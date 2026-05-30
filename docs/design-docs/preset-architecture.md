@@ -12,8 +12,11 @@ sources + jsPlugins substrate) points here rather than restating it.
 
 ## Principle: the preset axis is stack coupling, not file type
 
-A preset is the consumer's unit of opt-in and part of our public API
-(`"@mplibunao/oxlint-standards/<preset>"`). The axis that keeps presets coherent is
+A preset is the consumer's unit of opt-in and part of our public API. For v0, the
+public API is the named-export contract from the main package entry (`.`): consumers
+import `effectPreset`, `generalPreset`, etc. from `"@mplibunao/oxlint-standards"`.
+No subpath imports. Preset names are public API; renaming after publish is breaking.
+The axis that keeps presets coherent is
 **which stack a rule presumes**, not which file type it inspects.
 
 "React" is a file-type axis, and it is the wrong one: our React rules presume Effect
@@ -30,7 +33,7 @@ stack-neutral). This doc applies that principle to the rest of the catalog.
 | Preset | Presumes | Holds | Notes |
 |---|---|---|---|
 | `effect` | Effect (gen-first) | Composition-shape + structural Effect rules | The core opinion, with carve-outs confined here. |
-| `effect-react` | Effect + `@effect-atom` in React | Atom/state/render rules (`no-react-state`, `no-render-side-effects`, `no-atom-registry-effect-sync`, `no-naked-object-state-update`, `no-family-collection-read`) | Effect's opinion extended into React. |
+| `effect-react` | Effect + `@effect-atom` in React | Atom/state/render rules (`no-react-state`, `no-render-side-effects`, `no-atom-registry-effect-sync`, `no-inline-runtime-provide`, `no-naked-object-state-update`, `no-family-collection-read`) | Effect's opinion extended into React. |
 | `general` | Nothing (stack-neutral) | Universal TS/JS hygiene (`no-double-cast`, `no-ts-nocheck`, `no-nested-ternary`, `prevent-dynamic-imports`) | Safe for any project, Effect or not. |
 | `boundaries` | Monorepo layout | Cross-package/layer import rules (`no-cross-package-relative-imports`) | Architecture rules that are not stack rules. |
 | `react` *(reserved)* | Nothing (general React) | Not created in v0. | Reserved name for future stack-neutral React rules such as rules-of-hooks. |
@@ -44,7 +47,7 @@ Some presets encode contradictory philosophies and must never be enabled togethe
 The docs state this explicitly so a consumer cannot assemble a self-contradictory
 rule set:
 
-- **`effect-react` bans React state hooks** (`no-react-state` means "use `@effect-atom`").
+- **`effect-react` owns the React state-hook ban** (`no-react-state` means "use `@effect-atom`").
   A future general **`react`** preset would *regulate* those same hooks
   such as exhaustive-deps. Enabling both means one rule forbids a hook the other
   polices. They target different audiences (atom-first vs hooks-first) by design.
@@ -68,7 +71,7 @@ Every rule is classified on one axis:
 - **`no-family-collection-read`** gates on `@effect-atom`. Safe in non-atom projects.
 - **`no-effect-as`, `no-effect-all-step-sequencing`** are distinctive-callee. Low risk.
 - **Two ungated/broad-firing rules** are the bite risks:
-  - **`no-react-state`** bans `useState`/`useReducer`/`useContext`/`useCallback`/`useEffect`/`useSyncExternalStore` on any file. Resolved: it belongs in **`effect-react`**, and the broad ungated ban is kept intentionally. See the decisions below.
+  - **`no-react-state`** bans `useState`/`useReducer`/`useContext`/`useCallback`/`useEffect`/`useSyncExternalStore` on any file. Resolved: it belongs in **`effect-react`**, and the broad ungated ban is the intended shape for that preset.
   - **`prevent-dynamic-imports`** matches any `import()` with a generic "keep dependencies explicit" message. This is a **stack-neutral general-JS opinion, not Effect**. Resolved: it moves to **`general`**, where banning `import()` and code-splitting is a strong opt-in opinion the consumer chooses knowingly. It is not silently bundled with the Effect rules.
 
 ### Method (how this stays enforced)

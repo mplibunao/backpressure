@@ -2,9 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "types": ["node"],
     "rootDir": "src",
     "tsBuildInfoFile": "../../.tsbuildinfo/oxlint-standards.tsbuildinfo"
   },
-  "exclude": ["src/**/*.test.ts"],
   "include": ["src/**/*.ts"]
 }

@@ -10,6 +10,8 @@ This repo is MP's personal monorepo for code-quality backpressure tooling. The v
 - Active setup plan: `docs/exec-plans/active/backpressure-monorepo-setup-2026-05-29.md`.
 - Current rule-pack design: `docs/design-docs/rule-pack-architecture.md`.
 - Preset taxonomy and consumer-safety model: `docs/design-docs/preset-architecture.md`.
+- Candidate-rule intake procedure: `docs/design-docs/rule-intake.md`.
+- Lint architecture terminology (rule / plugin / preset / shareable config): `docs/references/lint-glossary.md`.
 - Accepted decisions index: `docs/decisions/index.md`.
 - Deferred work tracker: `docs/exec-plans/tech-debt-tracker.md`.
 - Prose gate policy: `docs/references/prose-gate.md`.

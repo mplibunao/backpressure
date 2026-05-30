@@ -6,7 +6,7 @@ This repository includes planned derived work from `@catenarycloud/linteffect`, 
 
 Copyright (c) 2026 Roman Naumenko.
 
-The v0 baseline does not copy GritQL tooling or rule implementation code. Later rule ports must preserve this attribution in package artifacts and rule documentation.
+The v0 catalog includes ports of the linteffect-derived rule set from `biome-effect-linting-rules` v0.0.6. The package does not copy GritQL tooling. Rule ports are TypeScript AST implementations that preserve this attribution in package artifacts and rule documentation.
 
 ## Upstream MIT license terms
 

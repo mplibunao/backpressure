@@ -1,6 +1,5 @@
-import { presetJsPlugins, type PresetConfig } from './shared.js';
+import { definePreset, presetRulesForDomain } from './shared.js';
 
-export const generalPreset = {
-  jsPlugins: presetJsPlugins,
-  rules: {},
-} satisfies PresetConfig;
+export const generalPreset = definePreset(
+  presetRulesForDomain('general', { includeBuiltIn: true }),
+);

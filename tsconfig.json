@@ -1,4 +1,4 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/oxlint-standards" }]
+  "references": [{ "path": "./packages/oxlint-standards" }, { "path": "./tsconfig.scripts.json" }]
 }

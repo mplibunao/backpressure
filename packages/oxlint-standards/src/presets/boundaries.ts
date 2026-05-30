@@ -1,6 +1,3 @@
-import { presetJsPlugins, type PresetConfig } from './shared.js';
+import { definePreset, presetRulesForDomain } from './shared.js';
 
-export const boundariesPreset = {
-  jsPlugins: presetJsPlugins,
-  rules: {},
-} satisfies PresetConfig;
+export const boundariesPreset = definePreset(presetRulesForDomain('boundaries'));

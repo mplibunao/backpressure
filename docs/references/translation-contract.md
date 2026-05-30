@@ -46,9 +46,9 @@ The source baseline is v0.0.6. The source catalog still has 50 rules. The refres
 
 ## Severity policy
 
-Presets preserve the source default severity when the source declares one. `no-effect-as` is `error` in source and is enabled as `error` in the `effect` preset. Consumer projects can override any rule in their own oxlint config.
+A rule's source severity is input evidence. ADR 004 sets the governing default by the kind of problem a rule catches, and `src/rule-manifest.ts` records the chosen default per rule. `no-effect-as` is `error` in source and stays `error` in the `effect` preset because it catches a real correctness problem. Consumer projects can override any rule in their own oxlint config.
 
-Any deliberate severity deviation belongs in the future manifest from Item 10. The manifest should record both severities plus the rationale.
+A deliberate deviation from the source severity belongs in the manifest note, with the rationale. See `docs/decisions/004-rule-curation-and-severity-posture.md`.
 
 ## Test runtime and real engine checks
 
