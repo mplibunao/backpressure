@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ensureSuccess, fail, printLine, runCommand } from './script-runtime.ts';
+import { ensureSuccess, fail, printLine, runCommand } from '../lib/script-runtime.ts';
 
 const minimumNpmVersionText = '11.5.1';
 const semverCorePartCount = 'major.minor.patch'.split('.').length;

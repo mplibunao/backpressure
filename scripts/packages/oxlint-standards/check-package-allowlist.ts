@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { join } from 'node:path';
 
-import { repoRoot } from './script-runtime.ts';
-import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './oxlint-package.ts';
-import { runNpmPackDryRunJson } from './npm-pack.ts';
+import { repoRoot } from '../../lib/script-runtime.ts';
+import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
+import { runNpmPackDryRunJson } from '../../lib/npm-pack.ts';
 import {
   assertOxlintPackageJsonAllowlist,
   assertOxlintPackedArtifact,
-} from './oxlint-package-artifact-assertions.ts';
+} from './artifact-assertions.ts';
 
 const npmCacheDir = join(repoRoot, '.npm-cache');
 

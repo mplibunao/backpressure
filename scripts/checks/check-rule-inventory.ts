@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { fail, repoRoot } from './script-runtime.ts';
-import { buildOxlintStandards } from './oxlint-package.ts';
+import { fail, repoRoot } from '../lib/script-runtime.ts';
+import { buildOxlintStandards } from '../packages/oxlint-standards/package.ts';
 
 const distEntryPath = join(repoRoot, 'packages', 'oxlint-standards', 'dist', 'index.js');
 const sourceRoot =
@@ -161,7 +161,7 @@ if (existsSync(fixtureRoot)) {
 buildOxlintStandards();
 
 const [replayModule, packageEntry]: [unknown, unknown] = await Promise.all([
-  import(pathToFileURL(join(repoRoot, 'scripts', 'fixture-replay.ts')).href),
+  import(pathToFileURL(join(repoRoot, 'scripts', 'checks', 'fixture-replay.ts')).href),
   import(pathToFileURL(distEntryPath).href),
 ]);
 const replaySuites = readReplaySuites(replayModule);

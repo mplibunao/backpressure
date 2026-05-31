@@ -11,17 +11,17 @@ import {
   printLine,
   removeTempDir,
   runCommand,
-} from './script-runtime.ts';
-import { assertTsconfigPackedArtifact } from './tsconfig-package-artifact-assertions.ts';
-import { tsconfigPackageDir } from './tsconfig-package.ts';
-import { canonicalVersions } from './version-pins.ts';
+} from '../../lib/script-runtime.ts';
+import { assertTsconfigPackedArtifact } from './artifact-assertions.ts';
+import { tsconfigPackageDir } from './package.ts';
+import { canonicalVersions } from '../../lib/version-pins.ts';
 import {
   installConsumerDevDependencies,
   installPackedTarball,
   packWorkspacePackage,
   writeJsonFile,
   writeTempConsumerPackageJson,
-} from './packed-consumer-harness.ts';
+} from '../../lib/packed-consumer-harness.ts';
 
 // Bun types are installed only in the throwaway consumer so server.json can prove its Bun types resolve.
 // Keep this outside repo version policy unless Bun becomes first-party repo tooling.

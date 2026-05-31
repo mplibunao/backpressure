@@ -97,7 +97,7 @@ jobs:
         run: SKIP_BUILD=true pnpm oxlint:package:allowlist
 
       - name: Check npm trusted publishing client
-        run: node scripts/check-npm-publish-client.ts
+        run: node scripts/checks/check-npm-publish-client.ts
 
       - name: Publish @mplibunao/oxlint-standards
         working-directory: packages/oxlint-standards
@@ -142,7 +142,7 @@ jobs:
         run: pnpm tsconfig:package:allowlist
 
       - name: Check npm trusted publishing client
-        run: node scripts/check-npm-publish-client.ts
+        run: node scripts/checks/check-npm-publish-client.ts
 
       - name: Publish @mplibunao/tsconfig
         working-directory: packages/tsconfig

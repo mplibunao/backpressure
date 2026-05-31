@@ -14,7 +14,7 @@ Run these commands before opening the release refactor/review gate:
 
 ## Package artifact contracts
 
-`pnpm oxlint:package:allowlist` runs `scripts/check-oxlint-package-allowlist.ts`, the authoritative package allowlist assertion for `@mplibunao/oxlint-standards`.
+`pnpm oxlint:package:allowlist` runs `scripts/packages/oxlint-standards/check-package-allowlist.ts`, the authoritative package allowlist assertion for `@mplibunao/oxlint-standards`.
 
 The oxlint package script checks all of the following:
 
@@ -24,7 +24,7 @@ The oxlint package script checks all of the following:
 - private inputs such as source, tests, fixtures, and tsconfig files do not leak into the tarball.
 - no Rika dependency is declared in the publish package.
 
-`pnpm tsconfig:package:allowlist` runs `scripts/check-tsconfig-package-allowlist.ts`, the authoritative package allowlist assertion for `@mplibunao/tsconfig`.
+`pnpm tsconfig:package:allowlist` runs `scripts/packages/tsconfig/check-package-allowlist.ts`, the authoritative package allowlist assertion for `@mplibunao/tsconfig`.
 
 The tsconfig package script checks all of the following:
 
@@ -39,11 +39,11 @@ The tsconfig package script checks all of the following:
 
 ## Rule catalog contract
 
-`scripts/check-rule-inventory.ts` remains the catalog-completeness assertion. The rule inventory covers the 50 `biome-effect-linting-rules` v0.0.6 rules and every intentional exception. The exceptions are the dropped anti-house-style rules, the built-in replacement for `no-ternary`, v0.0.6 refinements, `effect-no-multiple-provide`, recon additions, structural executor reimplementations, and `@effect/language-service` delegated semantic checks. Rika remains reference material only, not a dependency.
+`scripts/checks/check-rule-inventory.ts` remains the catalog-completeness assertion. The rule inventory covers the 50 `biome-effect-linting-rules` v0.0.6 rules and every intentional exception. The exceptions are the dropped anti-house-style rules, the built-in replacement for `no-ternary`, v0.0.6 refinements, `effect-no-multiple-provide`, recon additions, structural executor reimplementations, and `@effect/language-service` delegated semantic checks. Rika remains reference material only, not a dependency.
 
 ## Mutation gate status
 
-Item 18 passed on 2026-05-31 with a behavioral mutation score of **81.81%** (`3981` killed + `13` timeout / `4882` total). The durable evidence is `docs/references/mutation-sweep-v0-2026-05-31.md`.
+Item 18 passed on 2026-05-31 with a behavioral mutation score of **81.81%** (`3981` killed + `13` timeout / `4882` total). The durable evidence is `docs/reports/mutation/2026-05-31-v0-sweep.md`.
 
 Mutation testing is a procedural local publish gate, not a CI gate. CI does not run Stryker because the sweep is intentionally delegated, slow, and review-heavy. Before publishing `@mplibunao/oxlint-standards`, reviewers should confirm that the dated Item 18 evidence still matches the release candidate or rerun the mutation workflow if rule/helper behavior changed after that evidence. The JSON-only `@mplibunao/tsconfig` package does not need a mutation sweep.
 

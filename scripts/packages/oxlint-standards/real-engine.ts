@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { oxlintBin, oxlintPackageName } from './oxlint-package.ts';
+import { oxlintBin, oxlintPackageName } from './package.ts';
 
 import {
   type CommandResult,
@@ -9,7 +9,7 @@ import {
   commandOutput,
   fail,
   runCommand,
-} from './script-runtime.ts';
+} from '../../lib/script-runtime.ts';
 
 export type { CommandResult };
 export type RuleConfig = Record<string, string>;

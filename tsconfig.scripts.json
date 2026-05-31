@@ -6,7 +6,7 @@
     "types": ["node"]
   },
   "include": [
-    "scripts/*.ts",
+    "scripts/**/*.ts",
     "packages/oxlint-standards/src/rule-manifest.ts",
     "packages/oxlint-standards/src/rule-messages.ts"
   ]

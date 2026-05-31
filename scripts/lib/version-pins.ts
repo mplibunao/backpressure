@@ -1,7 +1,5 @@
-#!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { fail, repoRoot } from './script-runtime.ts';
 
@@ -74,7 +72,7 @@ export const canonicalVersions = (): CanonicalVersions => {
 
 export const packageManagerSpec = (): string => `pnpm@${canonicalVersions().pnpm}`;
 
-const assertWorkflowPins = () => {
+export const assertWorkflowPins = (): void => {
   const versions = canonicalVersions();
 
   for (const workflowPath of workflowPaths) {
@@ -98,10 +96,3 @@ const assertWorkflowPins = () => {
     }
   }
 };
-
-const currentScriptPath = fileURLToPath(import.meta.url);
-
-if (process.argv[1] === currentScriptPath) {
-  assertWorkflowPins();
-  process.stdout.write('version pins are consistent\n');
-}

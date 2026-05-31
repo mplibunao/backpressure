@@ -37,7 +37,7 @@ The `effect` preset is gen-first. `pipe` remains valid for combinator tails and 
 
 Rule work uses four validation layers:
 
-1. `scripts/check-rule-inventory.ts` is the catalog contract. It builds and imports the package, verifies implemented custom entries exist in the runtime plugin map, compares linteffect source presets against the actual v0.0.6 configs, and checks source-fixture replay completeness.
+1. `scripts/checks/check-rule-inventory.ts` is the catalog contract. It builds and imports the package, verifies implemented custom entries exist in the runtime plugin map, compares linteffect source presets against the actual v0.0.6 configs, and checks source-fixture replay completeness.
 2. RuleTester coverage exists for every implemented custom rule. These tests exercise focused AST semantics and false-positive edges.
 3. Real-oxlint fixture replay proves compiled-plugin behavior. Source fixture parity means every upstream valid/invalid file for a linteffect fixture family is replayed with diagnostic counts. Reference scenario parity means recon, t3code, effect-smol, and executor-derived rules have reviewed valid/invalid scenario matrices. Smoke coverage is only a load/diagnostic sanity check and is not counted as parity.
 4. Packed-consumer smoke tests install the tarball and load the plugin as a consumer would.

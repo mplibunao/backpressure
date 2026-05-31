@@ -9,8 +9,8 @@ import {
   oxlintSeverityForManifestEntry,
   presetEntriesForDomains,
   type RuleDomain,
-} from '../packages/oxlint-standards/src/rule-manifest.ts';
-import { ruleMessage } from '../packages/oxlint-standards/src/rule-messages.ts';
+} from '../../packages/oxlint-standards/src/rule-manifest.ts';
+import { ruleMessage } from '../../packages/oxlint-standards/src/rule-messages.ts';
 import {
   commandOutput,
   createTempDir,
@@ -18,15 +18,15 @@ import {
   ensureSuccess,
   printLine,
   removeTempDir,
-} from './script-runtime.ts';
-import { buildOxlintStandards, distPluginPath } from './oxlint-package.ts';
+} from '../lib/script-runtime.ts';
+import { buildOxlintStandards, distPluginPath } from '../packages/oxlint-standards/package.ts';
 import {
   type RuleConfig,
   assertDiagnostic,
   assertDiagnosticCount,
   assertDiagnosticLine,
   runOxlintOnSource,
-} from './oxlint-real-engine.ts';
+} from '../packages/oxlint-standards/real-engine.ts';
 
 const effectImportGatedRules = new Set(
   ruleManifest

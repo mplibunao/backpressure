@@ -10,19 +10,19 @@ import {
   printLine,
   removeTempDir,
   runCommand,
-} from './script-runtime.ts';
-import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './oxlint-package.ts';
-import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './oxlint-real-engine.ts';
-import { ruleMessage } from '../packages/oxlint-standards/src/rule-messages.ts';
-import { canonicalVersions } from './version-pins.ts';
-import { assertOxlintPackedArtifact } from './oxlint-package-artifact-assertions.ts';
+} from '../../lib/script-runtime.ts';
+import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
+import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './real-engine.ts';
+import { ruleMessage } from '../../../packages/oxlint-standards/src/rule-messages.ts';
+import { canonicalVersions } from '../../lib/version-pins.ts';
+import { assertOxlintPackedArtifact } from './artifact-assertions.ts';
 import {
   installConsumerDevDependencies,
   installPackedTarball,
   packWorkspacePackage,
   writeJsonFile,
   writeTempConsumerPackageJson,
-} from './packed-consumer-harness.ts';
+} from '../../lib/packed-consumer-harness.ts';
 
 const packDestinationPrefix = 'backpressure-pack-';
 const consumerPrefix = 'backpressure-consumer-';

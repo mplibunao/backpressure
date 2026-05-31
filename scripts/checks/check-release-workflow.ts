@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { fail, printLine, repoRoot } from './script-runtime.ts';
+import { fail, printLine, repoRoot } from '../lib/script-runtime.ts';
 
 interface ReleasePackageContract {
   readonly allowlistCommand: string;
@@ -13,6 +13,7 @@ interface ReleasePackageContract {
 
 const releaseWorkflowPath = join(repoRoot, '.github', 'workflows', 'release.yml');
 const releaseReadinessPath = join(repoRoot, 'docs', 'references', 'release-readiness.md');
+const npmPublishClientCheckCommand = 'node scripts/checks/check-npm-publish-client.ts';
 
 const missingIndex = -1;
 
@@ -77,6 +78,11 @@ const assertPackageJobs = (workflow: string): void => {
       `${contract.jobId} package guard`,
     );
     assertIncludes(job, `run: ${contract.allowlistCommand}`, `${contract.jobId} allowlist command`);
+    assertIncludes(
+      job,
+      `run: ${npmPublishClientCheckCommand}`,
+      `${contract.jobId} npm trusted publishing client check`,
+    );
   }
 };
 

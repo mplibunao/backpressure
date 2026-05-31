@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { ensureSuccess, repoRoot, runCommand } from './script-runtime.ts';
+import { ensureSuccess, repoRoot, runCommand } from '../../lib/script-runtime.ts';
 
 export const oxlintPackageName = '@mplibunao/oxlint-standards';
 

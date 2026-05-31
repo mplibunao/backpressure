@@ -1,6 +1,6 @@
 # Technical debt tracker
 
-This tracker holds accepted deferrals. A deferral is not real until it is written here or in the relevant future-phase stub. IDs are stable; gaps mean a prior deferral was completed or removed rather than renumbered.
+This tracker holds accepted deferrals for future sessions or future phases. It is not a same-session task list: work already queued for the current session belongs in the active plan, the current review/refactor notes, or the chat summary. A deferral is not real until it is written here or in the relevant future-phase stub. IDs are stable; gaps mean a prior deferral was completed or removed rather than renumbered.
 
 ## Deferred from v0 baseline
 
@@ -33,7 +33,6 @@ Reserve `react` for stack-neutral React rules such as rules-of-hooks, exhaustive
 Candidate post-v0 preset for catching fake or assertion-free tests, the kind agents produce. Source: a Twitter screenshot reviewed on 2026-05-31.
 
 - `no-mock-echo`: flag a test that asserts the result equals the exact value a mock was configured to return. Tautological, so it tests the mock rather than the code. Stack-neutral across mock libraries and high value as agent backpressure. Default severity `warn` under the graded posture (ADR 004). Detection is heuristic, so scope carefully: match the asserted expected value against the mock's configured return inside the same test, and expect false-positive edges.
-- `require-error-code-assertion` idea: assert which error occurred, not just that something failed. Do not port the screenshot matcher as-is; its `ok === false` shape assumes a non-Effect result type. Reshape per the error model actually in use (for Effect, assert the tagged error, not just that the Effect failed). Hold until the matcher is defined against a model MP uses.
 
 Stryker complements these, it does not replace them. Mutation testing finds coverage gaps in a slow batch; these rules name the bad-test shape at write time. A `no-mock-echo` test over a thin pass-through wrapper can still earn a clean mutation score while testing nothing real.
 

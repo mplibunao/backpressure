@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { join } from 'node:path';
 
-import { repoRoot } from './script-runtime.ts';
-import { runNpmPackDryRunJson } from './npm-pack.ts';
+import { repoRoot } from '../../lib/script-runtime.ts';
+import { runNpmPackDryRunJson } from '../../lib/npm-pack.ts';
 import {
   assertTsconfigPackageJsonAllowlist,
   assertTsconfigPackedArtifact,
-} from './tsconfig-package-artifact-assertions.ts';
-import { tsconfigPackageDir, tsconfigPackageName } from './tsconfig-package.ts';
+} from './artifact-assertions.ts';
+import { tsconfigPackageDir, tsconfigPackageName } from './package.ts';
 
 const npmCacheDir = join(repoRoot, '.npm-cache');
 

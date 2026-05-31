@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const failureExitCode = 1;
 // Truncation limit for output previews in assertion failure messages.
 const outputPreviewLength = 4_000;
-const scriptsDir = dirname(fileURLToPath(import.meta.url));
+const runtimeDir = dirname(fileURLToPath(import.meta.url));
 
 export interface CommandResult {
   readonly args: ReadonlyArray<string>;
@@ -20,7 +19,7 @@ export interface CommandResult {
   readonly stdout: string;
 }
 
-export const repoRoot = resolve(scriptsDir, '..');
+export const repoRoot = resolve(runtimeDir, '..', '..');
 
 export const printLine = (message: string): void => {
   process.stdout.write(`${message}\n`);

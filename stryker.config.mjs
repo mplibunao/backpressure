@@ -7,7 +7,7 @@
  *
  * no-effect-as-message.ts is a single message-string constant; same reason as
  * rule-messages.ts — tests reference the same source constant, so string mutations
- * are invisible. Historical evidence lives in docs/references/mutation-sweep-v0-2026-05-31.md.
+ * are invisible. Historical evidence lives in docs/reports/mutation/2026-05-31-v0-sweep.md.
  */
 const DEFAULT_BEHAVIORAL_EXCLUSIONS = [
   '!packages/oxlint-standards/src/rule-manifest.ts',

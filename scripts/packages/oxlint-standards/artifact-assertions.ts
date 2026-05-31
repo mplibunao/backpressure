@@ -1,13 +1,13 @@
 import { join } from 'node:path';
 
-import { fail } from './script-runtime.ts';
-import { oxlintPackageDir, oxlintPackageName } from './oxlint-package.ts';
+import { fail } from '../../lib/script-runtime.ts';
+import { oxlintPackageDir, oxlintPackageName } from './package.ts';
 import {
   assertExactStringArray,
   isObjectRecord,
   isStringRecord,
   readJsonObject,
-} from './package-artifact-assertions.ts';
+} from '../../lib/package-artifact-assertions.ts';
 
 interface PackageJson {
   readonly name?: string;

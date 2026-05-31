@@ -1,15 +1,14 @@
-#!/usr/bin/env node
 import { join } from 'node:path';
 
-import { fail } from './script-runtime.ts';
-import { tsconfigPackageDir, tsconfigPackageName } from './tsconfig-package.ts';
+import { fail } from '../../lib/script-runtime.ts';
+import { tsconfigPackageDir, tsconfigPackageName } from './package.ts';
 import {
   assertExactPackedFiles,
   assertExactStringArray,
   assertExactStringMap,
   isObjectRecord,
   readJsonObject,
-} from './package-artifact-assertions.ts';
+} from '../../lib/package-artifact-assertions.ts';
 
 const expectedPackageJsonFiles = [
   'base.json',

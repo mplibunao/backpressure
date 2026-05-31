@@ -37,6 +37,10 @@ Not every surviving mutant is a problem. Classify before acting:
 - **Noisy assertions**: asserting with `.toStrictEqual` on entire objects when only one field matters. Precise assertions kill mutants more reliably.
 - **Pinning to internals**: testing internal details to kill mutants. If the mutant survives because the test only checks the public contract, that's correct behavior.
 
+## Reports
+
+Run-specific mutation reports belong in `docs/reports/mutation/`, not in `docs/references/`. Use `YYYY-MM-DD-<short-scope>.md` names so repeated workflow runs stay chronological and quick to scan. Keep this file focused on durable workflow guidance.
+
 ## Workflow
 
 ### Orchestrator (repo-level)
@@ -72,7 +76,7 @@ The worker runs one file through the mutation cycle. See `.claude/skills/mutatio
 Only these test or test-support files may appear dirty at the end of a worker pass:
 
 - `packages/oxlint-standards/src/**/*.test.ts` (package test files)
-- `scripts/fixture-replay.ts` (fixture replay helper)
+- `scripts/checks/fixture-replay.ts` (fixture replay helper)
 
 Production source files, Stryker artifacts (`reports/mutation/`), and unexpected scripts are blockers. The orchestrator may commit allowed-surface changes between workers; standalone workers should start from and return to a clean tree except for accepted allowed-surface edits.
 
