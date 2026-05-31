@@ -98,6 +98,7 @@ Decisions that stay locked and reflected throughout: **port the full catalog bef
 - 2026-05-31: Items 10, 11, 12, 13, 14, 15, 16, and 17 landed in commit `491deb1` (`feat: add oxlint rule catalog and presets`). Verification passed: rule inventory, fixture replay, packed-consumer smoke, `pnpm check`, `pnpm pack:dry-run`, and `git diff --check`.
 - 2026-05-31: Item 18 mutation workflow baseline landed in commit `c190533` (`test: add mutation testing workflow`). Baseline mutation score was 68.64% on behavioral files.
 - 2026-05-31: Item 18 delegated hardening landed across commits `1bde0e9`, `5ac5641`, `e05ea6c`, `a36f19f`, and `bd91fe6`. The default behavioral mutation gate now passes at **81.81%** (3981 killed + 13 timeout / 4882 total); detailed evidence is in `docs/references/mutation-sweep-v0-2026-05-31.md`.
+- 2026-05-31: Item 19 release readiness landed in commit `c478368` (`chore: finalize oxlint release readiness`). Review and refactor gates were clean. Verification passed: `pnpm typecheck`, `pnpm oxlint:package:allowlist`, `pnpm smoke:packed-consumer`, `pnpm check`, `pnpm pack:dry-run`, negative tarball-leak probe, `git diff --check`, and the CLAUDE/AGENTS no-touch guard.
 
 ## Work Items
 
