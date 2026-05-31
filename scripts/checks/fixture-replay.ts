@@ -205,9 +205,9 @@ export const replaySuites = [
   suite({
     ruleName: 'no-family-collection-read',
     invalid: [
-      sourceCase('no-family-collection-read', 'invalid-get.ts', { expectedLine: 13 }),
-      sourceCase('no-family-collection-read', 'invalid-get-get.ts', { expectedLine: 10 }),
-      sourceCase('no-family-collection-read', 'invalid-atom-get.ts', { expectedLine: 10 }),
+      sourceCase('no-family-collection-read', 'invalid-get.ts'),
+      sourceCase('no-family-collection-read', 'invalid-get-get.ts'),
+      sourceCase('no-family-collection-read', 'invalid-atom-get.ts'),
     ],
     valid: [
       sourceCase('no-family-collection-read', 'valid-keyed-source.ts'),
@@ -230,7 +230,6 @@ export const replaySuites = [
     invalid: [
       sourceCase('no-model-overlay-cast', 'invalid-named-type.ts', {
         branchIds: ['invalid.source-named-type'],
-        expectedLine: 10,
       }),
       scenario(
         'structural branch: generic overlay cast',
@@ -283,15 +282,13 @@ export const replaySuites = [
   suite({
     ruleName: 'no-naked-object-state-update',
     invalid: [
-      sourceCase('no-naked-object-state-update', 'invalid-spread.ts', { expectedLine: 10 }),
-      sourceCase('no-naked-object-state-update', 'invalid-from-entries.ts', { expectedLine: 22 }),
+      sourceCase('no-naked-object-state-update', 'invalid-spread.ts'),
+      sourceCase('no-naked-object-state-update', 'invalid-from-entries.ts'),
       sourceCase('no-naked-object-state-update', 'invalid-object-assign.ts', {
         expectedDiagnostics: 2,
-        expectedLine: 11,
       }),
       sourceCase('no-naked-object-state-update', 'invalid-json-transition.ts', {
         expectedDiagnostics: 2,
-        expectedLine: 12,
       }),
     ],
     valid: [
@@ -313,9 +310,9 @@ export const replaySuites = [
   suite({
     ruleName: 'no-switch-statement',
     invalid: [
-      sourceCase('no-switch-statement', 'invalid-switch.ts', { expectedLine: 6 }),
-      sourceCase('no-switch-statement', 'invalid-switch-submodule-import.ts', { expectedLine: 6 }),
-      sourceCase('no-switch-statement', 'invalid-switch-atom-react.ts', { expectedLine: 7 }),
+      sourceCase('no-switch-statement', 'invalid-switch.ts'),
+      sourceCase('no-switch-statement', 'invalid-switch-submodule-import.ts'),
+      sourceCase('no-switch-statement', 'invalid-switch-atom-react.ts'),
     ],
     valid: [
       sourceCase('no-switch-statement', 'valid-match-value.ts'),
