@@ -99,6 +99,9 @@ jobs:
       - name: Check npm trusted publishing client
         run: node scripts/checks/check-npm-publish-client.ts
 
+      - name: Check changesets release state
+        run: node scripts/checks/check-changesets-release-state.ts --package oxlint-standards
+
       - name: Publish @mplibunao/oxlint-standards
         working-directory: packages/oxlint-standards
         run: npm publish --access public --provenance --tag ${{ inputs.npm_tag }}
@@ -143,6 +146,9 @@ jobs:
 
       - name: Check npm trusted publishing client
         run: node scripts/checks/check-npm-publish-client.ts
+
+      - name: Check changesets release state
+        run: node scripts/checks/check-changesets-release-state.ts --package tsconfig
 
       - name: Publish @mplibunao/tsconfig
         working-directory: packages/tsconfig

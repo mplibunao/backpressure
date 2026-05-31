@@ -14,12 +14,14 @@ const expectedPackageJsonFiles = [
   'base.json',
   'server.json',
   'browser.json',
+  'CHANGELOG.md',
   'LICENSE',
   'NOTICE.md',
 ] as const;
 const expectedPackedTarballFiles = [
   'LICENSE',
   'NOTICE.md',
+  'CHANGELOG.md',
   'base.json',
   'browser.json',
   'package.json',

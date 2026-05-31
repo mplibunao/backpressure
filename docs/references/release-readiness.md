@@ -6,11 +6,12 @@ This checklist is the publish gate for the two v0 packages: `@mplibunao/oxlint-s
 
 Run these commands before opening the release refactor/review gate:
 
-1. `pnpm check`
-2. `pnpm pack:dry-run`
-3. `git diff --check`
+1. `pnpm changesets:check`
+2. `pnpm check`
+3. `pnpm pack:dry-run`
+4. `git diff --check`
 
-`pnpm check` includes build, the release workflow contract check, rule inventory, fixture replay, the oxlint packed-consumer smoke, the tsconfig packed-consumer smoke, recursive package dry-run checks, and the prose gate. `pnpm pack:dry-run` remains a separate explicit release-readiness command because it is the direct publish-artifact check a maintainer expects to run before release.
+`pnpm check` includes build, the release workflow contract check, the Changesets contract check, rule inventory, fixture replay, the oxlint packed-consumer smoke, the tsconfig packed-consumer smoke, recursive package dry-run checks, and the prose gate. `pnpm pack:dry-run` remains a separate explicit release-readiness command because it is the direct publish-artifact check a maintainer expects to run before release.
 
 ## Package artifact contracts
 
@@ -18,7 +19,7 @@ Run these commands before opening the release refactor/review gate:
 
 The oxlint package script checks all of the following:
 
-- `packages/oxlint-standards/package.json` keeps the publish `files` allowlist to `dist`, `README.md`, `LICENSE`, and `NOTICE.md`.
+- `packages/oxlint-standards/package.json` keeps the publish `files` allowlist to `dist`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `NOTICE.md`.
 - `npm pack --dry-run --json` includes only root package metadata/docs and compiled `dist` files.
 - required runtime and type entrypoints are present, including `dist/index.js`, `dist/index.d.ts`, `dist/plugin.js`, and `dist/rule-manifest.js`.
 - private inputs such as source, tests, fixtures, and tsconfig files do not leak into the tarball.
@@ -28,8 +29,8 @@ The oxlint package script checks all of the following:
 
 The tsconfig package script checks all of the following:
 
-- `packages/tsconfig/package.json` keeps the publish `files` allowlist to `base.json`, `server.json`, `browser.json`, `LICENSE`, and `NOTICE.md`.
-- `npm pack --dry-run --json` includes only the three config JSON files, package metadata, license, and notice.
+- `packages/tsconfig/package.json` keeps the publish `files` allowlist to `base.json`, `server.json`, `browser.json`, `CHANGELOG.md`, `LICENSE`, and `NOTICE.md`.
+- `npm pack --dry-run --json` includes only the three config JSON files, package metadata, changelog, license, and notice.
 - the package exports only `./base.json`, `./server.json`, `./browser.json`, and `./package.json`.
 - `publishConfig.access` remains `public`.
 
@@ -47,16 +48,33 @@ Item 18 passed on 2026-05-31 with a behavioral mutation score of **81.81%** (`39
 
 Mutation testing is a procedural local publish gate, not a CI gate. CI does not run Stryker because the sweep is intentionally delegated, slow, and review-heavy. Before publishing `@mplibunao/oxlint-standards`, reviewers should confirm that the dated Item 18 evidence still matches the release candidate or rerun the mutation workflow if rule/helper behavior changed after that evidence. The JSON-only `@mplibunao/tsconfig` package does not need a mutation sweep.
 
+## Changesets versioning workflow
+
+Changesets owns package versions, package changelogs, and the Version Packages PR. Changesets does not own npm publishing.
+
+`.github/workflows/version-packages.yml` runs on pushes to `main` and can be manually retried with `workflow_dispatch`. The workflow uses `changesets/action@v1` with `version: pnpm version-packages:checked`, so the generated release PR must pass the full repo gate before it is opened or updated.
+
+The version workflow must only use `GITHUB_TOKEN`. Do not add `NPM_TOKEN`, `NODE_AUTH_TOKEN`, `changeset publish`, or another npm publish command to the version workflow.
+
+Before the first public publish:
+
+1. Merge the Changesets adoption PR with the initial changeset.
+2. Let the Version Packages PR open.
+3. Review and merge the Version Packages PR. The first Version Packages PR should bump both packages to `0.1.0`; it also generates the package changelog entries and removes the initial changeset.
+4. Manually dispatch `.github/workflows/release.yml` once for each changed package.
+
+A Version Packages PR is a release train. After merging it, publish every package versioned by that PR before merging another feature changeset.
+
 ## GitHub/npm release workflow
 
-`pnpm check-release-workflow` verifies that `.github/workflows/release.yml` and this release-readiness reference agree on the package input options, publish job IDs, package-specific GitHub environments, and package allowlist commands.
+`pnpm check-release-workflow` verifies that `.github/workflows/release.yml` and this release-readiness reference agree on the package input options, publish job IDs, package-specific GitHub environments, package allowlist commands, and package-specific Changesets release-state checks.
 
 `.github/workflows/release.yml` has separate publish jobs and separate GitHub environments for each v0 package:
 
 - `publish-oxlint-standards` publishes from `packages/oxlint-standards` through the `npm-publish-oxlint-standards` GitHub environment.
 - `publish-tsconfig` publishes from `packages/tsconfig` through the `npm-publish-tsconfig` GitHub environment.
 
-Both publish jobs require `id-token: write`, check that npm is at least `11.5.1`, and publish with `npm publish --provenance`. The workflow is manually dispatched with one package selected per run, so each package keeps an independent release cadence and an independent npm Trusted Publishing binding.
+Both publish jobs require `id-token: write`, check that npm is at least `11.5.1`, verify the selected package has a non-`0.0.0` version with a matching changelog heading and no pending changesets, and publish with `npm publish --provenance`. The workflow is manually dispatched with one package selected per run, so each package keeps an independent release cadence and an independent npm Trusted Publishing binding.
 
 Before the first publish, migrate the Item 19 oxlint setup away from the old generic `npm-publish` GitHub environment name. The oxlint package must use the package-specific `npm-publish-oxlint-standards` GitHub environment, and the npm Trusted Publishing binding for `@mplibunao/oxlint-standards` must point to this repository, `.github/workflows/release.yml`, and that exact environment name. If the generic `npm-publish` environment already exists from Item 19, rename it to `npm-publish-oxlint-standards` or recreate the binding after creating the package-specific environment; do not leave the oxlint package bound to `npm-publish`.
 

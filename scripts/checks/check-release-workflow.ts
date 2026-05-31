@@ -9,6 +9,7 @@ interface ReleasePackageContract {
   readonly environment: string;
   readonly inputOption: string;
   readonly jobId: string;
+  readonly releaseStateCommand: string;
 }
 
 const releaseWorkflowPath = join(repoRoot, '.github', 'workflows', 'release.yml');
@@ -23,12 +24,15 @@ const packageContracts: ReadonlyArray<ReleasePackageContract> = [
     environment: 'npm-publish-oxlint-standards',
     inputOption: 'oxlint-standards',
     jobId: 'publish-oxlint-standards',
+    releaseStateCommand:
+      'node scripts/checks/check-changesets-release-state.ts --package oxlint-standards',
   },
   {
     allowlistCommand: 'pnpm tsconfig:package:allowlist',
     environment: 'npm-publish-tsconfig',
     inputOption: 'tsconfig',
     jobId: 'publish-tsconfig',
+    releaseStateCommand: 'node scripts/checks/check-changesets-release-state.ts --package tsconfig',
   },
 ];
 
@@ -78,6 +82,11 @@ const assertPackageJobs = (workflow: string): void => {
       `${contract.jobId} package guard`,
     );
     assertIncludes(job, `run: ${contract.allowlistCommand}`, `${contract.jobId} allowlist command`);
+    assertIncludes(
+      job,
+      `run: ${contract.releaseStateCommand}`,
+      `${contract.jobId} release state check`,
+    );
     assertIncludes(
       job,
       `run: ${npmPublishClientCheckCommand}`,

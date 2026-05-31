@@ -12,6 +12,7 @@
     "base.json",
     "server.json",
     "browser.json",
+    "CHANGELOG.md",
     "LICENSE",
     "NOTICE.md"
   ],

@@ -19,13 +19,20 @@ interface PackageJson {
 }
 
 const packageJsonPath = join(oxlintPackageDir, 'package.json');
-const allowedPackageFiles = ['dist', 'README.md', 'LICENSE', 'NOTICE.md'];
-const allowedRootFiles = new Set(['LICENSE', 'NOTICE.md', 'README.md', 'package.json']);
+const allowedPackageFiles = ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md'];
+const allowedRootFiles = new Set([
+  'CHANGELOG.md',
+  'LICENSE',
+  'NOTICE.md',
+  'README.md',
+  'package.json',
+]);
 const allowedDistFileSuffixes = ['.js', '.js.map', '.d.ts', '.d.ts.map'];
 const requiredPackedFiles = [
   'LICENSE',
   'NOTICE.md',
   'README.md',
+  'CHANGELOG.md',
   'package.json',
   'dist/index.js',
   'dist/index.d.ts',
