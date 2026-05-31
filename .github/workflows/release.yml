@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        default: oxlint-standards
+        type: choice
+        options:
+          - oxlint-standards
+          - tsconfig
+      npm_tag:
+        description: npm dist-tag to publish
+        required: true
+        default: next
+        type: choice
+        options:
+          - next
+          - latest
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v3
+        with:
+          cache: true
+          install: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          version: 11.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          cache: pnpm
+          node-version: 24.15.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check
+        run: pnpm check
+
+  publish-oxlint-standards:
+    name: Publish @mplibunao/oxlint-standards
+    needs: check
+    if: github.ref == 'refs/heads/main' && inputs.package == 'oxlint-standards'
+    environment: npm-publish-oxlint-standards
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v3
+        with:
+          cache: true
+          install: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          version: 11.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          cache: pnpm
+          node-version: 24.15.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build publish artifact
+        run: pnpm --filter @mplibunao/oxlint-standards build
+
+      - name: Assert oxlint package allowlist
+        run: SKIP_BUILD=true pnpm oxlint:package:allowlist
+
+      - name: Check npm trusted publishing client
+        run: node scripts/checks/check-npm-publish-client.ts
+
+      - name: Check changesets release state
+        run: node scripts/checks/check-changesets-release-state.ts --package oxlint-standards
+
+      - name: Publish @mplibunao/oxlint-standards
+        working-directory: packages/oxlint-standards
+        run: npm publish --access public --provenance --tag ${{ inputs.npm_tag }}
+
+  publish-tsconfig:
+    name: Publish @mplibunao/tsconfig
+    needs: check
+    if: github.ref == 'refs/heads/main' && inputs.package == 'tsconfig'
+    environment: npm-publish-tsconfig
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v3
+        with:
+          cache: true
+          install: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          version: 11.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          cache: pnpm
+          node-version: 24.15.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Assert tsconfig package allowlist
+        run: pnpm tsconfig:package:allowlist
+
+      - name: Check npm trusted publishing client
+        run: node scripts/checks/check-npm-publish-client.ts
+
+      - name: Check changesets release state
+        run: node scripts/checks/check-changesets-release-state.ts --package tsconfig
+
+      - name: Publish @mplibunao/tsconfig
+        working-directory: packages/tsconfig
+        run: npm publish --access public --provenance --tag ${{ inputs.npm_tag }}

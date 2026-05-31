@@ -1,0 +1,52 @@
+{
+  "name": "backpressure",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MP's monorepo for homegrown code-quality backpressure tooling.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "changeset": "changeset",
+    "changesets:check": "node scripts/checks/check-changesets-contract.ts",
+    "check": "pnpm lint && pnpm versions:check && pnpm typecheck && pnpm test && pnpm build && pnpm check-release-workflow && pnpm changesets:check && SKIP_BUILD=true pnpm inventory:rules && SKIP_BUILD=true pnpm fixture:replay && SKIP_BUILD=true pnpm smoke:oxlint-packed-consumer && pnpm smoke:tsconfig-packed-consumer && pnpm -r --if-present pack:dry-run:no-build && pnpm prose",
+    "check:fix": "vp check --fix",
+    "fixture:replay": "node scripts/checks/fixture-replay.ts",
+    "inventory:rules": "node scripts/checks/check-rule-inventory.ts",
+    "fmt": "vp fmt",
+    "format": "pnpm fmt",
+    "lint": "vp lint --max-warnings 0",
+    "oxlint:package:allowlist": "node scripts/packages/oxlint-standards/check-package-allowlist.ts",
+    "check-release-workflow": "node scripts/checks/check-release-workflow.ts",
+    "pack:dry-run": "pnpm -r --if-present pack:dry-run",
+    "prepare": "vp config",
+    "prose": "pnpm prose:files",
+    "prose:commit": "scripts/prose-commit.sh",
+    "prose:files": "scripts/prose-files.sh",
+    "prose:sync": "scripts/vale-ensure-styles.sh",
+    "smoke:oxlint-packed-consumer": "node scripts/packages/oxlint-standards/smoke-packed-consumer.ts",
+    "test": "vitest run --passWithNoTests",
+    "test:mutation": "stryker run",
+    "typecheck": "tsc -b",
+    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "version-packages:checked": "pnpm version-packages && pnpm check",
+    "versions:check": "node scripts/checks/check-version-pins.ts",
+    "tsconfig:package:allowlist": "node scripts/packages/tsconfig/check-package-allowlist.ts",
+    "smoke:tsconfig-packed-consumer": "node scripts/packages/tsconfig/smoke-packed-consumer.ts"
+  },
+  "devDependencies": {
+    "@changesets/cli": "catalog:",
+    "@oxlint/plugins": "catalog:",
+    "@stryker-mutator/core": "catalog:",
+    "@stryker-mutator/vitest-runner": "catalog:",
+    "@types/node": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@11.4.0"
+}
