@@ -11,7 +11,7 @@ This repo needs a small, reproducible toolchain for TypeScript package authoring
 
 Use pnpm 11 workspaces with strict supply chain settings, vite-plus as the local command front door, strict TypeScript with `exactOptionalPropertyTypes: true`, Vitest for tests, oxlint hard ceilings for repo source, and Vale through doc-garden's Personal dev-tooling profile.
 
-Release readiness is proven by build, `npm pack`, packed-consumer smoke tests, package allowlist checks, and a delegated mutation-testing sweep before first publish. CI runs the local gate plus fixture replay and packed-consumer smoke. OIDC trusted publishing uses a manual workflow until npm trusted-publisher bindings are configured.
+Release readiness is proven by build, `npm pack`, packed-consumer smoke tests, the dedicated package allowlist script, and a delegated mutation-testing sweep before first publish. CI runs the local gate plus fixture replay, package allowlist, and packed-consumer smoke. Mutation testing remains a procedural local publish gate, not a CI gate; keep current evidence in [release readiness](../references/release-readiness.md#mutation-gate-status) and the [mutation sweep report](../references/mutation-sweep-v0-2026-05-31.md) rather than embedding dated scores in this durable ADR. OIDC trusted publishing uses a manual workflow until npm trusted-publisher bindings are configured.
 
 ## Consequences
 

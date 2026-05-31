@@ -8,4 +8,5 @@ Accepted decisions for `backpressure` live here. New ADRs use `template.md` and 
 | [002: Stack and harness](002-stack-and-harness.md) | Accepted | The repo uses pnpm 11, vite-plus, strict TypeScript, oxlint ceilings, Vale, and publish-time artifact checks. |
 | [003: Monorepo scope and naming](003-monorepo-scope-and-naming.md) | Accepted | The repo is `backpressure`; v0 package names stay under `@mplibunao/*`; presets and config files are the opt-in units. |
 | [004: Rule curation and severity posture](004-rule-curation-and-severity-posture.md) | Accepted | The package builds the gaps, ports structural ESLint-only rules, delegates the rest, and grades severity by problem kind. |
+| [005: Repo script language](005-repo-script-language.md) | Accepted | Repo-authored scripts use TypeScript by default so quality and release gates participate in typechecking. |
 

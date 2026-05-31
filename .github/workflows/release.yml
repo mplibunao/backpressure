@@ -48,8 +48,10 @@ jobs:
         run: pnpm check
 
   publish:
-    name: Publish packages
+    name: Publish @mplibunao/oxlint-standards
     needs: check
+    if: github.ref == 'refs/heads/main'
+    environment: npm-publish
     permissions:
       contents: read
       id-token: write
@@ -83,29 +85,11 @@ jobs:
       - name: Build publish artifact
         run: pnpm --filter @mplibunao/oxlint-standards build
 
+      - name: Assert oxlint package allowlist
+        run: SKIP_BUILD=true pnpm oxlint:package:allowlist
+
       - name: Check npm trusted publishing client
-        run: |
-          node - <<'NODE'
-          const { execSync } = require('node:child_process');
-          const minimum = [11, 5, 1];
-          const actual = execSync('npm --version', { encoding: 'utf8' })
-            .trim()
-            .split('.')
-            .map(Number);
-
-          if (actual.length !== minimum.length || actual.some(Number.isNaN)) {
-            throw new Error(`Unable to parse npm version: ${actual.join('.')}`);
-          }
-
-          const differingIndex = actual.findIndex((part, index) => part !== minimum[index]);
-          const ok = differingIndex === -1 || actual[differingIndex] > minimum[differingIndex];
-
-          if (!ok) {
-            throw new Error(`npm ${actual.join('.')} is below required 11.5.1 for trusted publishing provenance`);
-          }
-
-          process.stdout.write(`npm ${actual.join('.')} satisfies trusted publishing requirement\n`);
-          NODE
+        run: node scripts/check-npm-publish-client.ts
 
       - name: Publish @mplibunao/oxlint-standards
         working-directory: packages/oxlint-standards

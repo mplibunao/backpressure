@@ -19,13 +19,12 @@ import {
   printLine,
   removeTempDir,
 } from './script-runtime.ts';
+import { buildOxlintStandards, distPluginPath } from './oxlint-package.ts';
 import {
   type RuleConfig,
   assertDiagnostic,
   assertDiagnosticCount,
   assertDiagnosticLine,
-  buildOxlintStandards,
-  distPluginPath,
   runOxlintOnSource,
 } from './oxlint-real-engine.ts';
 

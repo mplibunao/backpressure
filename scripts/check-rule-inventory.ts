@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { fail, repoRoot } from './script-runtime.ts';
-import { buildOxlintStandards } from './oxlint-real-engine.ts';
+import { buildOxlintStandards } from './oxlint-package.ts';
 
 const distEntryPath = join(repoRoot, 'packages', 'oxlint-standards', 'dist', 'index.js');
 const sourceRoot =

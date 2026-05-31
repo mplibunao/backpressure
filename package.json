@@ -13,6 +13,7 @@
     "fmt": "vp fmt",
     "format": "pnpm fmt",
     "lint": "vp lint --max-warnings 0",
+    "oxlint:package:allowlist": "node scripts/check-oxlint-package-allowlist.ts",
     "pack:dry-run": "pnpm -r --if-present pack:dry-run",
     "prepare": "vp config",
     "prose": "pnpm prose:files",

@@ -1,13 +1,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { oxlintBin, oxlintPackageName } from './oxlint-package.ts';
+
 import {
   type CommandResult,
   assertIncludes,
   commandOutput,
-  ensureSuccess,
   fail,
-  repoRoot,
   runCommand,
 } from './script-runtime.ts';
 
@@ -45,14 +45,9 @@ interface DiagnosticLineAssertion {
   readonly line: number;
 }
 
-export const packageName = '@mplibunao/oxlint-standards';
 const jsonIndentSpaces = 2;
 const outputPreviewLength = 4_000;
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-export const oxlintPackageDir = join(repoRoot, 'packages', 'oxlint-standards');
-export const distPluginPath = join(oxlintPackageDir, 'dist', 'index.js');
-export const oxlintBin = join(repoRoot, 'node_modules', '.bin', 'oxlint');
 
 // Disable all built-in oxlint categories so only plugin rules run during fixture tests.
 const disabledCategories = {
@@ -64,12 +59,14 @@ const disabledCategories = {
   suspicious: 'off',
 };
 
-export const pluginRuleId = (ruleName: string): string => `${packageName}/${ruleName}`;
+export const pluginRuleId = (ruleName: string): string => `${oxlintPackageName}/${ruleName}`;
 
-export const pluginDiagnosticId = (ruleName: string): string => `${packageName}(${ruleName})`;
+export const pluginDiagnosticId = (ruleName: string): string => `${oxlintPackageName}(${ruleName})`;
 
 export const pluginEntryForSpecifier = (pluginSpecifier: string): PluginEntry =>
-  pluginSpecifier === packageName ? packageName : { name: packageName, specifier: pluginSpecifier };
+  pluginSpecifier === oxlintPackageName
+    ? oxlintPackageName
+    : { name: oxlintPackageName, specifier: pluginSpecifier };
 
 export const enabledPluginRules = (rules: RuleConfig): RuleConfig =>
   Object.fromEntries(
@@ -107,17 +104,6 @@ export const runOxlintOnSource = ({
   writeFileSync(sourcePath, source);
 
   return runCommand(command, [...commandPrefixArgs, '--config', configPath, sourcePath], { cwd });
-};
-
-// Set SKIP_BUILD=true when the package is already built (e.g. in pnpm check after pnpm build runs).
-// Standalone script invocations build by default so they remain self-contained.
-export const buildOxlintStandards = (): void => {
-  if (process.env['SKIP_BUILD'] === 'true') {
-    return;
-  }
-
-  const result = runCommand('pnpm', ['--filter', packageName, 'build']);
-  ensureSuccess(result, 'package build');
 };
 
 export const diagnosticCount = (result: CommandResult, ruleName: string): number => {
