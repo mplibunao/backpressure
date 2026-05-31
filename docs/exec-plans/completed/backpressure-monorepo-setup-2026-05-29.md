@@ -99,6 +99,7 @@ Decisions that stay locked and reflected throughout: **port the full catalog bef
 - 2026-05-31: Item 18 mutation workflow baseline landed in commit `c190533` (`test: add mutation testing workflow`). Baseline mutation score was 68.64% on behavioral files.
 - 2026-05-31: Item 18 delegated hardening landed across commits `1bde0e9`, `5ac5641`, `e05ea6c`, `a36f19f`, and `bd91fe6`. The default behavioral mutation gate now passes at **81.81%** (3981 killed + 13 timeout / 4882 total); detailed evidence is in `docs/references/mutation-sweep-v0-2026-05-31.md`.
 - 2026-05-31: Item 19 release readiness landed in commit `c478368` (`chore: finalize oxlint release readiness`). Review and refactor gates were clean. Verification passed: `pnpm typecheck`, `pnpm oxlint:package:allowlist`, the oxlint packed-consumer smoke (renamed to `pnpm smoke:oxlint-packed-consumer` during Item 20), `pnpm check`, `pnpm pack:dry-run`, negative tarball-leak probe, `git diff --check`, and the CLAUDE/AGENTS no-touch guard.
+- 2026-05-31: Item 20 tsconfig package landed in commit `0064460` (`feat: add shared tsconfig package`). Review and refactor gates were clean. Verification passed: `pnpm typecheck`, `pnpm check-release-workflow`, both package allowlist checks, both packed-consumer smokes, `pnpm check`, `pnpm pack:dry-run`, `pnpm prose:files`, `git diff --check`, and AGENTS symlink no-touch guard.
 
 ## Work Items
 

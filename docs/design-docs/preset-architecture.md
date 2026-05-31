@@ -98,6 +98,6 @@ a common construct (needs an import gate, or a stack-neutral preset)?*
 
 ## References
 
-- Setup plan: `docs/exec-plans/active/backpressure-monorepo-setup-2026-05-29.md` (Items 5, 10, 14, 15).
+- Completed setup plan: `docs/exec-plans/completed/backpressure-monorepo-setup-2026-05-29.md` (Items 5, 10, 14, 15).
 - ADR-001 `effect-preset-posture.md` (gen-first, Branch B, carve-out confinement).
 - `rule-pack-architecture.md` (rule sources + jsPlugins substrate; defers here for taxonomy).
