@@ -93,6 +93,8 @@ Before the first publish, migrate the Item 19 oxlint setup away from the old gen
 
 Configure a separate npm Trusted Publishing binding for package `@mplibunao/tsconfig` against the same repository/workflow and the `npm-publish-tsconfig` GitHub environment. Do not add an `NPM_TOKEN` for either package.
 
+Both package settings should use npm's strict publishing access option: require two-factor authentication and disallow tokens. The current npm Trusted Publisher bindings allow both `npm publish` and `npm stage publish`; the repo workflow only invokes `npm publish`, so stage-publish permission is inert unless a future workflow deliberately adopts npm staged publishing.
+
 Each publish job is guarded to run only from `refs/heads/main`. Create and protect both package-specific GitHub environments; only maintainers should be able to approve either environment from `main` after the check job passes. Branch protection remains the separate operational backstop for getting changes onto `main`.
 
 ## CI/release duplication decision
