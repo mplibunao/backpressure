@@ -1,6 +1,6 @@
 {
   "name": "@mplibunao/oxlint-standards",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Opinionated oxlint JS-plugin presets.",
   "license": "MIT",
   "repository": {
