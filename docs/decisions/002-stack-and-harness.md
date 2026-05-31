@@ -18,4 +18,4 @@ Release readiness is proven by build, `npm pack`, packed-consumer smoke tests, t
 - Corepack owns pnpm through `packageManager`; `mise.toml` owns non-npm binaries such as Vale.
 - `vp check` remains the fast local shape, while package scripts expose named `lint`, `typecheck`, `test`, `build`, `prose`, and `check` commands.
 - The repo's own source can adopt stricter oxlint ceilings than legacy repos because this codebase is greenfield.
-- npm trusted publishing needs one binding per package. Configure `@mplibunao/oxlint-standards` against `.github/workflows/release.yml` before the first publish; configure `@mplibunao/tsconfig` separately when Item 20 lands. Do not store an `NPM_TOKEN`.
+- npm trusted publishing needs one binding per package. If npm cannot create the binding before a package exists, perform the one-time first publish manually with passkey authentication from a visible persistent terminal, then configure the binding for future workflow publishes. Do not store an `NPM_TOKEN`.

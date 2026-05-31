@@ -61,9 +61,20 @@ Before the first public publish:
 1. Merge the Changesets adoption PR with the initial changeset.
 2. Let the Version Packages PR open.
 3. Review and merge the Version Packages PR. The first Version Packages PR should bump both packages to `0.1.0`; it also generates the package changelog entries and removes the initial changeset.
-4. Manually dispatch `.github/workflows/release.yml` once for each changed package.
+4. If npm cannot configure Trusted Publishing because the package does not exist yet, do the one-time first publish manually from each package directory. Run manual `npm login` and `npm publish` commands in a visible persistent terminal, such as a tmux pane, so MP can complete passkey or browser authentication without depending on redacted agent output.
+5. Verify the publish with `npm view <package> version dist-tags --json`. `npm access get status <package>` only proves that the package record exists; it does not prove that a version is published.
+6. After the package has a visible npm version, configure the package-specific Trusted Publishing binding, then use `.github/workflows/release.yml` for future publishes.
 
 A Version Packages PR is a release train. After merging it, publish every package versioned by that PR before merging another feature changeset.
+
+## Manual first-publish auth flow
+
+Use this flow only when npm has no existing package version and the package-specific Trusted Publishing binding cannot be created yet. Future publishes should use the release workflow after the binding exists.
+
+1. Open a persistent terminal that MP can see, preferably a tmux pane.
+2. From the package directory, run `npm publish --access public --tag <latest-or-next>`. Use `latest` for a normal release and `next` for a pre-release or canary-style release that should not become the default install target.
+3. If npm asks for passkey or browser authentication, let MP complete the browser flow from that visible terminal. Do not rely on copied agent output for npm's tokenized auth URL; npm and the agent harness can redact or truncate the URL.
+4. Resume only after `npm publish` exits successfully. Verify with `npm view <package> version dist-tags --json`; this is the release proof.
 
 ## GitHub/npm release workflow
 
