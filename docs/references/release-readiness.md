@@ -76,6 +76,8 @@ Use this flow only when npm has no existing package version and the package-spec
 3. If npm asks for passkey or browser authentication, let MP complete the browser flow from that visible terminal. Do not rely on copied agent output for npm's tokenized auth URL; npm and the agent harness can redact or truncate the URL.
 4. Resume only after `npm publish` exits successfully. Verify with `npm view <package> version dist-tags --json`; this is the release proof.
 
+When verifying a package that was just published from MP's machine, beware user-level npm safety config such as `before` or minimum-release-age settings. Those settings can make a newly published package look missing even when npm has published it. For public registry verification, use a clean temporary npm user config: `NPM_CONFIG_USERCONFIG=$(mktemp) npm view <package> version dist-tags --json`. Do not use a clean config for authenticated publish commands; publish commands need MP's npm login state.
+
 ## GitHub/npm release workflow
 
 `pnpm check-release-workflow` verifies that `.github/workflows/release.yml` and this release-readiness reference agree on the package input options, publish job IDs, package-specific GitHub environments, package allowlist commands, and package-specific Changesets release-state checks.
