@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { RuleTester } from 'oxlint/plugins-dev';
-import { describe, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { catalogRules } from './rule-catalog.js';
+import { catalogRuleDefinitions, catalogRules } from './rule-catalog.js';
 import { ruleMessage } from './rule-messages.js';
 
 vi.setConfig({ testTimeout: 1000 });
@@ -82,6 +82,13 @@ run('effect-no-multiple-provide', {
     "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B)).pipe(Effect.provide(C));",
     // Behavior regression: nested standalone pipe(pipe(...)) must be detected as one composed pipeline.
     "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A)), Effect.provide(B));",
+    // Guard regression: inner standalone pipe with 2+ provides must report exactly once (not twice).
+    // Kills isInnerStandalonePipeCall guard mutations: without the guard, the inner pipe is also
+    // Processed and its 2 provides exceed the threshold, producing a double-report.
+    {
+      code: "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A), Effect.provide(B)), Effect.provide(C));",
+      expectedErrors: 1,
+    },
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.provide(effect, Layer.mergeAll(A, B));",
@@ -90,6 +97,13 @@ run('effect-no-multiple-provide', {
     "import * as Effect from 'effect/Effect';\nconst pipe = (...steps: Array<unknown>) => steps;\npipe(effect, Effect.provide(A), Effect.provide(B));",
     // Ownership regression: const pipe alias with multiple provides is owned by no-effect-wrapper-alias.
     "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\nconst run = pipe(pipe(effect, Effect.provide(A)), Effect.provide(B));",
+    // Exactly one provide across a chained member pipe must not report.
+    // Kills recursion mutations in countProvidePipeSteps that double-count the chained segment.
+    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A)).pipe(Effect.map(f));",
+    // Single provide in a simple member pipe — exercises the provideCount > 1 comparison directly.
+    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A));",
+    // Single standalone provide — keeps the boundary test symmetric for both pipe forms.
+    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(effect, Effect.provide(A));",
   ],
 });
 
@@ -144,6 +158,10 @@ run('no-naked-object-state-update', {
     "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => Object.fromEntries(entries));",
     "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => Object.assign(state, patch));",
     "import * as Effect from 'effect/Effect';\nJSON.parse(payload);",
+    // ContainsObjectSpread returns false for plain object with no spread — should not flag.
+    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (s) => ({ count: s.count + 1 }));",
+    // Block-body updater with no spread in return: exercises path 2 of returnsSpreadObject (kills found=true mutation).
+    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => { return { count: state.count + 1 }; });",
   ],
 });
 
@@ -164,7 +182,15 @@ run('no-effect-side-effect-wrapper', {
 run('no-return-in-arrow', {
   invalid: ["import * as Effect from 'effect/Effect';\nitems.map((item) => { return item.id; });"],
   valid: [
-    "import * as Schema from 'effect/Schema';\nSchema.filter((value) => { return value !== null; }, { message: () => 'x' });",
+    // Effect import is required to activate simpleProgramGate so that the
+    // HasSchemaFilterAncestor exemption path is actually exercised.
+    // This set covers both 'Schema' and 'S' as object name, and kills:
+    //   - isSchemaFilterCall propertyName === 'filter' mutation (-> '')
+    //   - isSchemaFilterCall objectName === 'Schema' mutation (-> '')
+    //   - hasSchemaFilterAncestor ancestor callback ConditionalExpression mutations
+    "import * as Effect from 'effect/Effect';\nimport * as Schema from 'effect/Schema';\nSchema.filter((value) => { return value !== null; }, { message: () => 'x' });",
+    // 'S' as alias for Schema — kills objectName === 'S' mutation (-> '').
+    "import * as Effect from 'effect/Effect';\nimport * as S from 'effect/Schema';\nS.filter((value) => { return value !== null; }, { message: () => 'x' });",
   ],
 });
 
@@ -191,9 +217,13 @@ run('no-model-overlay-cast', {
   valid: [
     sourceFixture('no-model-overlay-cast', 'valid-as-const-literal.ts'),
     sourceFixture('no-model-overlay-cast', 'valid-as-const-tuple.ts'),
-    "import * as Effect from 'effect/Effect';\nfunction read() { return value as Domain.User; }",
-    "import * as Effect from 'effect/Effect';\nconst user = makeUser(raw as User);",
-    "import * as Effect from 'effect/Effect';\nitems.map((raw) => raw as User);",
+    'function read() { return value as Domain.User; }',
+    'const user = makeUser(raw as User);',
+    'items.map((raw) => raw as User);',
+    // Let/var declarations must not fire: only const is flagged.
+    // Kills the getNodeField(grandparent, 'kind') === 'const' mutations in the compound guard.
+    "import * as Effect from 'effect/Effect';\nlet user = value as Domain.User;",
+    "import * as Effect from 'effect/Effect';\nvar user = value as Domain.User;",
   ],
 });
 
@@ -211,7 +241,13 @@ run('no-switch-statement', {
 
 run('no-arrow-ladder', {
   invalid: ["import * as Effect from 'effect/Effect';\n((x) => ((y) => y)(x))(value);"],
-  valid: ['const value = ((x) => ((y) => y)(x))(input);'],
+  valid: [
+    'const value = ((x) => ((y) => y)(x))(input);',
+    // Curried non-arrow call must not fire: kills isInlineFunction -> always-true mutations.
+    // With that mutation, getHandler() (a CallExpression callee) is treated as function-like,
+    // Making containsInlineIife return true and producing a false positive.
+    "import * as Effect from 'effect/Effect';\ngetHandler()(value);",
+  ],
 });
 
 run('no-atom-registry-effect-sync', {
@@ -257,6 +293,18 @@ run('no-effect-all-step-sequencing', {
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.asVoid);",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.logInfo('done')], { concurrency: 1 });",
+    // Kills Atom namesFor string and ArrayDeclaration mutations (L2009/L2034):
+    // Without correct @effect-atom/atom-react source, atomNames is empty and Atom.set is not detected.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    // Kills Fiber namesFor mutations (L2012/L2036).
+    "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.interrupt(fiber)], { concurrency: 1 });",
+    // Kills SubscriptionRef namesFor mutations (L2010/L2038).
+    "import * as Effect from 'effect/Effect';\nimport * as SubscriptionRef from 'effect/SubscriptionRef';\nEffect.all([SubscriptionRef.set(ref, value)], { concurrency: 1 });",
+    // Kills Reactivity namesFor mutations (L2011).
+    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
+    // Kills hasDirectPipedAsVoid .some -> .every mutation (L2025):
+    // With .every, all steps must be asVoid; a second step makes .every return false while .some returns true.
+    "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.map(f), Effect.asVoid);",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.all([program], { concurrency: 2 });",
@@ -264,6 +312,8 @@ run('no-effect-all-step-sequencing', {
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => setState(value))], { concurrency: 1 });",
     // Ownership regression: Effect.all inside pipe alias is owned by no-effect-wrapper-alias.
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nconst run = pipe(Effect.all([Ref.set(ref, value)], { concurrency: 1 }), Effect.map(f));",
+    // Fiber import present but no interrupt step — Fiber.get is not a sequential mutation.
+    "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.join(fiber)], { concurrency: 1 });",
   ],
 });
 
@@ -468,7 +518,12 @@ run('no-flatmap-ladder', {
 
 run('no-fromnullable-nullish-coalesce', {
   invalid: ["import * as Option from 'effect/Option';\nOption.fromNullable(value ?? null);"],
-  valid: ["import * as Option from 'effect/Option';\nOption.fromNullable(value);"],
+  valid: [
+    "import * as Option from 'effect/Option';\nOption.fromNullable(value);",
+    // Non-nullish logical operator must not fire: kills operator === '??' mutations.
+    "import * as Option from 'effect/Option';\nOption.fromNullable(value || null);",
+    "import * as Option from 'effect/Option';\nOption.fromNullable(value && null);",
+  ],
 });
 
 run('no-iife-wrapper', {
@@ -513,6 +568,12 @@ run('no-match-effect-branch', {
     "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => { const next = Effect.flatMap(program, f); return next; }));",
     "import * as Option from 'effect/Option';\nimport * as Effect from 'effect/Effect';\nOption.match(input, { onSome: () => Effect.map(program, f), onNone: () => value });",
     "import * as Option from 'effect/Option';\nimport * as Effect from 'effect/Effect';\nOption.match(input, { onSome: () => { const next = Effect.map(program, f); return next; }, onNone: () => value });",
+    // Kills containsPipeCall mutations: branch has Effect work (Effect.succeed) plus a standalone
+    // Pipe() call that sequences it — containsEffectBranchSequencing must return true via containsPipeCall.
+    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => pipe(Effect.succeed(1), doSomething)));",
+    // Kills matchValuePipeHasEffectBranch .some -> .every mutation (L1183):
+    // With .every, ALL steps must be Effect branches; a non-Effect orElse step breaks .every.
+    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => Effect.flatMap(program, f)), Match.orElse(() => fallback));",
   ],
   valid: [
     "import * as Match from 'effect/Match';\nMatch.value(kind).pipe(Match.when('a', () => 'a'));",
@@ -579,6 +640,11 @@ run('no-option-boolean-normalization', {
     "import * as Option from 'effect/Option';\nOption.match(input, { onSome: () => flag === true, onNone: () => false });",
     "import * as Option from 'effect/Option';\nOption.match(input, { onSome: (value) => value !== true, onNone: () => false });",
     "import * as Option from 'effect/Option';\nOption.match(input, { onSome: (value) => value === true, onNone: () => true });",
+    // Kills isIdentifierName(left) && left.name === paramName -> || mutation (L1441):
+    // Param is 'value' but comparison uses 'other'; || makes any identifier match.
+    "import * as Option from 'effect/Option';\nOption.match(input, { onSome: (value) => other === true, onNone: () => false });",
+    // Kills right-side || mutation (L1442): reversed comparison with wrong identifier.
+    "import * as Option from 'effect/Option';\nOption.match(input, { onSome: (value) => true === other, onNone: () => false });",
   ],
 });
 
@@ -596,6 +662,12 @@ run('no-pipe-ladder', {
     "import * as Effect from 'effect/Effect';\nsource.pipe(f).pipe(g);",
     // Ownership regression: const pipe alias whose source contains an Effect call is owned by no-effect-wrapper-alias.
     "import * as Effect from 'effect/Effect';\nconst run = pipe(pipe(Effect.succeed(1), f), g);",
+    // A non-pipe function call in a pipe step must not be detected as a nested pipe.
+    // Kills containsAnyPipeCall || mutation (callee.name === 'pipe' weakened to any identifier).
+    "import * as Effect from 'effect/Effect';\npipe(value, doSomething(x));",
+    // A non-pipe outer function call must not be detected as a pipe expression.
+    // Kills pipeExpressionParts || mutation (isIdentifierName weakened to match non-pipe names).
+    "import * as Effect from 'effect/Effect';\ndoSomething(effect, pipe(a, b));",
   ],
 });
 
@@ -681,11 +753,18 @@ run('no-wrapgraphql-catchall', {
     "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(applyResponse), Effect.catchAll(handle));",
     "import * as Effect from 'effect/Effect';\nprogram.pipe(wrapGraphqlCall(request)).pipe(Effect.catchAll(handle));",
     "import * as Effect from 'effect/Effect';\npipe(pipe(program, Effect.flatMap(applyResponse)), Effect.catchAll(handle));",
+    // Kills pipeContainsGraphqlSourceStep .some -> .every mutation (L913):
+    // Multiple non-catchAll steps where only one (wrapGraphqlCall) is a graphql source.
+    // .every would require ALL steps to be graphql sources, so Effect.map makes it false.
+    "import * as Effect from 'effect/Effect';\npipe(program, Effect.map(value, f), wrapGraphqlCall(request), Effect.catchAll(handle));",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.catchAll(handle));",
     "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.catchAll((error) => applyResponse(error)));",
     "import * as Effect from 'effect/Effect';\nEffect.catchAll(program, (error) => applyResponse(error));",
+    // A non-wrapGraphqlCall function call at the pipe source must not fire.
+    // Kills the isCallToIdentifier callee.name === name -> || mutation (any identifier matches).
+    "import * as Effect from 'effect/Effect';\ndoSomething(request).pipe(Effect.catchAll(handle));",
   ],
 });
 
@@ -744,6 +823,12 @@ run('no-promise-reject', {
     'const reject = (value: unknown) => value; reject(error);',
     'Promise.reject(error);',
     'new Promise((resolve, rejectWith) => { const reject = (value: unknown) => value; reject(error); });',
+    // A non-Promise constructor must not fire: kills callee.name === 'Promise' -> ConditionalExpression
+    // Mutations that make enclosingPromiseExecutor return for any new-expression executor.
+    "import * as Effect from 'effect/Effect';\nnew NotAPromise((resolve, reject) => reject(error));",
+    // A plain function call (not new) must not fire: kills parent.type === 'NewExpression' mutations
+    // That make enclosingPromiseExecutor return for regular function-call executors.
+    "import * as Effect from 'effect/Effect';\ncallFn((resolve, reject) => reject(error));",
   ],
 });
 
@@ -781,12 +866,34 @@ run('no-effect-internal-tags', {
     "import { Option } from 'effect';\nif (option._tag === 'Some') use(option);",
     "import * as Result from 'effect/Result';\nif (result._tag === 'Left') use(result);",
     "import { Result } from 'effect';\nif (result._tag === 'Right') use(result);",
+    // Option/None (tests the 'None' tag string in effectDataModuleTags).
+    "import * as Option from 'effect/Option';\nif (option._tag === 'None') use(option);",
+    // Either module tags.
+    "import * as Either from 'effect/Either';\nif (either._tag === 'Left') use(either);",
+    "import * as Either from 'effect/Either';\nif (either._tag === 'Right') use(either);",
+    // Exit module tags.
+    "import * as Exit from 'effect/Exit';\nif (exit._tag === 'Success') use(exit);",
+    "import * as Exit from 'effect/Exit';\nif (exit._tag === 'Failure') use(exit);",
+    // Cause module — all 8 tags tested together to cover each string mutation.
+    {
+      code: "import * as Cause from 'effect/Cause';\nif (c._tag==='Fail') f();\nif (c._tag==='Die') f();\nif (c._tag==='Interrupt') f();\nif (c._tag==='Sequential') f();\nif (c._tag==='Parallel') f();\nif (c._tag==='Then') f();\nif (c._tag==='Both') f();\nif (c._tag==='Empty') f();",
+      expectedErrors: 8,
+    },
+    // Barrel imports for modules not yet individually tested via `import { M } from 'effect'`.
+    "import { Either } from 'effect';\nif (either._tag === 'Left') use(either);",
+    "import { Exit } from 'effect';\nif (exit._tag === 'Success') use(exit);",
+    "import { Cause } from 'effect';\nif (cause._tag === 'Fail') use(cause);",
   ],
   valid: [
     "if (option._tag === 'Custom') use(option);",
     "import { Effect } from 'effect';\nif (option._tag === 'Some') use(option);",
     "import * as Option from 'effect/Option';\nif (result._tag === 'Success') use(result);",
     "import * as Exit from 'effect/Exit';\nif (option._tag === 'Some') use(option);",
+    // Cause import with a non-internal tag comparison is fine.
+    "import * as Cause from 'effect/Cause';\nif (cause._tag === 'CustomCause') use(cause);",
+    // Type-only import must not activate tag detection: kills importKind === 'type' && -> || mutation.
+    "import type { Option } from 'effect';\nif (option._tag === 'Some') use(option);",
+    "import type * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);",
   ],
 });
 
@@ -795,6 +902,13 @@ run('no-unknown-error-message', {
     "import * as Effect from 'effect/Effect';\nString(error);",
     "import * as Effect from 'effect/Effect';\nerror.message;",
     "import * as Effect from 'effect/Effect';\nconst { message } = error;",
+    // Each additional name kills one isErrorLikeName set-member string mutation.
+    "import * as Effect from 'effect/Effect';\nString(cause);",
+    "import * as Effect from 'effect/Effect';\nerr.message;",
+    "import * as Effect from 'effect/Effect';\nString(reason);",
+    "import * as Effect from 'effect/Effect';\nString(unknownError);",
+    // Single-char alias 'e' — kills the 'e' -> '' set-member mutation.
+    "import * as Effect from 'effect/Effect';\ne.message;",
   ],
   valid: [
     'String(error);',
@@ -810,6 +924,14 @@ run('prefer-yield-tagged-error', {
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* new DomainError(); });",
+    // Non-delegate yield does not trigger the rule (delegate check must be === true).
+    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield Effect.fail(new DomainError()); });",
+    // Non-constructor arg: yield* Effect.fail(variable) cannot be simplified to yield* variable.
+    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(existingError); });",
+    // New Error() is not a tagged error (excluded by callee.name !== 'Error').
+    // Kills the callee.name !== 'Error' -> callee.name !== '' mutation in taggedErrorName,
+    // Which would make new Error() indistinguishable from tagged errors.
+    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(new Error('msg')); });",
   ],
 });
 
@@ -846,12 +968,46 @@ run('no-redundant-primitive-cast', {
 });
 
 run('no-effect-escape-hatch', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.orDie(program);"],
+  invalid: [
+    "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
+    "import * as Effect from 'effect/Effect';\nEffect.die(program);",
+    // Kills escapeHatches 'dieMessage' -> '' and 'orDieWith' -> '' set-member mutations.
+    "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
+    "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+  ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.catch(program, handler);",
     {
       code: "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
       filename: `${process.cwd()}/src/program.test.ts`,
+    },
+    {
+      code: "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
+      // __tests__/ directory pattern in isTestFileName regex.
+      filename: `${process.cwd()}/__tests__/program.ts`,
+    },
+    {
+      code: "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
+      // Tests/ directory at path start in isTestFileName regex.
+      filename: `${process.cwd()}/tests/program.ts`,
+    },
+    {
+      // Unique code (Effect.die) so Stryker assigns a distinct test ID from the orDie case.
+      // Bare relative `tests/` path: kills the /(^|\/)tests?\// mutant that drops `^` anchor.
+      code: "import * as Effect from 'effect/Effect';\nEffect.die(program);",
+      filename: 'tests/program.ts',
+    },
+    {
+      // Unique code (Effect.orDieWith) so Stryker assigns a distinct test ID.
+      // Bare `test/` (singular): kills the tests? → tests mutation (removes `?` quantifier).
+      code: "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+      filename: 'test/program.ts',
+    },
+    {
+      // Unique code (Effect.dieMessage) so Stryker assigns a distinct test ID.
+      // .test.mts extension: kills [cm]? → [^cm]? mutation (m is in [cm] but not [^cm]).
+      code: "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
+      filename: 'src/program.test.mts',
     },
     // Ownership regression: Effect.orDie inside pipe alias is owned by no-effect-wrapper-alias.
     "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.orDie(program), Effect.map(f));",
@@ -879,12 +1035,29 @@ run('prefer-effect-predicate', {
     "import { Predicate } from 'effect';\nitems.filter((value) => value !== null);",
     "import * as Predicate from 'effect/Predicate';\nconst isPresent = (value: string | null) => value !== null;",
     "import * as Effect from 'effect/Effect';\nitems.filter((value) => value !== null);",
+    // Each additional operator kills one nullishOperators set-member string mutation (L51).
+    "import { Predicate } from 'effect';\nconst isAbsent = (value: string | null) => value == null;",
+    "import { Predicate } from 'effect';\nconst isAbsent = (value: string | null) => value === null;",
+    "import { Predicate } from 'effect';\nconst isPresent = (value: string | null) => value != null;",
+    // Reversed-comparison forms exercise the right-side detection path (isIdentifierName(right)).
+    // Kills L1719 ConditionalExpression: "false" mutation (right-side check removed).
+    "import { Predicate } from 'effect';\nconst isPresent = (value: string | null) => null !== value;",
+    "import { Predicate } from 'effect';\nconst isAbsent = (value: string | null) => null === value;",
   ],
   valid: [
     'const isPresent = (value: string | null) => value !== null;',
     "import { Predicate } from 'effect';\nconst isTrue = (value: boolean) => value === true;",
     "import { Predicate } from 'effect';\nconst isPositive = (value: number) => value > 0;",
     "import { Predicate } from 'effect';\nitems.map((value) => value !== null);",
+    // Kills isIdentifierName(left) && left.name === paramName -> || mutation (L1718):
+    // Comparison uses a different identifier than the param; || makes any identifier match.
+    "import { Predicate } from 'effect';\nconst isPresent = (value: string | null) => other !== null;",
+    // Kills isIdentifierName(right) && right.name === paramName -> || mutation (L1719):
+    // Reversed comparison with wrong identifier on right side.
+    "import { Predicate } from 'effect';\nconst isPresent = (value: string | null) => null !== other;",
+    // Kills params.length !== 1 || ... -> && mutation (L1699): two-param predicate is not nullish.
+    // Without the length guard, a (value, other) => value !== null function would be falsely detected.
+    "import { Predicate } from 'effect';\nconst isPresent = (value: string | null, other: unknown) => value !== null;",
   ],
 });
 
@@ -907,6 +1080,10 @@ run('no-double-cast', {
     'const value = raw as Input as User;',
     'const value = raw as User as unknown;',
     '// lint-allow-double-cast: legacy external payload boundary\nconst value = raw as unknown as User;',
+    // No space between colon and reason — [^\S\r\n]* allows zero spaces.
+    '// lint-allow-double-cast:nospace\nconst value = raw as unknown as User;',
+    // Single-char reason: kills [^\r\n] (no * quantifier) mutation which requires ≥2 chars after colon.
+    '// lint-allow-double-cast: x\nconst value = raw as unknown as User;',
     'const value = /* lint-allow-double-cast: legacy external payload boundary */ raw as unknown as User;',
     { code: 'const value = raw as unknown as User;', filename: 'eslint.config.ts' },
     { code: 'const value = raw as unknown as User;', filename: 'scripts/codegen.ts' },
@@ -941,9 +1118,40 @@ writeFileSync(
   join(crossPkgTestRoot, 'packages', 'group', 'pkg-b', 'package.json'),
   '{"name":"group-pkg-b"}',
 );
+// Apps workspace: apps/web and apps/api — exercises the 'apps' marker in workspaceRootMarkers.
+mkdirSync(join(crossPkgTestRoot, 'apps', 'web', 'src'), { recursive: true });
+writeFileSync(join(crossPkgTestRoot, 'apps', 'web', 'package.json'), '{"name":"web"}');
+mkdirSync(join(crossPkgTestRoot, 'apps', 'api', 'src'), { recursive: true });
+writeFileSync(join(crossPkgTestRoot, 'apps', 'api', 'package.json'), '{"name":"api"}');
 process.on('exit', () => {
   rmSync(crossPkgTestRoot, { recursive: true, force: true });
 });
+
+// Tested here because the main run() helper only imports catalogRules. These assertions kill
+// The ArrowFunction and ObjectLiteral survivors on the Object.entries().map() export.
+describe('catalog rule definitions export', () => {
+  it('exports name and rule for every catalog entry', () => {
+    expect(catalogRuleDefinitions).toHaveLength(Object.keys(catalogRules).length);
+    for (const def of catalogRuleDefinitions) {
+      expect(def.name).toBeDefined();
+      expect(def.rule).toBe(catalogRules[def.name]);
+    }
+  });
+});
+
+// Rule metadata correctness: kills the ObjectLiteral (meta:{} / docs:{}) and StringLiteral
+// (description/recommended/type empty-string) mutations on every rule's meta block.
+describe('catalog rule metadata', () => {
+  it('each rule has a description, recommended severity, and type', () => {
+    for (const [, rule] of Object.entries(catalogRules)) {
+      // The empty-key mutation (message("")) produces ruleMessage(''); any real description differs.
+      expect(rule.meta?.docs?.description).not.toBe(ruleMessage(''));
+      expect(rule.meta?.docs?.recommended).toMatch(/^(error|warn)$/);
+      expect(rule.meta?.type).toMatch(/^(problem|suggestion)$/);
+    }
+  });
+});
+
 run('no-cross-package-relative-imports', {
   invalid: [
     {
@@ -960,6 +1168,13 @@ run('no-cross-package-relative-imports', {
       code: "import { value } from '../../pkg-b';",
       filename: join(crossPkgTestRoot, 'packages', 'pkg-a', 'src', 'file.ts'),
     },
+    // Behavior regression: 'apps' workspace marker — apps/web to apps/api.
+    // Kills workspaceRootMarkers 'apps' string mutations: without 'apps' in the set,
+    // WorkspacePackageRoot returns null and no violation is detected.
+    {
+      code: "import { value } from '../../api/src/handler';",
+      filename: join(crossPkgTestRoot, 'apps', 'web', 'src', 'file.ts'),
+    },
   ],
   valid: [
     {
@@ -975,6 +1190,11 @@ run('no-cross-package-relative-imports', {
       code: "import { value } from '../shared/value';",
       filename: join(crossPkgTestRoot, 'packages', 'group', 'pkg-a', 'src', 'feature.ts'),
     },
+    // Cross-app import within the same apps/web package is valid (same package root).
+    {
+      code: "import { value } from '../shared/value';",
+      filename: join(crossPkgTestRoot, 'apps', 'web', 'src', 'feature.ts'),
+    },
     // These paths have no package.json; workspacePackageRoot returns null for both
     // From and to, so no cross-package report is emitted (trivially valid).
     {
@@ -984,6 +1204,13 @@ run('no-cross-package-relative-imports', {
     {
       code: "import { value } from '../shared/value';",
       filename: `${process.cwd()}/examples/demo/src/feature/file.ts`,
+    },
+    // Import resolving far above the workspace root: toPackage is null (no package.json along the
+    // Resolved path under a workspace marker). Kills the fromPackage !== null || toPackage !== null
+    // (|| vs &&) mutation: with ||, fromPackage being non-null alone would trigger a report.
+    {
+      code: "import { value } from '../../../../../../../../outside';",
+      filename: join(crossPkgTestRoot, 'packages', 'pkg-a', 'src', 'file.ts'),
     },
   ],
 });
