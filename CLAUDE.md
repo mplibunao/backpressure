@@ -3,7 +3,7 @@
 This repo is MP's personal monorepo for code-quality backpressure tooling. The v0 scope is intentionally narrow:
 
 - `@mplibunao/oxlint-standards`: opinionated oxlint JS-plugin presets.
-- `@mplibunao/tsconfig`: strict shared TypeScript configs, planned after the oxlint package proves the pipeline.
+- `@mplibunao/tsconfig`: strict shared TypeScript configs.
 
 ## Start here
 

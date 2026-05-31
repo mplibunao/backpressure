@@ -72,6 +72,8 @@ importers:
 
   packages/oxlint-standards: {}
 
+  packages/tsconfig: {}
+
 packages:
 
   '@babel/code-frame@7.29.0':

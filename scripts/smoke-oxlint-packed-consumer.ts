@@ -9,89 +9,51 @@ import {
   ensureSuccess,
   printLine,
   removeTempDir,
-  repoRoot,
   runCommand,
 } from './script-runtime.ts';
 import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './oxlint-package.ts';
 import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './oxlint-real-engine.ts';
 import { ruleMessage } from '../packages/oxlint-standards/src/rule-messages.ts';
-import { canonicalVersions, packageManagerSpec } from './version-pins.ts';
-import { runNpmPackTarballJson } from './npm-pack.ts';
+import { canonicalVersions } from './version-pins.ts';
 import { assertOxlintPackedArtifact } from './oxlint-package-artifact-assertions.ts';
+import {
+  installConsumerDevDependencies,
+  installPackedTarball,
+  packWorkspacePackage,
+  writeJsonFile,
+  writeTempConsumerPackageJson,
+} from './packed-consumer-harness.ts';
 
-const jsonIndentSpaces = 2;
 const packDestinationPrefix = 'backpressure-pack-';
 const consumerPrefix = 'backpressure-consumer-';
 const typeConsumerPrefix = 'backpressure-type-consumer-';
-const npmCacheDir = join(repoRoot, '.npm-cache');
 const versions = canonicalVersions();
 const consumerOxlintVersion = `oxlint@${versions.oxlint}`;
 const consumerTypescriptVersion = `typescript@${versions.typescript}`;
-const consumerPackageManager = packageManagerSpec();
 const noEffectAsRules: RuleConfig = {
   'no-effect-as': 'error',
 };
 const noBarrelImportRules: RuleConfig = {
   'no-barrel-import': 'error',
 };
-interface PackedPackage {
-  readonly files: ReadonlyArray<string>;
-  readonly tarballPath: string;
-}
-
-const packPackage = (packDestination: string): PackedPackage => {
-  const packed = runNpmPackTarballJson({
-    cache: npmCacheDir,
-    cwd: oxlintPackageDir,
-    label: 'npm pack',
-    packDestination,
-  });
-
-  return {
-    files: packed.files,
-    tarballPath: packed.tarballPath,
-  };
-};
-
-const writeConsumerPackageJson = (consumerDir: string, name: string) => {
-  writeFileSync(
-    join(consumerDir, 'package.json'),
-    `${JSON.stringify({ name, packageManager: consumerPackageManager, private: true, type: 'module' }, null, jsonIndentSpaces)}\n`,
-  );
-};
-
 const prepareConsumer = (consumerDir: string, tarballPath: string) => {
-  writeConsumerPackageJson(consumerDir, 'backpressure-smoke-consumer');
-
-  const addOxlintResult = runCommand(
-    'pnpm',
-    ['add', '--save-dev', consumerOxlintVersion, '--ignore-scripts'],
-    {
-      cwd: consumerDir,
-    },
+  writeTempConsumerPackageJson(consumerDir, 'backpressure-smoke-consumer');
+  installConsumerDevDependencies(
+    consumerDir,
+    [consumerOxlintVersion],
+    'install consumer-local oxlint',
   );
-  ensureSuccess(addOxlintResult, 'install consumer-local oxlint');
-
-  const addResult = runCommand('pnpm', ['add', tarballPath, '--ignore-scripts'], {
-    cwd: consumerDir,
-  });
-  ensureSuccess(addResult, 'install packed package');
+  installPackedTarball(consumerDir, tarballPath, 'install packed package');
 };
 
 const prepareTypeConsumer = (consumerDir: string, tarballPath: string) => {
-  writeConsumerPackageJson(consumerDir, 'backpressure-type-consumer');
-
-  const addTypeScriptResult = runCommand(
-    'pnpm',
-    ['add', '--save-dev', consumerTypescriptVersion, '--ignore-scripts'],
-    { cwd: consumerDir },
+  writeTempConsumerPackageJson(consumerDir, 'backpressure-type-consumer');
+  installConsumerDevDependencies(
+    consumerDir,
+    [consumerTypescriptVersion],
+    'install consumer-local TypeScript',
   );
-  ensureSuccess(addTypeScriptResult, 'install consumer-local TypeScript');
-
-  const addPackageResult = runCommand('pnpm', ['add', tarballPath, '--ignore-scripts'], {
-    cwd: consumerDir,
-  });
-  ensureSuccess(addPackageResult, 'install packed package for type smoke');
+  installPackedTarball(consumerDir, tarballPath, 'install packed package for type smoke');
 };
 
 const assertMainEntryExports = (consumerDir: string) => {
@@ -127,24 +89,17 @@ const assertMainEntryTypes = (consumerDir: string) => {
     throw new Error('type smoke unexpectedly installed @oxlint/plugins');
   }
 
-  writeFileSync(
-    join(consumerDir, 'tsconfig.json'),
-    `${JSON.stringify(
-      {
-        compilerOptions: {
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          noEmit: true,
-          skipLibCheck: false,
-          strict: true,
-          target: 'ES2022',
-        },
-        include: ['contract.ts'],
-      },
-      null,
-      jsonIndentSpaces,
-    )}\n`,
-  );
+  writeJsonFile(join(consumerDir, 'tsconfig.json'), {
+    compilerOptions: {
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      noEmit: true,
+      skipLibCheck: false,
+      strict: true,
+      target: 'ES2022',
+    },
+    include: ['contract.ts'],
+  });
   writeFileSync(
     join(consumerDir, 'contract.ts'),
     `import { effectPreset, generalPreset, plugin, ruleManifest } from ${JSON.stringify(oxlintPackageName)};\n\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst manifestCount: number = ruleManifest.length;\n\nif (!noEffectAsInPlugin || !effectRule || !generalRule || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
@@ -194,7 +149,7 @@ const typeConsumerDir = createTempDir(typeConsumerPrefix);
 
 try {
   buildOxlintStandards();
-  const packed = packPackage(packDestination);
+  const packed = packWorkspacePackage(oxlintPackageDir, packDestination, 'npm pack');
   assertOxlintPackedArtifact(packed.files);
   prepareTypeConsumer(typeConsumerDir, packed.tarballPath);
   assertMainEntryTypes(typeConsumerDir);

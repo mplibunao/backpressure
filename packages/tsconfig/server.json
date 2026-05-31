@@ -1,0 +1,8 @@
+{
+  "$comment": "Server and CLI packages run under Bun by default.",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["bun-types"]
+  }
+}

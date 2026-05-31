@@ -1,0 +1,31 @@
+{
+  "name": "@mplibunao/tsconfig",
+  "version": "0.0.0",
+  "description": "Strict shared TypeScript configs.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mplibunao/backpressure.git",
+    "directory": "packages/tsconfig"
+  },
+  "files": [
+    "base.json",
+    "server.json",
+    "browser.json",
+    "LICENSE",
+    "NOTICE.md"
+  ],
+  "exports": {
+    "./base.json": "./base.json",
+    "./server.json": "./server.json",
+    "./browser.json": "./browser.json",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "pack:dry-run": "node ../../scripts/check-tsconfig-package-allowlist.ts",
+    "pack:dry-run:no-build": "node ../../scripts/check-tsconfig-package-allowlist.ts"
+  }
+}
