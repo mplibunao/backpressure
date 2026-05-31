@@ -7,9 +7,9 @@
  *
  * no-effect-as-message.ts is a single message-string constant; same reason as
  * rule-messages.ts — tests reference the same source constant, so string mutations
- * are invisible. Baseline sweep confirmed equivalent (0%, 1 survivor).
+ * are invisible. Historical evidence lives in docs/references/mutation-sweep-v0-2026-05-31.md.
  */
-const STATIC_FILES = [
+const DEFAULT_BEHAVIORAL_EXCLUSIONS = [
   '!packages/oxlint-standards/src/rule-manifest.ts',
   '!packages/oxlint-standards/src/rule-messages.ts',
   '!packages/oxlint-standards/src/plugin.ts',
@@ -19,11 +19,11 @@ const STATIC_FILES = [
 /*
  * Always excluded: re-exports, test files, manifest selection (generated shape),
  * and build-time utilities. These are excluded in all modes including STRYKER_SWEEP.
- * utils/reports.ts is a build-time-only utility — 2 no-coverage mutants, never
- * reached by tests. See docs/references/mutation-testing.md for exclusion policy;
- * the dated sweep report keeps only historical per-file evidence.
+ * utils/reports.ts is build-time-only support, not rule behavior. See
+ * docs/references/mutation-testing.md for exclusion policy; the dated sweep report
+ * keeps historical per-file evidence.
  */
-const ALWAYS_EXCLUDED = [
+const UNIVERSAL_MUTATION_EXCLUSIONS = [
   '!packages/oxlint-standards/src/**/*.test.ts',
   '!packages/oxlint-standards/src/**/index.ts',
   '!packages/oxlint-standards/src/rule-manifest-selection.ts',
@@ -38,17 +38,19 @@ const ALWAYS_EXCLUDED = [
  *
  * The default is the publish-gate score. STRYKER_SWEEP is for investigation only.
  */
+const SOURCE_MUTATION_GLOB = 'packages/oxlint-standards/src/**/*.ts';
+
 const resolveMutate = () => {
   if ('STRYKER_MUTATE' in process.env && process.env.STRYKER_MUTATE !== '') {
     return [process.env.STRYKER_MUTATE];
   }
   if (process.env.STRYKER_SWEEP === '1') {
-    return ['packages/oxlint-standards/src/**/*.ts', ...ALWAYS_EXCLUDED];
+    return [SOURCE_MUTATION_GLOB, ...UNIVERSAL_MUTATION_EXCLUSIONS];
   }
   return [
-    'packages/oxlint-standards/src/**/*.ts',
-    ...ALWAYS_EXCLUDED,
-    ...STATIC_FILES,
+    SOURCE_MUTATION_GLOB,
+    ...UNIVERSAL_MUTATION_EXCLUSIONS,
+    ...DEFAULT_BEHAVIORAL_EXCLUSIONS,
   ];
 };
 

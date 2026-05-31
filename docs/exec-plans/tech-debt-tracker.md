@@ -1,6 +1,6 @@
 # Technical debt tracker
 
-This tracker holds accepted deferrals. A deferral is not real until it is written here or in the relevant future-phase stub.
+This tracker holds accepted deferrals. A deferral is not real until it is written here or in the relevant future-phase stub. IDs are stable; gaps mean a prior deferral was completed or removed rather than renumbered.
 
 ## Deferred from v0 baseline
 
@@ -19,10 +19,6 @@ Grow `general` and `boundaries` only when a rule is stack-neutral or architectur
 ### TD-004: ESLint RuleTester cross-check
 
 Oxlint RuleTester is the primary runtime because it proves parser parity. Add ESLint RuleTester only as an optional portability cross-check after the first structural rules are stable.
-
-### TD-005: Mutation testing workflow
-
-Mutation testing is a delegated publish-readiness sweep, never a CI job. Adapt the tome.nvim Stryker orchestrator and worker skills when the rule catalog exists.
 
 ### TD-006: Optional hygiene gates
 
@@ -43,7 +39,7 @@ Stryker complements these, it does not replace them. Mutation testing finds cove
 
 ### TD-009: Catalog domain split and replay-scenario consolidation
 
-WG3 refactor review on 2026-05-31 extracted shared import, wrapper-ownership, side-effect, preset, and script-runtime helpers, but deliberately did not split `rule-catalog.ts` into domain subcatalog files or centralize the full RuleTester/replay scenario corpus. The catalog still has cross-rule ownership predicates that are easy to break when moved blindly, and the replay matrix is the current behavior oracle. Trigger this cleanup after WG3 is merged and before adding the next large rule family: first create generated before/after rule maps and replay-case snapshots, then split one domain at a time (`general`, `boundaries`, `effect-react`, then `effect`) and move shared scenario strings into a test-support module only when the snapshots prove identical membership, diagnostic counts, and branch IDs.
+WG3 refactor review on 2026-05-31 extracted shared import, wrapper-ownership, side-effect, preset, and script-runtime helpers, but deliberately did not split `rule-catalog.ts` into domain subcatalog files, centralize the full RuleTester/replay scenario corpus, or extract repeated AST/mock-context builders from mutation-hardening utility tests into a test-support module. The catalog still has cross-rule ownership predicates that are easy to break when moved blindly, and the replay matrix is the current behavior oracle. Trigger this cleanup after WG3 is merged and before adding the next large rule family: first create generated before/after rule maps and replay-case snapshots, then split one domain at a time (`general`, `boundaries`, `effect-react`, then `effect`) and move shared scenario strings into a test-support module only when the snapshots prove identical membership, diagnostic counts, and branch IDs.
 
 ### TD-010: `no-effect-as` named barrel import policy
 

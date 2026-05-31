@@ -91,7 +91,6 @@ describe('side-effect call detection — true cases', () => {
   });
 
   it('calling Effect.logError() is a side effect — startsWith("log") covers all variants', () => {
-    // Kills the StringLiteral→"" survivor: startsWith("") is always true, breaking specificity
     expect(
       isSideEffectCall(importCtx('Effect'), memberCall('Effect', 'logError'), effects, atoms),
     ).toBe(true);
@@ -102,13 +101,11 @@ describe('side-effect call detection — true cases', () => {
 
 describe('side-effect call detection — false cases', () => {
   it('an Identifier node is not a side effect — type guard rejects non-CallExpressions', () => {
-    // Kills ConditionalExpression→false and BlockStatement→{} survivors on the type guard
     expect(isSideEffectCall(bareCtx, id('setState'), effects, atoms)).toBe(false);
   });
 
-  it('unknown identifier call is not a side effect — exercises the null StaticMemberCall path', () => {
-    // An identifier callee that is not setState/invalidate falls through to getStaticMemberCall.
-    // Null result exercises the `if (call === null) { return false }` branch.
+  it('unknown identifier call is not a side effect', () => {
+    // Only the known direct calls and static member calls count as side effects.
     expect(isSideEffectCall(bareCtx, identifierCall('dispatch'), effects, atoms)).toBe(false);
   });
 
@@ -117,22 +114,20 @@ describe('side-effect call detection — false cases', () => {
   });
 
   it('calling Atom.set() without an import reference is not a side effect', () => {
-    // The isNamespaceImportReference && is load-bearing; bareCtx has no import bindings
+    // Atom.set only counts when Atom resolves to an actual namespace import.
     expect(isSideEffectCall(bareCtx, memberCall('Atom', 'set'), effects, atoms)).toBe(false);
   });
 
   it('calling Atom.get() is not a side effect — property must equal "set"', () => {
-    // Kills ConditionalExpression→true on `propertyName === "set"`: with that mutation the
-    // && collapses to only the namespace check, which is true here, so the result would flip.
+    // Namespace ownership alone is not enough; only Atom.set is treated as a side effect.
     expect(isSideEffectCall(importCtx('Atom'), memberCall('Atom', 'get'), effects, atoms)).toBe(
       false,
     );
   });
 
   it('calling Effect.debug() is not a side effect — method must start with "log"', () => {
-    // Kills LogicalOperator→|| and StringLiteral→"" survivors:
-    // With ||, the namespace check is true here and flips the result.
-    // With startsWith(""), "debug" starts with "", also flipping the result.
+    // Namespace ownership alone is not enough for Effect calls.
+    // The Effect method must specifically be a log-style method.
     expect(
       isSideEffectCall(importCtx('Effect'), memberCall('Effect', 'debug'), effects, atoms),
     ).toBe(false);
@@ -147,8 +142,6 @@ describe('side-effect call detection — false cases', () => {
 
 describe('side-effect containment', () => {
   it('returns false for null input', () => {
-    // Kills BooleanLiteral→true (found stays true, walkDescendants is a no-op → returns true).
-    // And ConditionalExpression→true on isNodeLike (isSideEffectCall(ctx, null) throws).
     expect(containsSideEffectCall(bareCtx, null, effects, atoms)).toBe(false);
   });
 
@@ -158,13 +151,11 @@ describe('side-effect containment', () => {
   });
 
   it('returns true when the node itself is a side effect call', () => {
-    // Kills removal of the isNodeLike block: walkDescendants would only see the callee
-    // Identifier (not a CallExpression) and return false.
+    // The root node itself must be checked before walking only its children.
     expect(containsSideEffectCall(bareCtx, identifierCall('setState'), effects, atoms)).toBe(true);
   });
 
   it('returns true when a descendant is a side effect call', () => {
-    // Kills removal of the walkDescendants call
     const node = {
       type: 'ExpressionStatement',
       expression: identifierCall('invalidate'),
@@ -174,8 +165,6 @@ describe('side-effect containment', () => {
   });
 
   it('preserves found=true after a subsequent non-side-effect descendant', () => {
-    // Kills `found = found || X` → `found = X`: walkDescendants visits the callee Identifier
-    // After the setState call; that visit returns false and would reset found without the ||.
     const node = {
       type: 'BlockStatement',
       body: [identifierCall('setState'), id('x')],

@@ -130,7 +130,6 @@ describe('importSpecifierName()', () => {
   });
 
   it('returns string value when imported is a string literal', () => {
-    // Exercises the getStringLiteralValue fallback branch
     expect(importSpecifierName(namedStringSpecifier('default', 'myDefault'))).toBe('default');
   });
 });
@@ -158,7 +157,7 @@ describe('collectImportNames() — namespace specifiers', () => {
   });
 
   it('for effect barrel with null importedName: includes all namespace aliases', () => {
-    // Condition: importedName === null → add regardless of alias name
+    // A null imported-name filter means every namespace alias from the source is accepted.
     expect(
       collectImportNames(prog(importDecl('effect', [nsSpecifier('Option')])), ['effect'], null),
     ).toStrictEqual(new Set(['Option']));
@@ -209,7 +208,7 @@ describe('collectImportNames() — named specifiers', () => {
   });
 
   it('excludes type-only named specifiers even when importedName matches', () => {
-    // When importKind is 'type' on the specifier, the && chain short-circuits
+    // Type-only specifiers must not activate runtime import detection.
     expect(
       collectImportNames(
         prog(importDecl('effect', [namedSpecifier('Effect', 'Effect', 'type')])),
@@ -328,8 +327,7 @@ describe('collectEffectNamespaceImports()', () => {
 // Private function exercised through collectNamespaceImports and hasImportFrom.
 describe('isRuntimeImportDeclaration boundary (some vs every)', () => {
   it('returns true when at least one specifier is a runtime value import', () => {
-    // Kills some→every mutation: with every, the type-only specifier fails the predicate
-    // And the whole import would be wrongly treated as type-only
+    // One runtime specifier is enough for the declaration to count as a runtime import.
     const decl = prog(
       importDecl('effect', [namedSpecifier('TypeA', 'TypeA', 'type'), namedSpecifier('Val')]),
     );
@@ -371,7 +369,6 @@ describe('hasImportFrom()', () => {
   });
 
   it('returns false for a program containing only non-import statements', () => {
-    // Kills BooleanLiteral: return false → return true for non-ImportDeclaration statements
     expect(
       hasImportFrom(mixedProg([{ type: 'ExpressionStatement', range: RANGE }]), ['effect']),
     ).toBe(false);
@@ -405,7 +402,6 @@ describe('hasEffectTypeOrRuntimeImport()', () => {
   });
 
   it('returns false for a program containing only non-import statements', () => {
-    // Kills BooleanLiteral: return false → return true for non-ImportDeclaration statements
     expect(
       hasEffectTypeOrRuntimeImport(mixedProg([{ type: 'ExpressionStatement', range: RANGE }])),
     ).toBe(false);
@@ -441,15 +437,13 @@ describe('isNamespaceImportReference()', () => {
     ).toBe(true);
   });
 
-  it('returns false when name is not in namespaceNames — short-circuits before variable lookup', () => {
-    // Kills BooleanLiteral→true on the has() check
+  it('returns false when name is not in namespaceNames', () => {
     expect(isNamespaceImportReference(importCtx('Foo'), ident('Foo'), new Set(['Effect']))).toBe(
       false,
     );
   });
 
   it('returns false when variable is not found in scope chain', () => {
-    // Kills BooleanLiteral→true on the null-check: variable is null → must return false
     expect(isNamespaceImportReference(bareCtx, ident('Effect'), new Set(['Effect']))).toBe(false);
   });
 
@@ -464,7 +458,6 @@ describe('isNamespaceImportReference()', () => {
   });
 
   it('returns true when the variable has at least one ImportBinding def among mixed definitions', () => {
-    // Kills some→every: with every, the non-ImportBinding Variable def would cause false
     expect(
       isNamespaceImportReference(
         ctxWithDefs([{ type: 'ImportBinding' }, { type: 'Variable' }]),
@@ -475,8 +468,7 @@ describe('isNamespaceImportReference()', () => {
   });
 
   it('resolves variable from an upper (parent) scope', () => {
-    // Kills mutations to the while-loop condition: variable is only in the parent scope,
-    // So failing to walk up would produce null and return false
+    // Namespace references must resolve through parent scopes, not just the immediate scope.
     expect(isNamespaceImportReference(parentScopeCtx, ident('Effect'), new Set(['Effect']))).toBe(
       true,
     );

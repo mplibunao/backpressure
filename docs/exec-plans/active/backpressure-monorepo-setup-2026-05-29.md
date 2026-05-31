@@ -92,7 +92,12 @@ Decisions that stay locked and reflected throughout: **port the full catalog bef
 ## Implementation Progress
 
 - 2026-05-30: Items 1, 2, 3, 4, and 9 landed in commit `cc3b87e` (`chore: scaffold backpressure baseline`). Review and refactor gates were clean. Baseline verification passed: `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm pack:dry-run`, `pnpm prose:commit`, and `git diff --check`.
+- 2026-05-30: Baseline progress docs landed in commit `b663414` (`docs: record baseline progress`).
 - 2026-05-30: Items 5, 6, 7, and 8 landed in commit `14cf39a` (`feat: add oxlint plugin substrate`). Review and refactor gates were clean. Verification passed: `pnpm check`, `pnpm pack:dry-run`, packed-consumer runtime and TypeScript smoke, fixture replay, and `git diff --check`.
+- 2026-05-30: Plugin substrate progress docs landed in commit `8005f0f` (`docs: record plugin substrate progress`).
+- 2026-05-31: Items 10, 11, 12, 13, 14, 15, 16, and 17 landed in commit `491deb1` (`feat: add oxlint rule catalog and presets`). Verification passed: rule inventory, fixture replay, packed-consumer smoke, `pnpm check`, `pnpm pack:dry-run`, and `git diff --check`.
+- 2026-05-31: Item 18 mutation workflow baseline landed in commit `c190533` (`test: add mutation testing workflow`). Baseline mutation score was 68.64% on behavioral files.
+- 2026-05-31: Item 18 delegated hardening landed across commits `1bde0e9`, `5ac5641`, `e05ea6c`, `a36f19f`, and `bd91fe6`. The default behavioral mutation gate now passes at **81.81%** (3981 killed + 13 timeout / 4882 total); detailed evidence is in `docs/references/mutation-sweep-v0-2026-05-31.md`.
 
 ## Work Items
 
@@ -260,7 +265,7 @@ The manifest also locks the **2026-05-30 recon additions/corrections**:
 **Key files:** `stryker.config.mjs`, `package.json` (`test:mutation`), `.claude/skills/{mutation-orchestrator,mutation-worker}/SKILL.md`, `docs/references/mutation-testing.md`. Reference (lift from): `tome.nvim/stryker.config.mjs`, `tome.nvim/docs/references/mutation-testing.md`, `tome.nvim/.claude/skills/tome-mutation-{orchestrator,worker}/SKILL.md`, `tome.nvim/docs/exec-plans/active/testing-practices-mutation-foundation.md`.
 **Dependencies:** Items 3, 6, 12, 13, 14.
 **Size:** L.
-**Hardening order** (baseline 68.64%; target 80%+): `utils/side-effects.ts` (59.62%) → `utils/imports.ts` (67.63%) → `utils/effect-ownership.ts` (70.35%) → `utils/ast.ts` (79.07%) → `rule-catalog.ts` (68.03%, scope by rule section). See `docs/references/mutation-sweep-v0-2026-05-31.md` for full baseline data.
+**Status:** complete. The behavioral default gate now passes at **81.81%** (target 80%+). See `docs/references/mutation-sweep-v0-2026-05-31.md` for baseline, hardening, and survivor-classification evidence.
 
 ### Item 19 — Finalize release-readiness checks
 **Goal:** Make publishability boring and repeatable.

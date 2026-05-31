@@ -48,13 +48,11 @@ describe('isNodeLike()', () => {
     expect(isNodeLike(null)).toBe(false);
   });
 
-  it('returns false when range is absent — exercises the range-in-value guard', () => {
-    // Kills ConditionalExpression 33:22 — 'range' in value → true removes the range check
+  it('returns false when range is absent', () => {
     expect(isNodeLike({ type: 'Program' })).toBe(false);
   });
 
-  it('returns false when type is not a string — exercises the typeof type guard', () => {
-    // Kills ConditionalExpression 33:22 — typeof value['type'] === 'string' → true
+  it('returns false when type is not a string', () => {
     expect(isNodeLike({ type: RANGE, range: RANGE })).toBe(false);
   });
 });
@@ -70,13 +68,11 @@ describe('isIdentifierName()', () => {
     expect(isIdentifierName(null)).toBe(false);
   });
 
-  it('returns false when type is not "Identifier" — exercises the type equality guard', () => {
-    // Kills ConditionalExpression 36:22 — value['type'] === 'Identifier' → true
+  it('returns false when type is not "Identifier"', () => {
     expect(isIdentifierName({ type: 'Literal', name: 'foo', range: RANGE })).toBe(false);
   });
 
-  it('returns false when name is not a string — exercises the typeof name guard', () => {
-    // Kills ConditionalExpression 36:56 — typeof value['name'] === 'string' → true
+  it('returns false when name is not a string', () => {
     expect(isIdentifierName({ type: 'Identifier', name: RANGE, range: RANGE })).toBe(false);
   });
 });
@@ -88,8 +84,7 @@ describe('getStringLiteralValue()', () => {
     expect(getStringLiteralValue({ value: 'hello' })).toBe('hello');
   });
 
-  it('returns null for null — exercises the isRecord guard', () => {
-    // Kills ConditionalExpression 39:7 — !isRecord(value) → false removes the null check
+  it('returns null for null', () => {
     expect(getStringLiteralValue(null)).toBeNull();
   });
 
@@ -111,8 +106,7 @@ describe('getStaticMemberExpression()', () => {
     expect(getStaticMemberExpression(null)).toBeNull();
   });
 
-  it('returns null when type is not "MemberExpression" — exercises the type guard', () => {
-    // Kills ConditionalExpression 48:22 — value['type'] === 'MemberExpression' → true
+  it('returns null when type is not "MemberExpression"', () => {
     const notMember = {
       type: 'CallExpression',
       computed: false,
@@ -123,19 +117,16 @@ describe('getStaticMemberExpression()', () => {
     expect(getStaticMemberExpression(notMember)).toBeNull();
   });
 
-  it('returns null for a computed member expression — exercises the computed guard', () => {
-    // Kills ConditionalExpression 48:62 — value['computed'] === false → true
+  it('returns null for a computed member expression', () => {
     expect(getStaticMemberExpression(memberExpr(ident('x'), ident('y'), true))).toBeNull();
   });
 
-  it('returns null when the object is not an Identifier — exercises the left side of ||', () => {
-    // Kills ConditionalExpression 55:7 (whole condition → false) and LogicalOperator 55:7 (|| → &&)
+  it('returns null when the object is not an Identifier', () => {
     const literal = { type: 'Literal', value: 'x', range: RANGE };
     expect(getStaticMemberExpression(memberExpr(literal, ident('y')))).toBeNull();
   });
 
-  it('returns null when the property is not an Identifier — exercises the right side of ||', () => {
-    // Kills LogicalOperator 55:7 (|| → &&): only the right side fails so && would not fire
+  it('returns null when the property is not an Identifier', () => {
     const literal = { type: 'Literal', value: 'y', range: RANGE };
     expect(getStaticMemberExpression(memberExpr(ident('x'), literal))).toBeNull();
   });
@@ -144,14 +135,12 @@ describe('getStaticMemberExpression()', () => {
 // ── getStaticMemberCall ───────────────────────────────────────────────────────
 
 describe('getStaticMemberCall()', () => {
-  it('returns null for null — exercises the null guard', () => {
-    // Kills ConditionalExpression/LogicalOperator at 68:7 and ConditionalExpression at 68:35:
-    // || → && makes the null check miss null (typeof null === 'object'), causing a throw.
+  it('returns null for null', () => {
+    // Null must be rejected before property access because typeof null is 'object'.
     expect(getStaticMemberCall(null)).toBeNull();
   });
 
-  it('returns null for a string — exercises the typeof guard', () => {
-    // Kills the ConditionalExpression 68:7 mutations that remove the typeof check
+  it('returns null for a string', () => {
     expect(getStaticMemberCall('hello')).toBeNull();
   });
 
@@ -175,14 +164,12 @@ describe('getStaticMemberCall()', () => {
 // ── getNodeField ──────────────────────────────────────────────────────────────
 
 describe('getNodeField()', () => {
-  it('returns null for null — exercises the null guard', () => {
-    // Kills ConditionalExpression/LogicalOperator at 76:7 and ConditionalExpression at 76:35:
-    // || → && causes null to pass through to getOwnPropertyDescriptor, which throws.
+  it('returns null for null', () => {
+    // Null must be rejected before descriptor lookup because typeof null is 'object'.
     expect(getNodeField(null, 'type')).toBeNull();
   });
 
-  it('returns null for a string — exercises the typeof guard', () => {
-    // Kills ConditionalExpression 76:7 mutations that weaken the typeof check
+  it('returns null for a string', () => {
     expect(getNodeField('hello', 'type')).toBeNull();
   });
 
@@ -225,7 +212,7 @@ describe('hasAncestor()', () => {
     expect(hasAncestor(child, (ancestor) => ancestor.type === 'Program')).toBe(true);
   });
 
-  it('returns true when a grandparent matches — exercises the while-loop walk', () => {
+  it('returns true when a grandparent matches', () => {
     const grandparent = mkNode('Program');
     const parent = mkNode('BlockStatement', { parent: grandparent });
     const child = mkNode('ExpressionStatement', { parent });
@@ -254,8 +241,7 @@ describe('walkDescendants()', () => {
     expect(visited).toContain(child);
   });
 
-  it('skips non-NodeLike items in arrays — exercises the isNodeLike(item) guard', () => {
-    // Kills ConditionalExpression 117:13 — isNodeLike(item) → true would visit the string
+  it('skips non-NodeLike items in arrays', () => {
     const nodeChild = mkNode('Identifier');
     const root = mkNode('Program', { body: ['skip-me', nodeChild] });
     const visited: Array<NodeLike> = [];
@@ -279,8 +265,7 @@ describe('walkDescendants()', () => {
     expect(visited).toHaveLength(0);
   });
 
-  it('skips the loc key — exercises the ignoredTraversalKeys guard', () => {
-    // Kills StringLiteral 27:49 — 'loc' → '': without the loc entry, locChild would be visited
+  it('skips the loc key', () => {
     const locChild = mkNode('Identifier');
     const root = mkNode('Program', { loc: locChild });
     const visited: Array<NodeLike> = [];

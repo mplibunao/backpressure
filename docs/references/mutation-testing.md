@@ -43,10 +43,10 @@ Not every surviving mutant is a problem. Classify before acting:
 
 The orchestrator owns the full lifecycle. See `.claude/skills/mutation-orchestrator/SKILL.md`.
 
-1. Verify baseline is green (`pnpm check && pnpm test`)
+1. Verify baseline is green (`pnpm check`)
 2. For each file, spawn a separate agent to follow the worker skill (one file per agent, sequentially)
 3. Run combined mutation report
-4. Final validation (`pnpm check && pnpm test`)
+4. Final validation (`pnpm check`)
 
 ### Worker (single-file loop)
 
@@ -65,11 +65,16 @@ The worker runs one file through the mutation cycle. See `.claude/skills/mutatio
 | Baseline / final gate (orchestrator) | `pnpm check` |
 | Worker iteration gate | `pnpm test` |
 | Single-file mutation run | `STRYKER_MUTATE=<repo-relative path> pnpm test:mutation` |
-| Full evidence sweep (includes static/equivalent files) | `STRYKER_SWEEP=1 pnpm test:mutation` |
+| Full evidence sweep (includes static/equivalent files except always-excluded build/test support) | `STRYKER_SWEEP=1 pnpm test:mutation` |
 
-**Allowed test surface** (the only files that may appear dirty at the end of a worker pass):
+## Allowed worker edit surface
+
+Only these test or test-support files may appear dirty at the end of a worker pass:
+
 - `packages/oxlint-standards/src/**/*.test.ts` (package test files)
 - `scripts/fixture-replay.ts` (fixture replay helper)
+
+Production source files, Stryker artifacts (`reports/mutation/`), and unexpected scripts are blockers. The orchestrator may commit allowed-surface changes between workers; standalone workers should start from and return to a clean tree except for accepted allowed-surface edits.
 
 ## Mutation targets
 
@@ -81,7 +86,7 @@ The primary target class is pure-function rule logic and AST helpers: determinis
 
 Static/equivalent data files (message strings, manifest metadata, plugin identity constants) and build-time utilities are excluded from the behavioral gate by default. Exact exclusion logic is in `stryker.config.mjs`.
 
-### Performance expectations
+## Performance expectations
 
 | File size | Estimated mutation time |
 |---|---|
@@ -92,7 +97,7 @@ Static/equivalent data files (message strings, manifest metadata, plugin identit
 
 `rule-catalog.ts` is around 3700 lines. Expect the longest runs there. Scope with `STRYKER_MUTATE` to test individual files or subsets.
 
-### Score guidelines
+## Score guidance
 
 | Score | Quality | Action |
 |---|---|---|
@@ -104,7 +109,7 @@ Static/equivalent data files (message strings, manifest metadata, plugin identit
 ### Error handling
 
 - **Stryker fails to run**: check `stryker.config.mjs` syntax and plugin versions. Ensure `pnpm test` passes first.
-- **Tests break after changes**: revert last test changes and try a different approach. Never commit broken tests.
+- **Tests break after changes**: revert the last test changes and try a different approach. Never commit broken tests.
 - **Diminishing returns**: after 2 iterations with under 5% total improvement, stop. The remaining survivors are likely equivalent.
 - **Large file + low initial score**: report the score and estimated iterations before burning cycles. Consider splitting the work.
 - **`@ts-nocheck` artifacts**: Stryker instruments files during runs. If a run is interrupted, check that no `// @ts-nocheck` comments were left in source files.
