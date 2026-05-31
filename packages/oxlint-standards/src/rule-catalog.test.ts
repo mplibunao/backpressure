@@ -23,11 +23,7 @@ interface CatalogFixture {
   readonly filename?: string;
 }
 
-const upstreamFixtureRoot = join(
-  '/Users/mp/references/effect-ts/biome-effect-linting-rules',
-  'tests',
-  'fixtures',
-);
+const upstreamFixtureRoot = join(process.cwd(), 'test-fixtures', 'linteffect', 'tests', 'fixtures');
 
 const sourceFixture = (ruleName: string, fileName: string): string =>
   readFileSync(join(upstreamFixtureRoot, ruleName, fileName), 'utf8');

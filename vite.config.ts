@@ -10,6 +10,7 @@ const toolIgnorePatterns = [
   'node_modules/**',
   '**/node_modules/**',
   'styles/**',
+  'test-fixtures/**',
 ];
 
 export default defineConfig({

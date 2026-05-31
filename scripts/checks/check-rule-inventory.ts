@@ -8,8 +8,7 @@ import { buildOxlintStandards } from '../packages/oxlint-standards/package.ts';
 
 const distEntryPath = join(repoRoot, 'packages', 'oxlint-standards', 'dist', 'index.js');
 const sourceRoot =
-  process.env['LINTEFFECT_SOURCE_ROOT'] ??
-  '/Users/mp/references/effect-ts/biome-effect-linting-rules';
+  process.env['LINTEFFECT_SOURCE_ROOT'] ?? join(repoRoot, 'test-fixtures', 'linteffect');
 const rulesDir = join(sourceRoot, 'rules');
 const configDir = join(sourceRoot, 'configs');
 const fixtureRoot = join(sourceRoot, 'tests', 'fixtures');

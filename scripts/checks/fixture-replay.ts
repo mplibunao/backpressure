@@ -18,6 +18,7 @@ import {
   ensureSuccess,
   printLine,
   removeTempDir,
+  repoRoot,
 } from '../lib/script-runtime.ts';
 import { buildOxlintStandards, distPluginPath } from '../packages/oxlint-standards/package.ts';
 import {
@@ -56,11 +57,7 @@ const typeOnlyEffectFalsePositiveControls = new Map(
   ]),
 );
 
-const linteffectFixtureRoot = join(
-  '/Users/mp/references/effect-ts/biome-effect-linting-rules',
-  'tests',
-  'fixtures',
-);
+const linteffectFixtureRoot = join(repoRoot, 'test-fixtures', 'linteffect', 'tests', 'fixtures');
 
 interface ReplayCaseOptions {
   readonly branchIds?: ReadonlyArray<string>;
