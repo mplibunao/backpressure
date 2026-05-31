@@ -4,9 +4,15 @@ Status: accepted baseline policy.
 
 ## Policy
 
-The repo uses doc-garden's Personal dev-tooling Vale profile for current docs by default. Current docs include README files, `CLAUDE.md`, ADRs, design docs, package docs, and reference docs.
+The repo uses doc-garden's Personal dev-tooling Vale profile across README files, `CLAUDE.md`, ADRs, design docs, package docs, reference docs, exec plans, investigations, and `docs/reports/**`. Root-level `reports/` is outside the current prose gate.
 
-Historical and evidence docs get scoped exceptions. `docs/exec-plans/**` and `docs/investigations/**` preserve research notes, quoted evidence, terse labels, and planning language. Vale still checks those files, but `.vale.ini` disables the noisy rules that would rewrite evidence rather than improve the current product docs.
+Historical and evidence docs follow these rules:
+
+- Preserve historical meaning. Do not rewrite a decision, plan, investigation, or report so it says something different from what happened.
+- Apply generic readability rules to historical and evidence docs.
+- Prefer repo vocabulary or meaning-preserving rewrites over scoped Vale disables.
+- Escalate when a Vale rule cannot be satisfied without changing the record.
+- Do not reintroduce historical-doc scoped Vale disables.
 
 The prose gate blocks from v0:
 
