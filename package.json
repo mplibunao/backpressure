@@ -19,6 +19,8 @@
     "check-release-workflow": "node scripts/checks/check-release-workflow.ts",
     "pack:dry-run": "pnpm -r --if-present pack:dry-run",
     "prepare": "vp config",
+    "release": "pnpm release:prepare && changeset publish",
+    "release:prepare": "pnpm build && node scripts/checks/check-npm-publish-client.ts && node scripts/checks/check-changesets-release-state.ts && SKIP_BUILD=true pnpm oxlint:package:allowlist && pnpm tsconfig:package:allowlist && SKIP_BUILD=true pnpm smoke:oxlint-packed-consumer && pnpm smoke:tsconfig-packed-consumer",
     "prose": "pnpm prose:files",
     "prose:commit": "scripts/prose-commit.sh",
     "prose:files": "scripts/prose-files.sh",
@@ -28,7 +30,6 @@
     "test:mutation": "stryker run",
     "typecheck": "tsc -b",
     "version-packages": "changeset version && pnpm install --lockfile-only",
-    "version-packages:checked": "pnpm version-packages && pnpm check",
     "versions:check": "node scripts/checks/check-version-pins.ts",
     "tsconfig:package:allowlist": "node scripts/packages/tsconfig/check-package-allowlist.ts",
     "smoke:tsconfig-packed-consumer": "node scripts/packages/tsconfig/smoke-packed-consumer.ts"

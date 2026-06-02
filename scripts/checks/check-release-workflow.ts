@@ -1,55 +1,35 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
+import {
+  assertNoForbiddenReleaseWorkflowAuth,
+  expectedReleasePrepareScript,
+  expectedReleaseScript,
+} from '../lib/release-contract.ts';
 import { fail, printLine, repoRoot } from '../lib/script-runtime.ts';
 
-interface ReleasePackageContract {
-  readonly allowlistCommand: string;
-  readonly environment: string;
-  readonly inputOption: string;
-  readonly jobId: string;
-  readonly releaseStateCommand: string;
+interface ReleaseWorkflowContractInput {
+  readonly releaseReadiness: string;
+  readonly scripts: Record<string, string>;
+  readonly workflow: string;
 }
 
 const releaseWorkflowPath = join(repoRoot, '.github', 'workflows', 'release.yml');
 const releaseReadinessPath = join(repoRoot, 'docs', 'references', 'release-readiness.md');
-const npmPublishClientCheckCommand = 'node scripts/checks/check-npm-publish-client.ts';
+const packageJsonPath = join(repoRoot, 'package.json');
 
 const missingIndex = -1;
-
-const packageContracts: ReadonlyArray<ReleasePackageContract> = [
-  {
-    allowlistCommand: 'SKIP_BUILD=true pnpm oxlint:package:allowlist',
-    environment: 'npm-publish-oxlint-standards',
-    inputOption: 'oxlint-standards',
-    jobId: 'publish-oxlint-standards',
-    releaseStateCommand:
-      'node scripts/checks/check-changesets-release-state.ts --package oxlint-standards',
-  },
-  {
-    allowlistCommand: 'pnpm tsconfig:package:allowlist',
-    environment: 'npm-publish-tsconfig',
-    inputOption: 'tsconfig',
-    jobId: 'publish-tsconfig',
-    releaseStateCommand: 'node scripts/checks/check-changesets-release-state.ts --package tsconfig',
-  },
-];
-
+const githubTokenExpression = ['GITHUB_TOKEN: $', '{{ secrets.GITHUB_TOKEN }}'].join('');
+const bracketGithubTokenExpression = ['GITHUB_TOKEN: $', '{{ secrets["GITHUB_TOKEN"] }}'].join('');
 const readText = (path: string): string => readFileSync(path, 'utf8');
 
-const sectionUntilNextJob = (workflow: string, jobId: string): string => {
-  const jobStart = workflow.indexOf(`  ${jobId}:\n`);
-  if (jobStart === missingIndex) {
-    return fail(`release workflow is missing job ${jobId}.`);
-  }
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
-  const sectionStart = jobStart + `  ${jobId}:\n`.length;
-  const nextJobMatch = /\n {2}[a-zA-Z0-9_-]+:\n/u.exec(workflow.slice(sectionStart));
-  const sectionEnd =
-    typeof nextJobMatch?.index === 'number' ? sectionStart + nextJobMatch.index : workflow.length;
-  return workflow.slice(sectionStart, sectionEnd);
-};
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  isObjectRecord(value) && Object.values(value).every((item) => typeof item === 'string');
 
 const assertIncludes = (text: string, expected: string, label: string): void => {
   if (!text.includes(expected)) {
@@ -57,59 +37,134 @@ const assertIncludes = (text: string, expected: string, label: string): void => 
   }
 };
 
-const assertPackageInputOptions = (workflow: string): void => {
-  const optionsStart = workflow.indexOf('      package:');
-  if (optionsStart === missingIndex) {
-    fail('release workflow is missing workflow_dispatch.inputs.package.');
+const readPackageScripts = (): Record<string, string> => {
+  const parsed: unknown = JSON.parse(readText(packageJsonPath));
+  if (isObjectRecord(parsed)) {
+    const candidate = parsed['scripts'];
+    return isStringRecord(candidate)
+      ? candidate
+      : fail('package.json scripts must be a string map.');
   }
 
-  const optionsSection = workflow.slice(
-    optionsStart,
-    workflow.indexOf('      npm_tag:', optionsStart),
-  );
-  for (const contract of packageContracts) {
-    assertIncludes(optionsSection, `          - ${contract.inputOption}`, 'package input options');
+  return fail('package.json must be a JSON object.');
+};
+
+const sectionUntilNextJob = (workflow: string, jobId: string): string => {
+  const marker = `  ${jobId}:\n`;
+  const jobStart = workflow.indexOf(marker);
+  if (jobStart === missingIndex) {
+    return fail(`release workflow is missing jobs.${jobId}.`);
+  }
+
+  const sectionStart = jobStart + marker.length;
+  const nextJobMatch = /\n {2}[a-zA-Z0-9_-]+:\n/u.exec(workflow.slice(sectionStart));
+  if (typeof nextJobMatch?.index === 'number') {
+    return workflow.slice(jobStart, sectionStart + nextJobMatch.index);
+  }
+
+  return workflow.slice(jobStart);
+};
+
+const stepUsingAction = (job: string, action: string): string => {
+  const usesIndex = job.indexOf(`uses: ${action}`);
+  if (usesIndex === missingIndex) {
+    return fail(`jobs.release must include a step using ${action}.`);
+  }
+
+  const stepStart = job.lastIndexOf('\n      - ', usesIndex);
+  if (stepStart === missingIndex) {
+    return fail(`${action} must be inside a workflow step.`);
+  }
+
+  const sectionStart = stepStart + '\n      - '.length;
+  const nextStepMatch = /\n {6}- /u.exec(job.slice(sectionStart));
+  if (typeof nextStepMatch?.index === 'number') {
+    return job.slice(stepStart, sectionStart + nextStepMatch.index);
+  }
+
+  return job.slice(stepStart);
+};
+
+export const assertReleaseWorkflowContract = ({
+  releaseReadiness,
+  scripts,
+  workflow,
+}: ReleaseWorkflowContractInput): void => {
+  assertIncludes(workflow, 'on:\n  push:\n    branches:\n      - main', 'release workflow');
+  assertIncludes(workflow, 'permissions:\n  contents: read', 'release workflow');
+  assertNoForbiddenReleaseWorkflowAuth(workflow);
+
+  if (workflow.includes('workflow_dispatch:\n    inputs:')) {
+    fail('release workflow must not expose manual per-package dispatch inputs.');
+  }
+
+  if (workflow.includes('environment:')) {
+    fail('release workflow must not use GitHub environments for manual publish approval.');
+  }
+
+  const releaseJob = sectionUntilNextJob(workflow, 'release');
+  for (const snippet of [
+    "if: github.ref == 'refs/heads/main'",
+    'contents: write',
+    'pull-requests: write',
+    'id-token: write',
+    'registry-url: https://registry.npmjs.org',
+  ]) {
+    assertIncludes(releaseJob, snippet, 'jobs.release');
+  }
+
+  const changesetsStep = stepUsingAction(releaseJob, 'changesets/action@v1');
+  for (const snippet of [
+    'version: pnpm version-packages',
+    'publish: pnpm release',
+    'createGithubReleases: true',
+    "NPM_CONFIG_PROVENANCE: 'true'",
+  ]) {
+    assertIncludes(changesetsStep, snippet, 'jobs.release changesets/action step');
+  }
+
+  if (
+    !changesetsStep.includes(githubTokenExpression) &&
+    !changesetsStep.includes(bracketGithubTokenExpression)
+  ) {
+    fail(
+      'jobs.release changesets/action step must include GITHUB_TOKEN from secrets.GITHUB_TOKEN.',
+    );
+  }
+
+  if (scripts['release'] !== expectedReleaseScript) {
+    fail(`package.json release script must be exactly ${JSON.stringify(expectedReleaseScript)}.`);
+  }
+
+  if (scripts['release:prepare'] !== expectedReleasePrepareScript) {
+    fail(
+      `package.json release:prepare script must be exactly ${JSON.stringify(expectedReleasePrepareScript)}.`,
+    );
+  }
+
+  for (const snippet of [
+    'merges the Version Packages PR',
+    'automatically publishes',
+    'GitHub releases',
+    'Trusted Publishing',
+    '.github/workflows/release.yml',
+    'environment field blank/unset',
+  ]) {
+    assertIncludes(releaseReadiness, snippet, 'docs/references/release-readiness.md');
   }
 };
 
-const assertPackageJobs = (workflow: string): void => {
-  for (const contract of packageContracts) {
-    const job = sectionUntilNextJob(workflow, contract.jobId);
-    assertIncludes(job, `environment: ${contract.environment}`, `${contract.jobId} environment`);
-    assertIncludes(
-      job,
-      `inputs.package == '${contract.inputOption}'`,
-      `${contract.jobId} package guard`,
-    );
-    assertIncludes(job, `run: ${contract.allowlistCommand}`, `${contract.jobId} allowlist command`);
-    assertIncludes(
-      job,
-      `run: ${contract.releaseStateCommand}`,
-      `${contract.jobId} release state check`,
-    );
-    assertIncludes(
-      job,
-      `run: ${npmPublishClientCheckCommand}`,
-      `${contract.jobId} npm trusted publishing client check`,
-    );
-  }
+const run = (): void => {
+  assertReleaseWorkflowContract({
+    releaseReadiness: readText(releaseReadinessPath),
+    scripts: readPackageScripts(),
+    workflow: readText(releaseWorkflowPath),
+  });
+
+  printLine('release workflow contract check passed');
 };
 
-const assertReleaseDocsMentionEnvironments = (releaseReadiness: string): void => {
-  for (const contract of packageContracts) {
-    assertIncludes(
-      releaseReadiness,
-      contract.environment,
-      `docs/references/release-readiness.md environment for ${contract.inputOption}`,
-    );
-  }
-};
-
-const workflow = readText(releaseWorkflowPath);
-const releaseReadiness = readText(releaseReadinessPath);
-
-assertPackageInputOptions(workflow);
-assertPackageJobs(workflow);
-assertReleaseDocsMentionEnvironments(releaseReadiness);
-
-printLine('release workflow contract check passed');
+const [, entrypoint] = process.argv;
+if (typeof entrypoint === 'string' && import.meta.url === pathToFileURL(entrypoint).href) {
+  run();
+}

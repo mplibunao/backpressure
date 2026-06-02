@@ -9,7 +9,6 @@ const misePath = join(repoRoot, 'mise.toml');
 const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'ci.yml'),
   join(repoRoot, '.github', 'workflows', 'release.yml'),
-  join(repoRoot, '.github', 'workflows', 'version-packages.yml'),
 ];
 
 interface RootPackageJson {
