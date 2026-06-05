@@ -36,6 +36,8 @@ Candidate post-v0 preset for catching fake or assertion-free tests, the kind age
 
 Stryker complements these, it does not replace them. Mutation testing finds coverage gaps in a slow batch; these rules name the bad-test shape at write time. A `no-mock-echo` test over a thin pass-through wrapper can still earn a clean mutation score while testing nothing real.
 
+When these rules ship, they are candidates to distill into taste-distillery canon as a test-integrity / anti-slop-tests card. taste-distillery deliberately does not pre-track this item; it distills from shipped evidence instead.
+
 ### TD-009: Catalog domain split and replay-scenario consolidation
 
 WG3 refactor review on 2026-05-31 extracted shared import, wrapper-ownership, side-effect, preset, and script-runtime helpers. The review deliberately left three follow-ups: keep `rule-catalog.ts` unsplit, keep the full RuleTester/replay scenario corpus in place, and keep repeated AST/mock-context builders inside mutation-hardening utility tests instead of moving them to a test-support module. The catalog still has cross-rule ownership predicates that can break when moved blindly, and the replay matrix is the current behavior oracle. Trigger this cleanup after WG3 is merged and before adding the next large rule family: first create generated before/after rule maps and replay-case snapshots, then split one domain at a time (`general`, `boundaries`, `effect-react`, then `effect`). Move shared scenario strings into a test-support module only when the snapshots prove identical membership and diagnostics, plus stable branch IDs.
