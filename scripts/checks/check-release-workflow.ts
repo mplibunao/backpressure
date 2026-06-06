@@ -7,6 +7,7 @@ import {
   assertNoForbiddenReleaseWorkflowAuth,
   expectedReleasePrepareScript,
   expectedReleaseScript,
+  githubTokenSecretExpressionPattern,
 } from '../lib/release-contract.ts';
 import { fail, printLine, repoRoot } from '../lib/script-runtime.ts';
 
@@ -16,13 +17,31 @@ interface ReleaseWorkflowContractInput {
   readonly workflow: string;
 }
 
+interface IndentedKeyValueAssertion {
+  readonly key: string;
+  readonly keyIndent: number;
+  readonly label: string;
+  readonly text: string;
+  readonly value: string;
+}
+
+interface IndentedKeyMatchAssertion {
+  readonly key: string;
+  readonly keyIndent: number;
+  readonly label: string;
+  readonly pattern: RegExp;
+  readonly text: string;
+}
+
 const releaseWorkflowPath = join(repoRoot, '.github', 'workflows', 'release.yml');
 const releaseReadinessPath = join(repoRoot, 'docs', 'references', 'release-readiness.md');
 const packageJsonPath = join(repoRoot, 'package.json');
 
 const missingIndex = -1;
-const githubTokenExpression = ['GITHUB_TOKEN: $', '{{ secrets.GITHUB_TOKEN }}'].join('');
-const bracketGithubTokenExpression = ['GITHUB_TOKEN: $', '{{ secrets["GITHUB_TOKEN"] }}'].join('');
+const releaseJobBlockIndent = 4;
+const releaseJobFieldIndent = 6;
+const releaseStepBlockIndent = 8;
+const releaseStepFieldIndent = 10;
 const readText = (path: string): string => readFileSync(path, 'utf8');
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
@@ -34,6 +53,65 @@ const isStringRecord = (value: unknown): value is Record<string, string> =>
 const assertIncludes = (text: string, expected: string, label: string): void => {
   if (!text.includes(expected)) {
     fail(`${label} must include ${expected}.`);
+  }
+};
+
+const spaces = (count: number): string => ' '.repeat(count);
+
+const indentedBlock = (text: string, key: string, keyIndent: number, label: string): string => {
+  const header = `${spaces(keyIndent)}${key}:`;
+  const lines = text.split('\n');
+  const headerIndex = lines.findIndex((line) => line.trimEnd() === header);
+  if (headerIndex === missingIndex) {
+    return fail(`${label} must include ${key}.`);
+  }
+
+  const blockLines: Array<string> = [];
+  for (const line of lines.slice(headerIndex + 1)) {
+    if (line.trim() === '') {
+      blockLines.push(line);
+      continue;
+    }
+
+    const lineIndent = /^ */u.exec(line)?.[0].length ?? 0;
+    if (lineIndent <= keyIndent) {
+      break;
+    }
+
+    blockLines.push(line);
+  }
+
+  return blockLines.join('\n');
+};
+
+const valueForIndentedKey = (text: string, key: string, keyIndent: number): string | undefined => {
+  const prefix = `${spaces(keyIndent)}${key}:`;
+  const line = text.split('\n').find((candidate) => candidate.trimEnd().startsWith(prefix));
+  return line?.slice(prefix.length).trim();
+};
+
+const assertIndentedKeyValue = ({
+  key,
+  keyIndent,
+  label,
+  text,
+  value,
+}: IndentedKeyValueAssertion): void => {
+  if (valueForIndentedKey(text, key, keyIndent) !== value) {
+    fail(`${label} must set ${key}: ${value}.`);
+  }
+};
+
+const assertIndentedKeyMatches = ({
+  key,
+  keyIndent,
+  label,
+  pattern,
+  text,
+}: IndentedKeyMatchAssertion): void => {
+  const value = valueForIndentedKey(text, key, keyIndent);
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    fail(`${label} must set ${key} from secrets.GITHUB_TOKEN.`);
   }
 };
 
@@ -115,6 +193,156 @@ const stepUsingAction = (job: string, action: string): string => {
   return job.slice(stepStart);
 };
 
+const assertReleaseWorkflowBasics = (activeWorkflow: string): void => {
+  assertIncludes(activeWorkflow, 'on:\n  push:\n    branches:\n      - main', 'release workflow');
+  assertIncludes(activeWorkflow, 'permissions:\n  contents: read', 'release workflow');
+  assertNoForbiddenReleaseWorkflowAuth(activeWorkflow);
+
+  if (activeWorkflow.includes('workflow_dispatch:\n    inputs:')) {
+    fail('release workflow must not expose manual per-package dispatch inputs.');
+  }
+
+  if (activeWorkflow.includes('environment:')) {
+    fail('release workflow must not use GitHub environments for manual publish approval.');
+  }
+};
+
+const assertReleaseJobPermissions = (releaseJob: string): void => {
+  const releasePermissions = indentedBlock(
+    releaseJob,
+    'permissions',
+    releaseJobBlockIndent,
+    'jobs.release',
+  );
+  assertIndentedKeyValue({
+    key: 'contents',
+    keyIndent: releaseJobFieldIndent,
+    label: 'jobs.release.permissions',
+    text: releasePermissions,
+    value: 'write',
+  });
+  assertIndentedKeyValue({
+    key: 'pull-requests',
+    keyIndent: releaseJobFieldIndent,
+    label: 'jobs.release.permissions',
+    text: releasePermissions,
+    value: 'write',
+  });
+  assertIndentedKeyValue({
+    key: 'id-token',
+    keyIndent: releaseJobFieldIndent,
+    label: 'jobs.release.permissions',
+    text: releasePermissions,
+    value: 'write',
+  });
+};
+
+const assertSetupNodeStep = (releaseJob: string): void => {
+  const setupNodeStep = stepUsingAction(releaseJob, 'actions/setup-node@v6');
+  const setupNodeWith = indentedBlock(
+    setupNodeStep,
+    'with',
+    releaseStepBlockIndent,
+    'jobs.release actions/setup-node step',
+  );
+  assertIndentedKeyValue({
+    key: 'registry-url',
+    keyIndent: releaseStepFieldIndent,
+    label: 'jobs.release actions/setup-node step with',
+    text: setupNodeWith,
+    value: 'https://registry.npmjs.org',
+  });
+};
+
+const assertChangesetsActionWith = (changesetsStep: string): void => {
+  const changesetsWith = indentedBlock(
+    changesetsStep,
+    'with',
+    releaseStepBlockIndent,
+    'jobs.release changesets/action step',
+  );
+  assertIndentedKeyValue({
+    key: 'version',
+    keyIndent: releaseStepFieldIndent,
+    label: 'jobs.release changesets/action step with',
+    text: changesetsWith,
+    value: 'pnpm version-packages',
+  });
+  assertIndentedKeyValue({
+    key: 'publish',
+    keyIndent: releaseStepFieldIndent,
+    label: 'jobs.release changesets/action step with',
+    text: changesetsWith,
+    value: 'pnpm release',
+  });
+  assertIndentedKeyValue({
+    key: 'createGithubReleases',
+    keyIndent: releaseStepFieldIndent,
+    label: 'jobs.release changesets/action step with',
+    text: changesetsWith,
+    value: 'true',
+  });
+};
+
+const assertChangesetsActionEnv = (changesetsStep: string): void => {
+  const changesetsEnv = indentedBlock(
+    changesetsStep,
+    'env',
+    releaseStepBlockIndent,
+    'jobs.release changesets/action step',
+  );
+  assertIndentedKeyMatches({
+    key: 'GITHUB_TOKEN',
+    keyIndent: releaseStepFieldIndent,
+    label: 'jobs.release changesets/action step env',
+    pattern: githubTokenSecretExpressionPattern,
+    text: changesetsEnv,
+  });
+  assertIndentedKeyValue({
+    key: 'NPM_CONFIG_PROVENANCE',
+    keyIndent: releaseStepFieldIndent,
+    label: 'jobs.release changesets/action step env',
+    text: changesetsEnv,
+    value: "'true'",
+  });
+};
+
+const assertReleaseJobStructure = (activeWorkflow: string): void => {
+  const releaseJob = sectionUntilNextJob(activeWorkflow, 'release');
+  assertIncludes(releaseJob, "if: github.ref == 'refs/heads/main'", 'jobs.release');
+  assertReleaseJobPermissions(releaseJob);
+  assertSetupNodeStep(releaseJob);
+
+  const changesetsStep = stepUsingAction(releaseJob, 'changesets/action@v1');
+  assertChangesetsActionWith(changesetsStep);
+  assertChangesetsActionEnv(changesetsStep);
+};
+
+const assertPackageScripts = (scripts: Record<string, string>): void => {
+  if (scripts['release'] !== expectedReleaseScript) {
+    fail(`package.json release script must be exactly ${JSON.stringify(expectedReleaseScript)}.`);
+  }
+
+  if (scripts['release:prepare'] !== expectedReleasePrepareScript) {
+    fail(
+      `package.json release:prepare script must be exactly ${JSON.stringify(expectedReleasePrepareScript)}.`,
+    );
+  }
+};
+
+const assertReleaseReadinessDocs = (releaseReadiness: string): void => {
+  for (const snippet of [
+    'merges the Version Packages PR',
+    'automatically publishes',
+    'GitHub releases',
+    'Trusted Publishing',
+    '.github/workflows/release.yml',
+    'environment field blank/unset',
+  ]) {
+    assertIncludes(releaseReadiness, snippet, 'docs/references/release-readiness.md');
+  }
+};
+
 export const assertReleaseWorkflowContract = ({
   releaseReadiness,
   scripts,
@@ -127,68 +355,10 @@ export const assertReleaseWorkflowContract = ({
   */
   const activeWorkflow = stripYamlComments(workflow);
 
-  assertIncludes(activeWorkflow, 'on:\n  push:\n    branches:\n      - main', 'release workflow');
-  assertIncludes(activeWorkflow, 'permissions:\n  contents: read', 'release workflow');
-  assertNoForbiddenReleaseWorkflowAuth(activeWorkflow);
-
-  if (activeWorkflow.includes('workflow_dispatch:\n    inputs:')) {
-    fail('release workflow must not expose manual per-package dispatch inputs.');
-  }
-
-  if (activeWorkflow.includes('environment:')) {
-    fail('release workflow must not use GitHub environments for manual publish approval.');
-  }
-
-  const releaseJob = sectionUntilNextJob(activeWorkflow, 'release');
-  for (const snippet of [
-    "if: github.ref == 'refs/heads/main'",
-    'contents: write',
-    'pull-requests: write',
-    'id-token: write',
-    'registry-url: https://registry.npmjs.org',
-  ]) {
-    assertIncludes(releaseJob, snippet, 'jobs.release');
-  }
-
-  const changesetsStep = stepUsingAction(releaseJob, 'changesets/action@v1');
-  for (const snippet of [
-    'version: pnpm version-packages',
-    'publish: pnpm release',
-    'createGithubReleases: true',
-    "NPM_CONFIG_PROVENANCE: 'true'",
-  ]) {
-    assertIncludes(changesetsStep, snippet, 'jobs.release changesets/action step');
-  }
-
-  if (
-    !changesetsStep.includes(githubTokenExpression) &&
-    !changesetsStep.includes(bracketGithubTokenExpression)
-  ) {
-    fail(
-      'jobs.release changesets/action step must include GITHUB_TOKEN from secrets.GITHUB_TOKEN.',
-    );
-  }
-
-  if (scripts['release'] !== expectedReleaseScript) {
-    fail(`package.json release script must be exactly ${JSON.stringify(expectedReleaseScript)}.`);
-  }
-
-  if (scripts['release:prepare'] !== expectedReleasePrepareScript) {
-    fail(
-      `package.json release:prepare script must be exactly ${JSON.stringify(expectedReleasePrepareScript)}.`,
-    );
-  }
-
-  for (const snippet of [
-    'merges the Version Packages PR',
-    'automatically publishes',
-    'GitHub releases',
-    'Trusted Publishing',
-    '.github/workflows/release.yml',
-    'environment field blank/unset',
-  ]) {
-    assertIncludes(releaseReadiness, snippet, 'docs/references/release-readiness.md');
-  }
+  assertReleaseWorkflowBasics(activeWorkflow);
+  assertReleaseJobStructure(activeWorkflow);
+  assertPackageScripts(scripts);
+  assertReleaseReadinessDocs(releaseReadiness);
 };
 
 const run = (): void => {

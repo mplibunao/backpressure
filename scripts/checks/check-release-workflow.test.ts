@@ -76,72 +76,145 @@ const runContract = (overrides: ContractOverrides = {}): void => {
   });
 };
 
+const describeAuthAndTokenContract = (): void => {
+  describe('auth and token references', () => {
+    it('rejects sneaky registry token auth while allowing provenance env', () => {
+      const workflowWithExtraSecret = validWorkflow.replace(
+        "          NPM_CONFIG_PROVENANCE: 'true'",
+        `          NPM_CONFIG_PROVENANCE: 'true'\n          EXTRA_TOKEN: ${githubSecret('NPM_PUBLISH_TOKEN')}`,
+      );
+      expect(() => runContract({ workflow: workflowWithExtraSecret })).toThrow(
+        'release workflow may only reference secrets.GITHUB_TOKEN',
+      );
+
+      const workflowWithAuthToken = validWorkflow.replace(
+        '      - name: Setup Node',
+        '      - name: Configure npm token\n        run: npm config set //registry.npmjs.org/:_authToken hacked\n\n      - name: Setup Node',
+      );
+      expect(() => runContract({ workflow: workflowWithAuthToken })).toThrow(
+        'release workflow must not configure npm registry auth tokens',
+      );
+    });
+
+    it('checks bracket-form secret references against the same allowlist', () => {
+      const workflowWithBracketSecret = validWorkflow.replace(
+        "          NPM_CONFIG_PROVENANCE: 'true'",
+        `          NPM_CONFIG_PROVENANCE: 'true'\n          EXTRA_TOKEN: ${bracketGithubSecret('NPM_PUBLISH_TOKEN', "'")}`,
+      );
+      expect(() => runContract({ workflow: workflowWithBracketSecret })).toThrow(
+        'release workflow may only reference secrets.GITHUB_TOKEN',
+      );
+
+      const workflowWithDoubleQuoteBracketGithubToken = validWorkflow.replace(
+        githubSecret('GITHUB_TOKEN'),
+        bracketGithubSecret('GITHUB_TOKEN', '"'),
+      );
+      expect(() =>
+        runContract({ workflow: workflowWithDoubleQuoteBracketGithubToken }),
+      ).not.toThrow();
+
+      const workflowWithSingleQuoteBracketGithubToken = validWorkflow.replace(
+        githubSecret('GITHUB_TOKEN'),
+        bracketGithubSecret('GITHUB_TOKEN', "'"),
+      );
+      expect(() =>
+        runContract({ workflow: workflowWithSingleQuoteBracketGithubToken }),
+      ).not.toThrow();
+    });
+  });
+};
+
+const describeScriptContract = (): void => {
+  describe('scripts', () => {
+    it('rejects release gates weakened with a non-blocking command', () => {
+      const weakenedScripts = {
+        ...scripts,
+        'release:prepare': expectedReleasePrepareScript.replace('pnpm build', 'pnpm build || true'),
+      };
+
+      expect(() => runContract({ scripts: weakenedScripts })).toThrow(
+        'package.json release:prepare script must be exactly',
+      );
+    });
+  });
+};
+
+const describeAnchoredStructureContract = (): void => {
+  describe('structure and anchored YAML assertions', () => {
+    it('does not let an active key in the wrong workflow block satisfy permissions', () => {
+      const workflowWithWrongBlockPermission = validWorkflow
+        .replace('      id-token: write', '      id-token: none')
+        .replace(
+          '          registry-url: https://registry.npmjs.org',
+          '          registry-url: https://registry.npmjs.org\n          id-token: write',
+        );
+
+      expect(() => runContract({ workflow: workflowWithWrongBlockPermission })).toThrow(
+        'jobs.release.permissions must set id-token: write',
+      );
+    });
+
+    it('does not let an active key in the wrong step satisfy setup-node config', () => {
+      const workflowWithWrongStepRegistry = validWorkflow
+        .replace(
+          '          registry-url: https://registry.npmjs.org',
+          '          registry-url: https://example.invalid',
+        )
+        .replace(
+          '          createGithubReleases: true',
+          '          createGithubReleases: true\n          registry-url: https://registry.npmjs.org',
+        );
+
+      expect(() => runContract({ workflow: workflowWithWrongStepRegistry })).toThrow(
+        'jobs.release actions/setup-node step with must set registry-url: https://registry.npmjs.org',
+      );
+    });
+
+    it('does not let an active key in the wrong changesets block satisfy action inputs', () => {
+      const workflowWithWrongChangesetsBlock = validWorkflow
+        .replace('          createGithubReleases: true', '          createGithubReleases: false')
+        .replace(
+          `          GITHUB_TOKEN: ${githubSecret('GITHUB_TOKEN')}`,
+          `          createGithubReleases: true\n          GITHUB_TOKEN: ${githubSecret('GITHUB_TOKEN')}`,
+        );
+
+      expect(() => runContract({ workflow: workflowWithWrongChangesetsBlock })).toThrow(
+        'jobs.release changesets/action step with must set createGithubReleases: true',
+      );
+    });
+  });
+};
+
+const describeCommentHandlingContract = (): void => {
+  describe('comment handling', () => {
+    it('does not let a stale comment inside jobs.release satisfy a required permission', () => {
+      /* The comment sits inside the job, where a raw includes() would match it. */
+      const workflowWithStaleComment = validWorkflow.replace(
+        '      id-token: write',
+        '      # id-token: write\n      id-token: none',
+      );
+
+      expect(() => runContract({ workflow: workflowWithStaleComment })).toThrow(
+        'jobs.release.permissions must set id-token: write',
+      );
+    });
+
+    it('does not let a commented-out changesets option satisfy the step contract', () => {
+      const workflowWithCommentedOption = validWorkflow.replace(
+        '          createGithubReleases: true',
+        '          # createGithubReleases: true',
+      );
+
+      expect(() => runContract({ workflow: workflowWithCommentedOption })).toThrow(
+        'jobs.release changesets/action step with must set createGithubReleases: true',
+      );
+    });
+  });
+};
+
 describe('release workflow contract', () => {
-  it('rejects sneaky registry token auth while allowing provenance env', () => {
-    const workflowWithExtraSecret = validWorkflow.replace(
-      "          NPM_CONFIG_PROVENANCE: 'true'",
-      `          NPM_CONFIG_PROVENANCE: 'true'\n          EXTRA_TOKEN: ${githubSecret('NPM_PUBLISH_TOKEN')}`,
-    );
-    expect(() => runContract({ workflow: workflowWithExtraSecret })).toThrow(
-      'release workflow may only reference secrets.GITHUB_TOKEN',
-    );
-
-    const workflowWithAuthToken = validWorkflow.replace(
-      '      - name: Setup Node',
-      '      - name: Configure npm token\n        run: npm config set //registry.npmjs.org/:_authToken hacked\n\n      - name: Setup Node',
-    );
-    expect(() => runContract({ workflow: workflowWithAuthToken })).toThrow(
-      'release workflow must not configure npm registry auth tokens',
-    );
-  });
-
-  it('checks bracket-form secret references against the same allowlist', () => {
-    const workflowWithBracketSecret = validWorkflow.replace(
-      "          NPM_CONFIG_PROVENANCE: 'true'",
-      `          NPM_CONFIG_PROVENANCE: 'true'\n          EXTRA_TOKEN: ${bracketGithubSecret('NPM_PUBLISH_TOKEN', "'")}`,
-    );
-    expect(() => runContract({ workflow: workflowWithBracketSecret })).toThrow(
-      'release workflow may only reference secrets.GITHUB_TOKEN',
-    );
-
-    const workflowWithBracketGithubToken = validWorkflow.replace(
-      githubSecret('GITHUB_TOKEN'),
-      bracketGithubSecret('GITHUB_TOKEN', '"'),
-    );
-    expect(() => runContract({ workflow: workflowWithBracketGithubToken })).not.toThrow();
-  });
-
-  it('rejects release gates weakened with a non-blocking command', () => {
-    const weakenedScripts = {
-      ...scripts,
-      'release:prepare': expectedReleasePrepareScript.replace('pnpm build', 'pnpm build || true'),
-    };
-
-    expect(() => runContract({ scripts: weakenedScripts })).toThrow(
-      'package.json release:prepare script must be exactly',
-    );
-  });
-
-  it('does not let a stale comment inside jobs.release satisfy a required permission', () => {
-    /* The comment sits inside the job, where a raw includes() would match it. */
-    const workflowWithStaleComment = validWorkflow.replace(
-      '      id-token: write',
-      '      # id-token: write\n      id-token: none',
-    );
-
-    expect(() => runContract({ workflow: workflowWithStaleComment })).toThrow(
-      'jobs.release must include id-token: write',
-    );
-  });
-
-  it('does not let a commented-out changesets option satisfy the step contract', () => {
-    const workflowWithCommentedOption = validWorkflow.replace(
-      '          createGithubReleases: true',
-      '          # createGithubReleases: true',
-    );
-
-    expect(() => runContract({ workflow: workflowWithCommentedOption })).toThrow(
-      'jobs.release changesets/action step must include createGithubReleases: true',
-    );
-  });
+  describeAuthAndTokenContract();
+  describeScriptContract();
+  describeAnchoredStructureContract();
+  describeCommentHandlingContract();
 });
