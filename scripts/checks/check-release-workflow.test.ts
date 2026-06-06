@@ -122,14 +122,26 @@ describe('release workflow contract', () => {
     );
   });
 
-  it('does not let stale workflow comments satisfy release-job permissions', () => {
-    const workflowWithStaleComment = `# id-token: write\n${validWorkflow.replace(
+  it('does not let a stale comment inside jobs.release satisfy a required permission', () => {
+    /* The comment sits inside the job, where a raw includes() would match it. */
+    const workflowWithStaleComment = validWorkflow.replace(
       '      id-token: write',
-      '      id-token: none',
-    )}`;
+      '      # id-token: write\n      id-token: none',
+    );
 
     expect(() => runContract({ workflow: workflowWithStaleComment })).toThrow(
       'jobs.release must include id-token: write',
+    );
+  });
+
+  it('does not let a commented-out changesets option satisfy the step contract', () => {
+    const workflowWithCommentedOption = validWorkflow.replace(
+      '          createGithubReleases: true',
+      '          # createGithubReleases: true',
+    );
+
+    expect(() => runContract({ workflow: workflowWithCommentedOption })).toThrow(
+      'jobs.release changesets/action step must include createGithubReleases: true',
     );
   });
 });

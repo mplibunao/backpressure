@@ -37,6 +37,36 @@ const assertIncludes = (text: string, expected: string, label: string): void => 
   }
 };
 
+/*
+  Strip YAML comments so a commented-out line such as `# id-token: write` can
+  never satisfy a contract assertion. A '#' opens a comment only at line start
+  or after whitespace and outside quotes, so a '#' inside a value (e.g. a URL
+  fragment) is preserved.
+*/
+const stripYamlComments = (yaml: string): string =>
+  yaml
+    .split('\n')
+    .map((line) => {
+      let inSingle = false;
+      let inDouble = false;
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        if (char === "'" && !inDouble) {
+          inSingle = !inSingle;
+        } else if (char === '"' && !inSingle) {
+          inDouble = !inDouble;
+        } else if (char === '#' && !inSingle && !inDouble) {
+          const previous = index === 0 ? '' : line[index - 1];
+          if (index === 0 || previous === ' ' || previous === '\t') {
+            return line.slice(0, index).replace(/\s+$/u, '');
+          }
+        }
+      }
+
+      return line;
+    })
+    .join('\n');
+
 const readPackageScripts = (): Record<string, string> => {
   const parsed: unknown = JSON.parse(readText(packageJsonPath));
   if (isObjectRecord(parsed)) {
@@ -90,19 +120,26 @@ export const assertReleaseWorkflowContract = ({
   scripts,
   workflow,
 }: ReleaseWorkflowContractInput): void => {
-  assertIncludes(workflow, 'on:\n  push:\n    branches:\n      - main', 'release workflow');
-  assertIncludes(workflow, 'permissions:\n  contents: read', 'release workflow');
-  assertNoForbiddenReleaseWorkflowAuth(workflow);
+  /*
+    Assert the contract against active YAML only: a commented-out line must not
+    satisfy a required snippet (the fail-closed hole) nor trip a forbidden or
+    absence check, so all matching below runs on the comment-stripped workflow.
+  */
+  const activeWorkflow = stripYamlComments(workflow);
 
-  if (workflow.includes('workflow_dispatch:\n    inputs:')) {
+  assertIncludes(activeWorkflow, 'on:\n  push:\n    branches:\n      - main', 'release workflow');
+  assertIncludes(activeWorkflow, 'permissions:\n  contents: read', 'release workflow');
+  assertNoForbiddenReleaseWorkflowAuth(activeWorkflow);
+
+  if (activeWorkflow.includes('workflow_dispatch:\n    inputs:')) {
     fail('release workflow must not expose manual per-package dispatch inputs.');
   }
 
-  if (workflow.includes('environment:')) {
+  if (activeWorkflow.includes('environment:')) {
     fail('release workflow must not use GitHub environments for manual publish approval.');
   }
 
-  const releaseJob = sectionUntilNextJob(workflow, 'release');
+  const releaseJob = sectionUntilNextJob(activeWorkflow, 'release');
   for (const snippet of [
     "if: github.ref == 'refs/heads/main'",
     'contents: write',
