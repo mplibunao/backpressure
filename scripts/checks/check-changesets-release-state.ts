@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { releasePackages, type ReleasePackageContract } from '../lib/release-contract.ts';
-import { fail, printLine, repoRoot } from '../lib/script-runtime.ts';
+import { fail, isObjectRecord, printLine, readText, repoRoot } from '../lib/script-runtime.ts';
 
 interface PackageJson {
   readonly version?: string;
@@ -11,9 +11,6 @@ interface PackageJson {
 
 const missingIndex = -1;
 const regexSpecialCharacters = /[\\^$.*+?()[\]{}|]/gu;
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isPackageJson = (value: unknown): value is PackageJson =>
   isObjectRecord(value) && (!('version' in value) || typeof value['version'] === 'string');
@@ -36,7 +33,7 @@ const readArgValue = (name: string): string | null => {
 };
 
 const readPackageJson = (path: string): PackageJson => {
-  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  const parsed: unknown = JSON.parse(readText(path));
   if (isPackageJson(parsed)) {
     return parsed;
   }
@@ -73,7 +70,7 @@ const assertPackageReady = (root: string, contract: ReleasePackageContract): voi
     fail(`${contract.changelogPath} must exist before publishing ${contract.packageName}.`);
   }
 
-  const changelog = readFileSync(changelogPath, 'utf8');
+  const changelog = readText(changelogPath);
   const versionHeadingPattern = new RegExp(`^## ${escapeRegex(packageVersion)}$`, 'mu');
   if (!versionHeadingPattern.test(changelog)) {
     fail(`${contract.changelogPath} must contain a ## ${packageVersion} heading.`);

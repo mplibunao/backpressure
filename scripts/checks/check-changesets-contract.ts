@@ -1,9 +1,16 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expectedReleasePrepareScript, expectedReleaseScript } from '../lib/release-contract.ts';
-import { fail, printLine, repoRoot } from '../lib/script-runtime.ts';
+import {
+  fail,
+  isStringRecord,
+  printLine,
+  readJsonRecord,
+  readText,
+  repoRoot,
+} from '../lib/script-runtime.ts';
 
 interface ChangesetsConfig {
   readonly access?: string;
@@ -23,23 +30,6 @@ const requiredScripts = {
 } as const;
 
 const versionWorkflowPath = join(repoRoot, '.github', 'workflows', 'version-packages.yml');
-
-const readText = (path: string): string => readFileSync(path, 'utf8');
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isStringRecord = (value: unknown): value is Record<string, string> =>
-  isObjectRecord(value) && Object.values(value).every((item) => typeof item === 'string');
-
-const readJsonRecord = (path: string, label: string): Record<string, unknown> => {
-  const parsed: unknown = JSON.parse(readText(path));
-  if (isObjectRecord(parsed)) {
-    return parsed;
-  }
-
-  return fail(`${label} must be a JSON object.`);
-};
 
 const rootPackageJson = readJsonRecord(join(repoRoot, 'package.json'), 'package.json');
 const workspace = readText(join(repoRoot, 'pnpm-workspace.yaml'));

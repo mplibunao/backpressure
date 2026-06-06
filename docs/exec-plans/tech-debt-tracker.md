@@ -45,3 +45,11 @@ WG3 refactor review on 2026-05-31 extracted shared import, wrapper-ownership, si
 ### TD-010: `no-effect-as` named barrel import policy
 
 The 2026-05-31 refactor review preserved the existing `no-effect-as` binding behavior: the standalone `no-effect-as` rule recognizes namespace imports such as `import * as Effect from "effect/Effect"` and the `Effect` namespace alias from the `effect` barrel, but it does not currently diagnose the named barrel form `import { Effect } from "effect"; Effect.as(...)`. This was not changed during WG3 refactor fixes because changing it would expand behavior after a clean correctness review. Revisit when deciding whether `no-barrel-import` fully owns named barrel imports in presets or whether each standalone rule should also catch named barrel imports; add explicit RuleTester and replay cases for whichever policy is chosen.
+
+### TD-011: GitHub release coupling (retired)
+
+Retired number, kept so it is not reused. This was the gap where `release.yml` published to npm without creating a GitHub release; taste-distillery's TD-SPECIMEN-004 and its 2026-06-02 plan reference it as "backpressure TD-011". Resolved by the changesets/action migration (ADR-006), which couples npm publish, tags, and GitHub releases through `createGithubReleases: true`.
+
+### TD-012: Shared workflow-YAML indentation parser
+
+Consolidate the workflow-YAML indentation parsing helpers shared by `scripts/lib/version-pins.ts` and the release-workflow contract check into one small module, such as `scripts/lib/workflow-yaml.ts`. This should replace the parallel helper families (`indentedBlock` / `valueForIndentedKey` / `stepUsingAction` and `leadingSpaceCount` / `findStepStartIndex`) only after a focused cleanup pass proves the version-pin checks and release-workflow contract tests keep the same behavior.

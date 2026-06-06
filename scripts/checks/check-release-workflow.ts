@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -9,7 +8,14 @@ import {
   expectedReleaseScript,
   githubTokenSecretExpressionPattern,
 } from '../lib/release-contract.ts';
-import { fail, printLine, repoRoot } from '../lib/script-runtime.ts';
+import {
+  fail,
+  isStringRecord,
+  printLine,
+  readJsonRecord,
+  readText,
+  repoRoot,
+} from '../lib/script-runtime.ts';
 
 interface ReleaseWorkflowContractInput {
   readonly releaseReadiness: string;
@@ -42,15 +48,7 @@ const releaseJobBlockIndent = 4;
 const releaseJobFieldIndent = 6;
 const releaseStepBlockIndent = 8;
 const releaseStepFieldIndent = 10;
-const readText = (path: string): string => readFileSync(path, 'utf8');
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isStringRecord = (value: unknown): value is Record<string, string> =>
-  isObjectRecord(value) && Object.values(value).every((item) => typeof item === 'string');
-
-const assertIncludes = (text: string, expected: string, label: string): void => {
+const assertRequiredSnippet = (text: string, expected: string, label: string): void => {
   if (!text.includes(expected)) {
     fail(`${label} must include ${expected}.`);
   }
@@ -146,15 +144,9 @@ const stripYamlComments = (yaml: string): string =>
     .join('\n');
 
 const readPackageScripts = (): Record<string, string> => {
-  const parsed: unknown = JSON.parse(readText(packageJsonPath));
-  if (isObjectRecord(parsed)) {
-    const candidate = parsed['scripts'];
-    return isStringRecord(candidate)
-      ? candidate
-      : fail('package.json scripts must be a string map.');
-  }
-
-  return fail('package.json must be a JSON object.');
+  const packageJson = readJsonRecord(packageJsonPath, 'package.json');
+  const candidate = packageJson['scripts'];
+  return isStringRecord(candidate) ? candidate : fail('package.json scripts must be a string map.');
 };
 
 const sectionUntilNextJob = (workflow: string, jobId: string): string => {
@@ -194,8 +186,12 @@ const stepUsingAction = (job: string, action: string): string => {
 };
 
 const assertReleaseWorkflowBasics = (activeWorkflow: string): void => {
-  assertIncludes(activeWorkflow, 'on:\n  push:\n    branches:\n      - main', 'release workflow');
-  assertIncludes(activeWorkflow, 'permissions:\n  contents: read', 'release workflow');
+  assertRequiredSnippet(
+    activeWorkflow,
+    'on:\n  push:\n    branches:\n      - main',
+    'release workflow',
+  );
+  assertRequiredSnippet(activeWorkflow, 'permissions:\n  contents: read', 'release workflow');
   assertNoForbiddenReleaseWorkflowAuth(activeWorkflow);
 
   if (activeWorkflow.includes('workflow_dispatch:\n    inputs:')) {
@@ -309,7 +305,7 @@ const assertChangesetsActionEnv = (changesetsStep: string): void => {
 
 const assertReleaseJobStructure = (activeWorkflow: string): void => {
   const releaseJob = sectionUntilNextJob(activeWorkflow, 'release');
-  assertIncludes(releaseJob, "if: github.ref == 'refs/heads/main'", 'jobs.release');
+  assertRequiredSnippet(releaseJob, "if: github.ref == 'refs/heads/main'", 'jobs.release');
   assertReleaseJobPermissions(releaseJob);
   assertSetupNodeStep(releaseJob);
 
@@ -339,7 +335,7 @@ const assertReleaseReadinessDocs = (releaseReadiness: string): void => {
     '.github/workflows/release.yml',
     'environment field blank/unset',
   ]) {
-    assertIncludes(releaseReadiness, snippet, 'docs/references/release-readiness.md');
+    assertRequiredSnippet(releaseReadiness, snippet, 'docs/references/release-readiness.md');
   }
 };
 

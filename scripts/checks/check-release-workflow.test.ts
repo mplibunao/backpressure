@@ -76,7 +76,7 @@ const runContract = (overrides: ContractOverrides = {}): void => {
   });
 };
 
-const describeAuthAndTokenContract = (): void => {
+const registerAuthAndTokenContractTests = (): void => {
   describe('auth and token references', () => {
     it('rejects sneaky registry token auth while allowing provenance env', () => {
       const workflowWithExtraSecret = validWorkflow.replace(
@@ -124,7 +124,7 @@ const describeAuthAndTokenContract = (): void => {
   });
 };
 
-const describeScriptContract = (): void => {
+const registerScriptContractTests = (): void => {
   describe('scripts', () => {
     it('rejects release gates weakened with a non-blocking command', () => {
       const weakenedScripts = {
@@ -139,7 +139,7 @@ const describeScriptContract = (): void => {
   });
 };
 
-const describeAnchoredStructureContract = (): void => {
+const registerAnchoredStructureContractTests = (): void => {
   describe('structure and anchored YAML assertions', () => {
     it('does not let an active key in the wrong workflow block satisfy permissions', () => {
       const workflowWithWrongBlockPermission = validWorkflow
@@ -185,7 +185,7 @@ const describeAnchoredStructureContract = (): void => {
   });
 };
 
-const describeCommentHandlingContract = (): void => {
+const registerCommentHandlingContractTests = (): void => {
   describe('comment handling', () => {
     it('does not let a stale comment inside jobs.release satisfy a required permission', () => {
       /* The comment sits inside the job, where a raw includes() would match it. */
@@ -213,8 +213,8 @@ const describeCommentHandlingContract = (): void => {
 };
 
 describe('release workflow contract', () => {
-  describeAuthAndTokenContract();
-  describeScriptContract();
-  describeAnchoredStructureContract();
-  describeCommentHandlingContract();
+  registerAuthAndTokenContractTests();
+  registerScriptContractTests();
+  registerAnchoredStructureContractTests();
+  registerCommentHandlingContractTests();
 });
