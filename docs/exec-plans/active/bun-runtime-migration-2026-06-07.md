@@ -163,7 +163,10 @@ lands, once `pnpm check` is green (baseline `1.3.11`).
   - **Local validation:** passed locally; Item 6 owns the command evidence and environment-only retry notes.
   - **Pending CI proof:** needs durable PR or workflow evidence that the CI `pnpm check` path gets Bun from mise-action.
   - **Pending release proof:** needs a durable release workflow run or publish-path dry evidence that the Changesets publish path can run `pnpm release` with Bun from mise-action.
-- [ ] Item 3 orchestration slice: mutation-orchestrator verification and hardening.
+- [x] Item 3 orchestration slice: mutation-orchestrator verification and hardening.
+  - **Health check:** `packages/oxlint-standards/src/utils/effect-identifiers.ts` produced a 100.00% mutation score after the Bun migration.
+  - **Primary target:** `scripts/lib/version-pins.ts` improved from 53.33% to 94.59%; report saved at `docs/reports/mutation/2026-06-07-bun-runtime-mutation.md`.
+  - **Follow-up fix:** mutation review exposed real version-pin workflow contract gaps, fixed in `049747d` (`fix: tighten version pin workflow contracts`).
 - [ ] Item 4 orchestration slice: taste-distillery canon capture.
 
 ## Work Items
