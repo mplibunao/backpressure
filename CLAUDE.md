@@ -19,8 +19,9 @@ This repo is MP's personal monorepo for code-quality backpressure tooling. The v
 ## Tooling posture
 
 - Package manager: pnpm 11 via `packageManager` and Corepack.
+- Authored TypeScript script runtime: Bun, pinned in `mise.toml` and `package.json.engines.bun`; CI and release get Bun from the existing `jdx/mise-action` install step. ADR-005 owns the detailed runtime boundary.
 - Local front door: vite-plus (`vp`) for formatting, linting, testing, and hooks.
-- Non-npm tooling: `mise.toml`, currently Vale and Node.
+- Non-npm tooling: `mise.toml`, currently Bun, Node, and Vale.
 - Prose gate: repo-local Vale config, always run with `--no-global`.
 
 ## Working rules

@@ -29,6 +29,8 @@ This coupling is intentional. npm publish and GitHub releases happen in one acti
 
 `pnpm release` is the action's publish command. It runs `pnpm release:prepare` before `changeset publish`, so `changeset publish` is unreachable unless the build, npm Trusted Publishing client check, Changesets release-state sanity check, package allowlist checks, and packed-consumer smokes pass.
 
+`release:prepare` runs repo-authored TypeScript checks and smokes with Bun. The release workflow gets Bun from the existing `jdx/mise-action` install step; `actions/setup-node` stays for pnpm cache support and npm registry/provenance configuration, not for running authored TypeScript scripts.
+
 The exact ordered command sequence is executable policy, not prose policy. `scripts/lib/release-contract.ts` owns the publishable package inventory and expected `release:prepare` composition; `package.json` exposes that composition; `pnpm check-release-workflow` asserts they stay aligned.
 
 `check-changesets-release-state.ts` is the pre-publish sanity check for the unified action. It verifies that no pending changeset files remain, each releaseable package has a non-placeholder version, and each package changelog contains the matching version heading.

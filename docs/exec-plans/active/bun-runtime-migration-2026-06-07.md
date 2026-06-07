@@ -19,17 +19,17 @@ Curated findings from the Phase 2 probes (in-workspace blast radius, external
 Bun facts, and taste-distillery + backpressure canon). File references use
 `file:line`.
 
-### Current runtime posture
+### Pre-migration runtime posture
 
-- Repo-authored scripts run as `node scripts/.../*.ts`, relying on Node's
-  native TypeScript type-stripping. Every runnable gate script carries a
+- Before Item 1, repo-authored scripts ran as `node scripts/.../*.ts`, relying on Node's
+  native TypeScript type-stripping. Every runnable gate script carried a
   `#!/usr/bin/env node` shebang: `scripts/checks/check-release-workflow.ts:1`,
   `check-changesets-contract.ts:1`, `check-npm-publish-client.ts:1`,
   `check-version-pins.ts:1`, `fixture-replay.ts:1`, `check-rule-inventory.ts:1`,
   `check-changesets-release-state.ts:1`.
-- No `tsx` / `ts-node` / `vite-node` runner is wired; Node executes the `.ts`
+- No `tsx` / `ts-node` / `vite-node` runner was wired; Node executed the `.ts`
   files directly (`package.json` scripts; `package.json:38-48` dev deps).
-- Versions are pinned in `mise.toml:2` (`node = "24.15.0"`) and
+- Before Item 1, versions were pinned in `mise.toml:2` (`node = "24.15.0"`) and
   `package.json:50-52` (`engines.node >=22.18.0`, `packageManager pnpm@11.4.0`).
 - Shared script helpers import Node built-ins and `spawnSync`:
   `scripts/lib/script-runtime.ts:1-5`, `:60-78`.
@@ -67,10 +67,10 @@ launching under their own Node shebangs unless explicitly forced with
 ### CI / release install model (decides how Bun reaches the runner)
 
 - Both workflows already run `jdx/mise-action@v3` with `install: true`
-  (`ci.yml:20-24`, `release.yml:25-29`). It installs and activates every tool
-  pinned in `mise.toml` (today `node` and `vale`) on the job PATH for all later
-Adding `bun` to `mise.toml` installs Bun in CI and release
-  with **no `setup-bun` step needed**.
+  (`ci.yml:20-24`, `release.yml:25-29`). Before Item 1, that action installed
+  and activated the `node` and `vale` tools pinned in `mise.toml` on the job PATH
+  for later steps. After Item 1, `mise.toml` also pins `bun`, so CI and release
+  get Bun from the existing mise-action with **no `setup-bun` step needed**.
 - `actions/setup-node@v6` stays for its pnpm cache integration (`cache: pnpm`)
   and, in release, the npm registry auth used by provenance publishing
   (`registry-url`, `NPM_CONFIG_PROVENANCE`; `release.yml:37-57`). Bun needs
@@ -158,7 +158,11 @@ lands, once `pnpm check` is green (baseline `1.3.11`).
 ## Execution status
 
 - [x] Item 1 orchestration slice: completed Items 1-4 (Bun pin, version-pin contract, script command cutover, shebang cutover) in commit `chore: run authored scripts with bun`.
-- [ ] Item 2 orchestration slice: backpressure docs and full validation.
+- [ ] Item 2 orchestration slice: backpressure docs plus validation evidence.
+  - **Docs updated:** backpressure docs now record the runtime boundary. Bun runs repo-authored TypeScript scripts; ADR-005 owns the detailed package-binary ownership list.
+  - **Local validation:** passed locally; Item 6 owns the command evidence and environment-only retry notes.
+  - **Pending CI proof:** needs durable PR or workflow evidence that the CI `pnpm check` path gets Bun from mise-action.
+  - **Pending release proof:** needs a durable release workflow run or publish-path dry evidence that the Changesets publish path can run `pnpm release` with Bun from mise-action.
 - [ ] Item 3 orchestration slice: mutation-orchestrator verification and hardening.
 - [ ] Item 4 orchestration slice: taste-distillery canon capture.
 
@@ -253,7 +257,7 @@ repo's front door.
 ### Item 6: Full backpressure validation
 - **Goal:** prove behavior is unchanged except for the authored-script runtime,
   including that mise-action alone puts `bun` on PATH for the gate and release.
-- **Done when:** all required local gates pass and the CI/release Bun source is proven.
+- **Done when:** all required local gates pass and the CI/release Bun source is proven by durable workflow evidence. Local validation alone does not complete the CI/release proof.
 - **Key files:** none (no edits).
 - **Dependencies:** Items 1-5.
 - **Size:** Medium to large (smokes and pack dry-runs do real packaging).
@@ -262,10 +266,14 @@ repo's front door.
   duplicate-key case proving `yaml` strictness survives),
   `pnpm oxlint:package:allowlist`, `pnpm tsconfig:package:allowlist`,
   `pnpm smoke:oxlint-packed-consumer`, `pnpm smoke:tsconfig-packed-consumer`,
-  `pnpm release:prepare`, `pnpm check`, and `git diff --check`. On CI, confirm the
-  `pnpm check` job succeeds with no `setup-bun` step (mise-action is the only Bun
-  source), and confirm `bun` is on PATH for the `changesets/action` step in release
-  (the `pnpm release` path runs authored Bun scripts).
+  `pnpm release:prepare`, `pnpm check`, and `git diff --check`. Local evidence from
+  this slice shows those commands pass, with sandbox-only retries needed for Vite
+  temp files, package `dist` rebuilds, and repo-local npm cache writes. CI proof
+  remains pending: confirm a PR or workflow `pnpm check` job succeeds with no
+  `setup-bun` step, making mise-action the only Bun source. Release proof remains
+  pending separately: confirm a durable release workflow run or publish-path dry
+  evidence shows `bun` is on PATH for the `changesets/action` publish path that
+  runs `pnpm release`.
 
 ### Item 7: Verify mutation testing and harden the new pin logic
 - **Goal:** confirm the Stryker plus vitest-runner toolchain still produces a
@@ -360,14 +368,9 @@ repo's front door.
 1. **Canon in this slice.** Item 8 (taste-distillery card + baseline) lands with
    the backpressure migration, reconciled so the new Bun card owns runtime only
    and does not restate the pnpm, Vitest, front-door, or Go-glue cards.
-2. **Vitest stays Node-launched.** `test: vitest run` is unchanged. This is safe
-   because authored scripts deliberately avoid Bun-only globals (we keep the
-   `yaml` library, not `Bun.YAML`), so the test code is runtime-agnostic. Bun's
-    native `bun test` runner is explicitly out of scope
-   TD-CARD-010, which keeps Vitest the default).
-Pin the exact Bun version installed when the work lands, once
-   `pnpm check` passes on it (baseline `1.3.11`, the probed version), enforced
-   across `mise.toml` and `engines.bun` by `version-pins.ts`.
+2. **Vitest stays Node-launched.** `test: vitest run` is unchanged. This is safe because authored scripts deliberately avoid Bun-only globals (we keep the `yaml` library, not `Bun.YAML`), so the test code is runtime-agnostic. Bun's native `bun test` runner is explicitly out of scope under TD-CARD-010, which keeps Vitest the default.
+3. **Package binaries stay package-owned.** pnpm owns installs and workspace commands; Vitest owns tests; `tsc` owns typechecking; Changesets owns versioning/publishing; Stryker owns mutation testing. The migration only changes repo-authored TypeScript script execution.
+4. **Bun pin.** Pin the exact Bun version installed when the work lands, once `pnpm check` passes on it (baseline `1.3.11`, the probed version), enforced across `mise.toml` and `engines.bun` by `version-pins.ts`.
 
 ## References
 
