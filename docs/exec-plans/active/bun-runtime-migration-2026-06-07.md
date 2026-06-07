@@ -155,6 +155,13 @@ Concrete changes:
 Bun pin value is resolved in Decisions: pin the exact Bun installed when the work
 lands, once `pnpm check` is green (baseline `1.3.11`).
 
+## Execution status
+
+- [x] Item 1 orchestration slice: completed Items 1-4 (Bun pin, version-pin contract, script command cutover, shebang cutover) in commit `chore: run authored scripts with bun`.
+- [ ] Item 2 orchestration slice: backpressure docs and full validation.
+- [ ] Item 3 orchestration slice: mutation-orchestrator verification and hardening.
+- [ ] Item 4 orchestration slice: taste-distillery canon capture.
+
 ## Work Items
 
 Ordering note: Bun is pinned first (Item 1) so the runner has it before any
