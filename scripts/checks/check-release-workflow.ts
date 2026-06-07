@@ -2,6 +2,8 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { parseDocument } from 'yaml';
+
 import {
   assertNoForbiddenReleaseWorkflowAuth,
   expectedReleasePrepareScript,
@@ -10,6 +12,7 @@ import {
 } from '../lib/release-contract.ts';
 import {
   fail,
+  isObjectRecord,
   isStringRecord,
   printLine,
   readJsonRecord,
@@ -23,125 +26,42 @@ interface ReleaseWorkflowContractInput {
   readonly workflow: string;
 }
 
-interface IndentedKeyValueAssertion {
+interface ParsedFieldLookup {
   readonly key: string;
-  readonly keyIndent: number;
   readonly label: string;
-  readonly text: string;
-  readonly value: string;
+  readonly record: Record<string, unknown>;
 }
 
-interface IndentedKeyMatchAssertion {
-  readonly key: string;
-  readonly keyIndent: number;
-  readonly label: string;
+interface ParsedFieldValueAssertion extends ParsedFieldLookup {
+  readonly value: unknown;
+}
+
+interface ParsedFieldMatchAssertion extends ParsedFieldLookup {
   readonly pattern: RegExp;
-  readonly text: string;
+  readonly source: string;
+}
+
+interface WorkflowStepLookup {
+  readonly action: string;
+  readonly steps: ReadonlyArray<unknown>;
+}
+
+interface ExactKeySetAssertion {
+  readonly keys: ReadonlyArray<string>;
+  readonly label: string;
+  readonly record: Record<string, unknown>;
 }
 
 const releaseWorkflowPath = join(repoRoot, '.github', 'workflows', 'release.yml');
 const releaseReadinessPath = join(repoRoot, 'docs', 'references', 'release-readiness.md');
 const packageJsonPath = join(repoRoot, 'package.json');
+const directPublishCommandPattern = /\bpublish\b|\bpnpm\s+(?:run\s+)?release\b/u;
 
-const missingIndex = -1;
-const releaseJobBlockIndent = 4;
-const releaseJobFieldIndent = 6;
-const releaseStepBlockIndent = 8;
-const releaseStepFieldIndent = 10;
 const assertRequiredSnippet = (text: string, expected: string, label: string): void => {
   if (!text.includes(expected)) {
     fail(`${label} must include ${expected}.`);
   }
 };
-
-const spaces = (count: number): string => ' '.repeat(count);
-
-const indentedBlock = (text: string, key: string, keyIndent: number, label: string): string => {
-  const header = `${spaces(keyIndent)}${key}:`;
-  const lines = text.split('\n');
-  const headerIndex = lines.findIndex((line) => line.trimEnd() === header);
-  if (headerIndex === missingIndex) {
-    return fail(`${label} must include ${key}.`);
-  }
-
-  const blockLines: Array<string> = [];
-  for (const line of lines.slice(headerIndex + 1)) {
-    if (line.trim() === '') {
-      blockLines.push(line);
-      continue;
-    }
-
-    const lineIndent = /^ */u.exec(line)?.[0].length ?? 0;
-    if (lineIndent <= keyIndent) {
-      break;
-    }
-
-    blockLines.push(line);
-  }
-
-  return blockLines.join('\n');
-};
-
-const valueForIndentedKey = (text: string, key: string, keyIndent: number): string | undefined => {
-  const prefix = `${spaces(keyIndent)}${key}:`;
-  const line = text.split('\n').find((candidate) => candidate.trimEnd().startsWith(prefix));
-  return line?.slice(prefix.length).trim();
-};
-
-const assertIndentedKeyValue = ({
-  key,
-  keyIndent,
-  label,
-  text,
-  value,
-}: IndentedKeyValueAssertion): void => {
-  if (valueForIndentedKey(text, key, keyIndent) !== value) {
-    fail(`${label} must set ${key}: ${value}.`);
-  }
-};
-
-const assertIndentedKeyMatches = ({
-  key,
-  keyIndent,
-  label,
-  pattern,
-  text,
-}: IndentedKeyMatchAssertion): void => {
-  const value = valueForIndentedKey(text, key, keyIndent);
-  if (typeof value !== 'string' || !pattern.test(value)) {
-    fail(`${label} must set ${key} from secrets.GITHUB_TOKEN.`);
-  }
-};
-
-/*
-  Strip YAML comments so a commented-out line such as `# id-token: write` can
-  never satisfy a contract assertion. A '#' opens a comment only at line start
-  or after whitespace and outside quotes, so a '#' inside a value (e.g. a URL
-  fragment) is preserved.
-*/
-const stripYamlComments = (yaml: string): string =>
-  yaml
-    .split('\n')
-    .map((line) => {
-      let inSingle = false;
-      let inDouble = false;
-      for (let index = 0; index < line.length; index += 1) {
-        const char = line[index];
-        if (char === "'" && !inDouble) {
-          inSingle = !inSingle;
-        } else if (char === '"' && !inSingle) {
-          inDouble = !inDouble;
-        } else if (char === '#' && !inSingle && !inDouble) {
-          const previous = index === 0 ? '' : line[index - 1];
-          if (index === 0 || previous === ' ' || previous === '\t') {
-            return line.slice(0, index).replace(/\s+$/u, '');
-          }
-        }
-      }
-
-      return line;
-    })
-    .join('\n');
 
 const readPackageScripts = (): Record<string, string> => {
   const packageJson = readJsonRecord(packageJsonPath, 'package.json');
@@ -149,167 +69,257 @@ const readPackageScripts = (): Record<string, string> => {
   return isStringRecord(candidate) ? candidate : fail('package.json scripts must be a string map.');
 };
 
-const sectionUntilNextJob = (workflow: string, jobId: string): string => {
-  const marker = `  ${jobId}:\n`;
-  const jobStart = workflow.indexOf(marker);
-  if (jobStart === missingIndex) {
-    return fail(`release workflow is missing jobs.${jobId}.`);
+const parseReleaseWorkflow = (workflow: string): Record<string, unknown> => {
+  const document = parseDocument(workflow, { uniqueKeys: true });
+  if (document.errors.length > 0) {
+    const details = document.errors.map((error) => error.message).join('; ');
+    return fail(`release workflow YAML must parse without duplicate keys: ${details}.`);
   }
 
-  const sectionStart = jobStart + marker.length;
-  const nextJobMatch = /\n {2}[a-zA-Z0-9_-]+:\n/u.exec(workflow.slice(sectionStart));
-  if (typeof nextJobMatch?.index === 'number') {
-    return workflow.slice(jobStart, sectionStart + nextJobMatch.index);
-  }
-
-  return workflow.slice(jobStart);
+  const parsed = document.toJS() as unknown;
+  return isObjectRecord(parsed) ? parsed : fail('release workflow must parse to a mapping.');
 };
 
-const stepUsingAction = (job: string, action: string): string => {
-  const usesIndex = job.indexOf(`uses: ${action}`);
-  if (usesIndex === missingIndex) {
-    return fail(`jobs.release must include a step using ${action}.`);
-  }
-
-  const stepStart = job.lastIndexOf('\n      - ', usesIndex);
-  if (stepStart === missingIndex) {
-    return fail(`${action} must be inside a workflow step.`);
-  }
-
-  const sectionStart = stepStart + '\n      - '.length;
-  const nextStepMatch = /\n {6}- /u.exec(job.slice(sectionStart));
-  if (typeof nextStepMatch?.index === 'number') {
-    return job.slice(stepStart, sectionStart + nextStepMatch.index);
-  }
-
-  return job.slice(stepStart);
+const recordField = ({ key, label, record }: ParsedFieldLookup): Record<string, unknown> => {
+  const value = record[key];
+  return isObjectRecord(value) ? value : fail(`${label} must include ${key}.`);
 };
 
-const assertReleaseWorkflowBasics = (activeWorkflow: string): void => {
-  assertRequiredSnippet(
-    activeWorkflow,
-    'on:\n  push:\n    branches:\n      - main',
-    'release workflow',
-  );
-  assertRequiredSnippet(activeWorkflow, 'permissions:\n  contents: read', 'release workflow');
-  assertNoForbiddenReleaseWorkflowAuth(activeWorkflow);
+const arrayField = ({ key, label, record }: ParsedFieldLookup): ReadonlyArray<unknown> => {
+  const value = record[key];
+  return Array.isArray(value) ? value : fail(`${label} must include ${key}.`);
+};
 
-  if (activeWorkflow.includes('workflow_dispatch:\n    inputs:')) {
+const assertParsedFieldValue = ({ key, label, record, value }: ParsedFieldValueAssertion): void => {
+  if (record[key] !== value) {
+    fail(`${label} must set ${key}: ${String(value)}.`);
+  }
+};
+
+const assertParsedFieldMatches = ({
+  key,
+  label,
+  pattern,
+  record,
+  source,
+}: ParsedFieldMatchAssertion): void => {
+  const value = record[key];
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    fail(`${label} must set ${key} from ${source}.`);
+  }
+};
+
+const assertExactKeySet = ({ keys, label, record }: ExactKeySetAssertion): void => {
+  const actualKeys = Object.keys(record);
+  const unexpectedKeys = actualKeys.filter((key) => !keys.includes(key));
+  const missingKeys = keys.filter((key) => !Object.hasOwn(record, key));
+  if (unexpectedKeys.length > 0 || missingKeys.length > 0) {
+    fail(`${label} must define only ${keys.join(', ')}.`);
+  }
+};
+
+const hasMappingKey = (value: unknown, key: string): boolean => {
+  if (Array.isArray(value)) {
+    return value.some((item) => hasMappingKey(item, key));
+  }
+
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+
+  return Object.hasOwn(value, key) || Object.values(value).some((item) => hasMappingKey(item, key));
+};
+
+const exactActionStep = ({ action, steps }: WorkflowStepLookup): Record<string, unknown> => {
+  const step = steps.find((candidate) => isObjectRecord(candidate) && candidate['uses'] === action);
+  return isObjectRecord(step) ? step : fail(`jobs.release must include a step using ${action}.`);
+};
+
+const assertReleaseTriggers = (workflow: Record<string, unknown>): void => {
+  const triggers = recordField({ key: 'on', label: 'release workflow', record: workflow });
+  const push = recordField({ key: 'push', label: 'release workflow on', record: triggers });
+  const { branches } = push;
+  if (!Array.isArray(branches) || branches.length !== 1 || branches[0] !== 'main') {
+    fail('release workflow must run on pushes to main.');
+  }
+
+  if (!Object.hasOwn(triggers, 'workflow_dispatch')) {
+    fail('release workflow must expose workflow_dispatch for manual retries.');
+  }
+
+  const workflowDispatch = triggers['workflow_dispatch'];
+  if (isObjectRecord(workflowDispatch) && Object.hasOwn(workflowDispatch, 'inputs')) {
     fail('release workflow must not expose manual per-package dispatch inputs.');
   }
 
-  if (activeWorkflow.includes('environment:')) {
+  if (
+    workflowDispatch !== null &&
+    (!isObjectRecord(workflowDispatch) || Object.keys(workflowDispatch).length > 0)
+  ) {
+    fail('release workflow workflow_dispatch must be empty.');
+  }
+};
+
+const assertReleaseWorkflowBasics = (
+  workflow: Record<string, unknown>,
+  workflowText: string,
+): void => {
+  assertReleaseTriggers(workflow);
+  const permissions = recordField({
+    key: 'permissions',
+    label: 'release workflow',
+    record: workflow,
+  });
+  assertExactKeySet({
+    keys: ['contents'],
+    label: 'release workflow permissions',
+    record: permissions,
+  });
+  assertParsedFieldValue({
+    key: 'contents',
+    label: 'release workflow permissions',
+    record: permissions,
+    value: 'read',
+  });
+  assertNoForbiddenReleaseWorkflowAuth(workflowText);
+
+  if (hasMappingKey(workflow, 'environment')) {
     fail('release workflow must not use GitHub environments for manual publish approval.');
   }
 };
 
-const assertReleaseJobPermissions = (releaseJob: string): void => {
-  const releasePermissions = indentedBlock(
-    releaseJob,
-    'permissions',
-    releaseJobBlockIndent,
-    'jobs.release',
-  );
-  assertIndentedKeyValue({
+const assertReleaseJobPermissions = (releaseJob: Record<string, unknown>): void => {
+  const releasePermissions = recordField({
+    key: 'permissions',
+    label: 'jobs.release',
+    record: releaseJob,
+  });
+  assertExactKeySet({
+    keys: ['contents', 'pull-requests', 'id-token'],
+    label: 'jobs.release.permissions',
+    record: releasePermissions,
+  });
+  assertParsedFieldValue({
     key: 'contents',
-    keyIndent: releaseJobFieldIndent,
     label: 'jobs.release.permissions',
-    text: releasePermissions,
+    record: releasePermissions,
     value: 'write',
   });
-  assertIndentedKeyValue({
+  assertParsedFieldValue({
     key: 'pull-requests',
-    keyIndent: releaseJobFieldIndent,
     label: 'jobs.release.permissions',
-    text: releasePermissions,
+    record: releasePermissions,
     value: 'write',
   });
-  assertIndentedKeyValue({
+  assertParsedFieldValue({
     key: 'id-token',
-    keyIndent: releaseJobFieldIndent,
     label: 'jobs.release.permissions',
-    text: releasePermissions,
+    record: releasePermissions,
     value: 'write',
   });
 };
 
-const assertSetupNodeStep = (releaseJob: string): void => {
-  const setupNodeStep = stepUsingAction(releaseJob, 'actions/setup-node@v6');
-  const setupNodeWith = indentedBlock(
-    setupNodeStep,
-    'with',
-    releaseStepBlockIndent,
-    'jobs.release actions/setup-node step',
-  );
-  assertIndentedKeyValue({
+const assertSetupNodeStep = (steps: ReadonlyArray<unknown>): void => {
+  const setupNodeStep = exactActionStep({ action: 'actions/setup-node@v6', steps });
+  const setupNodeWith = recordField({
+    key: 'with',
+    label: 'jobs.release actions/setup-node step',
+    record: setupNodeStep,
+  });
+  assertParsedFieldValue({
     key: 'registry-url',
-    keyIndent: releaseStepFieldIndent,
     label: 'jobs.release actions/setup-node step with',
-    text: setupNodeWith,
+    record: setupNodeWith,
     value: 'https://registry.npmjs.org',
   });
 };
 
-const assertChangesetsActionWith = (changesetsStep: string): void => {
-  const changesetsWith = indentedBlock(
-    changesetsStep,
-    'with',
-    releaseStepBlockIndent,
-    'jobs.release changesets/action step',
-  );
-  assertIndentedKeyValue({
+const assertChangesetsActionWith = (changesetsStep: Record<string, unknown>): void => {
+  const changesetsWith = recordField({
+    key: 'with',
+    label: 'jobs.release changesets/action step',
+    record: changesetsStep,
+  });
+  assertParsedFieldValue({
     key: 'version',
-    keyIndent: releaseStepFieldIndent,
     label: 'jobs.release changesets/action step with',
-    text: changesetsWith,
+    record: changesetsWith,
     value: 'pnpm version-packages',
   });
-  assertIndentedKeyValue({
+  assertParsedFieldValue({
     key: 'publish',
-    keyIndent: releaseStepFieldIndent,
     label: 'jobs.release changesets/action step with',
-    text: changesetsWith,
+    record: changesetsWith,
     value: 'pnpm release',
   });
-  assertIndentedKeyValue({
+  assertParsedFieldValue({
     key: 'createGithubReleases',
-    keyIndent: releaseStepFieldIndent,
     label: 'jobs.release changesets/action step with',
-    text: changesetsWith,
+    record: changesetsWith,
+    value: true,
+  });
+};
+
+const assertChangesetsActionEnv = (changesetsStep: Record<string, unknown>): void => {
+  const changesetsEnv = recordField({
+    key: 'env',
+    label: 'jobs.release changesets/action step',
+    record: changesetsStep,
+  });
+  assertParsedFieldMatches({
+    key: 'GITHUB_TOKEN',
+    label: 'jobs.release changesets/action step env',
+    pattern: githubTokenSecretExpressionPattern,
+    record: changesetsEnv,
+    source: 'secrets.GITHUB_TOKEN',
+  });
+  assertParsedFieldValue({
+    key: 'NPM_CONFIG_PROVENANCE',
+    label: 'jobs.release changesets/action step env',
+    record: changesetsEnv,
     value: 'true',
   });
 };
 
-const assertChangesetsActionEnv = (changesetsStep: string): void => {
-  const changesetsEnv = indentedBlock(
-    changesetsStep,
-    'env',
-    releaseStepBlockIndent,
-    'jobs.release changesets/action step',
-  );
-  assertIndentedKeyMatches({
-    key: 'GITHUB_TOKEN',
-    keyIndent: releaseStepFieldIndent,
-    label: 'jobs.release changesets/action step env',
-    pattern: githubTokenSecretExpressionPattern,
-    text: changesetsEnv,
-  });
-  assertIndentedKeyValue({
-    key: 'NPM_CONFIG_PROVENANCE',
-    keyIndent: releaseStepFieldIndent,
-    label: 'jobs.release changesets/action step env',
-    text: changesetsEnv,
-    value: "'true'",
-  });
+const assertOnlyReleaseJob = (jobs: Record<string, unknown>): void => {
+  const jobKeys = Object.keys(jobs);
+  if (jobKeys.length !== 1 || jobKeys[0] !== 'release') {
+    fail('release workflow jobs must contain only jobs.release.');
+  }
 };
 
-const assertReleaseJobStructure = (activeWorkflow: string): void => {
-  const releaseJob = sectionUntilNextJob(activeWorkflow, 'release');
-  assertRequiredSnippet(releaseJob, "if: github.ref == 'refs/heads/main'", 'jobs.release');
-  assertReleaseJobPermissions(releaseJob);
-  assertSetupNodeStep(releaseJob);
+const assertNoDirectPublishRunSteps = (steps: ReadonlyArray<unknown>): void => {
+  for (const step of steps) {
+    if (!isObjectRecord(step)) {
+      continue;
+    }
 
-  const changesetsStep = stepUsingAction(releaseJob, 'changesets/action@v1');
+    const { run } = step;
+    if (typeof run === 'string' && directPublishCommandPattern.test(run)) {
+      fail(
+        'jobs.release run steps must not publish directly; use changesets/action with pnpm release.',
+      );
+    }
+  }
+};
+
+const assertReleaseJobStructure = (workflow: Record<string, unknown>): void => {
+  const jobs = recordField({ key: 'jobs', label: 'release workflow', record: workflow });
+  assertOnlyReleaseJob(jobs);
+  const releaseJob = recordField({ key: 'release', label: 'release workflow jobs', record: jobs });
+  assertParsedFieldValue({
+    key: 'if',
+    label: 'jobs.release',
+    record: releaseJob,
+    value: "github.ref == 'refs/heads/main'",
+  });
+  assertReleaseJobPermissions(releaseJob);
+
+  const steps = arrayField({ key: 'steps', label: 'jobs.release', record: releaseJob });
+  assertNoDirectPublishRunSteps(steps);
+  assertSetupNodeStep(steps);
+
+  const changesetsStep = exactActionStep({ action: 'changesets/action@v1', steps });
   assertChangesetsActionWith(changesetsStep);
   assertChangesetsActionEnv(changesetsStep);
 };
@@ -344,15 +354,10 @@ export const assertReleaseWorkflowContract = ({
   scripts,
   workflow,
 }: ReleaseWorkflowContractInput): void => {
-  /*
-    Assert the contract against active YAML only: a commented-out line must not
-    satisfy a required snippet (the fail-closed hole) nor trip a forbidden or
-    absence check, so all matching below runs on the comment-stripped workflow.
-  */
-  const activeWorkflow = stripYamlComments(workflow);
+  const parsedWorkflow = parseReleaseWorkflow(workflow);
 
-  assertReleaseWorkflowBasics(activeWorkflow);
-  assertReleaseJobStructure(activeWorkflow);
+  assertReleaseWorkflowBasics(parsedWorkflow, workflow);
+  assertReleaseJobStructure(parsedWorkflow);
   assertPackageScripts(scripts);
   assertReleaseReadinessDocs(releaseReadiness);
 };

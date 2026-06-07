@@ -10,11 +10,16 @@ export interface ReleasePackageContract {
   readonly smokeCommand: string;
 }
 
-const secretReferencePattern =
-  /secrets(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[['"]([A-Za-z_][A-Za-z0-9_]*)['"]\])/gu;
+const dotSecretReferencePattern = /secrets\.([A-Za-z_][A-Za-z0-9_]*)/gu;
+const bracketSecretReferencePattern = /secrets\s*\[([^\]]*)\]/gu;
 const githubTokenSecretName = 'GITHUB_TOKEN';
 const forbiddenTokenNames = ['NPM_TOKEN', 'NODE_AUTH_TOKEN'];
 const forbiddenAuthTokenSnippet = '_authtoken';
+const githubTokenBracketExpressionPattern = new RegExp(
+  String.raw`^['"]${githubTokenSecretName}['"]$`,
+  'u',
+);
+const literalBracketSecretNamePattern = /^['"]([A-Za-z_][A-Za-z0-9_]*)['"]$/u;
 
 export const githubTokenSecretExpressionPattern = new RegExp(
   String.raw`^\$\{\{\s*secrets(?:\.${githubTokenSecretName}|\[['"]${githubTokenSecretName}['"]\])\s*\}\}$`,
@@ -60,13 +65,25 @@ export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => 
     fail('release workflow must not configure npm registry auth tokens.');
   }
 
-  for (const match of workflow.matchAll(secretReferencePattern)) {
-    const [, dotSecretName, bracketSecretName] = match;
-    const secretName = dotSecretName ?? bracketSecretName;
+  for (const match of workflow.matchAll(dotSecretReferencePattern)) {
+    const [, secretName] = match;
     if (secretName !== githubTokenSecretName) {
       fail(
         `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${secretName}.`,
       );
     }
+  }
+
+  for (const match of workflow.matchAll(bracketSecretReferencePattern)) {
+    const bracketExpression = match[1] ?? '';
+    if (githubTokenBracketExpressionPattern.test(bracketExpression)) {
+      continue;
+    }
+
+    const literalSecretName = literalBracketSecretNamePattern.exec(bracketExpression)?.[1];
+    const rejectedSecret = literalSecretName ?? `[${bracketExpression}]`;
+    fail(
+      `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${rejectedSecret}.`,
+    );
   }
 };
