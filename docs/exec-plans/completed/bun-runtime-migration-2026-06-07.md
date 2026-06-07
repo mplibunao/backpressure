@@ -167,7 +167,9 @@ lands, once `pnpm check` is green (baseline `1.3.11`).
   - **Health check:** `packages/oxlint-standards/src/utils/effect-identifiers.ts` produced a 100.00% mutation score after the Bun migration.
   - **Primary target:** `scripts/lib/version-pins.ts` improved from 53.33% to 94.59%; report saved at `docs/reports/mutation/2026-06-07-bun-runtime-mutation.md`.
   - **Follow-up fix:** mutation review exposed real version-pin workflow contract gaps, fixed in `049747d` (`fix: tighten version pin workflow contracts`).
-- [ ] Item 4 orchestration slice: taste-distillery canon capture.
+- [x] Item 4 orchestration slice: taste-distillery canon capture.
+  - **Canon captured:** taste-distillery commit `574bf08` adds `TD-CARD-035` and `TD-BASELINE-009` for Bun as the runtime for authored TypeScript scripts.
+  - **Boundary preserved:** the card owns runtime only; pnpm, Vitest, vite-plus, and Go-glue ownership stay with existing cards/baselines.
 
 ## Work Items
 
