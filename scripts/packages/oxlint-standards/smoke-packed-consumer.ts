@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -14,7 +14,7 @@ import {
 import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
 import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './real-engine.ts';
 import { ruleMessage } from '../../../packages/oxlint-standards/src/rule-messages.ts';
-import { canonicalVersions } from '../../lib/version-pins.ts';
+import { canonicalVersions } from '../../lib/tool-versions.ts';
 import { assertOxlintPackedArtifact } from './artifact-assertions.ts';
 import {
   installConsumerDevDependencies,

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { ensureSuccess, fail, printLine, runCommand } from '../lib/script-runtime.ts';
 
 const minimumNpmVersionText = '11.5.1';

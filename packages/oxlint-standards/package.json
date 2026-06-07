@@ -29,8 +29,8 @@
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.build.json --force",
-    "pack:dry-run": "node ../../scripts/packages/oxlint-standards/check-package-allowlist.ts",
-    "pack:dry-run:no-build": "SKIP_BUILD=true node ../../scripts/packages/oxlint-standards/check-package-allowlist.ts",
+    "pack:dry-run": "bun ../../scripts/packages/oxlint-standards/check-package-allowlist.ts",
+    "pack:dry-run:no-build": "SKIP_BUILD=true bun ../../scripts/packages/oxlint-standards/check-package-allowlist.ts",
     "typecheck": "tsc -b"
   }
 }

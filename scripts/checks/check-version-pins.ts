@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { assertWorkflowPins } from '../lib/version-pins.ts';
 
 assertWorkflowPins();
