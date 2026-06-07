@@ -17,6 +17,10 @@ const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'release.yml'),
 ];
 
+const setupNodeAction = 'actions/setup-node@v6';
+const pnpmSetupAction = 'pnpm/action-setup@v4';
+const miseAction = 'jdx/mise-action@v3';
+
 interface WorkflowPinInput {
   readonly label: string;
   readonly text: string;
@@ -24,6 +28,15 @@ interface WorkflowPinInput {
 
 interface VersionPinContractInput extends CanonicalVersionInput {
   readonly workflows: ReadonlyArray<WorkflowPinInput>;
+}
+
+interface RequiredActionWithStringFieldInput {
+  readonly action: string;
+  readonly key: string;
+  readonly label: string;
+  readonly missingMessage: string;
+  readonly nonStringMessage: string;
+  readonly step: Record<string, unknown>;
 }
 
 const exactSemverPattern = /^\d+\.\d+\.\d+$/u;
@@ -71,6 +84,15 @@ const actionSteps = (
   action: string,
 ): ReadonlyArray<Record<string, unknown>> => steps.filter((step) => step['uses'] === action);
 
+const requiredActionSteps = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  action: string,
+  missingMessage: string,
+): ReadonlyArray<Record<string, unknown>> => {
+  const matchingSteps = actionSteps(steps, action);
+  return matchingSteps.length > 0 ? matchingSteps : fail(missingMessage);
+};
+
 const stepWith = (
   step: Record<string, unknown>,
   action: string,
@@ -82,43 +104,88 @@ const stepWith = (
     : fail(`${label} ${action} step must declare with.`);
 };
 
+const requiredActionWithStringField = ({
+  action,
+  key,
+  label,
+  missingMessage,
+  nonStringMessage,
+  step,
+}: RequiredActionWithStringFieldInput): string => {
+  const withConfig = stepWith(step, action, label);
+  if (!(key in withConfig)) {
+    return fail(missingMessage);
+  }
+
+  const value = withConfig[key];
+  return typeof value === 'string' ? value : fail(nonStringMessage);
+};
+
+const extractNodeActionVersions = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  label: string,
+): ReadonlyArray<string> =>
+  requiredActionSteps(
+    steps,
+    setupNodeAction,
+    `${label} must install Node through ${setupNodeAction}.`,
+  ).map((step) =>
+    requiredActionWithStringField({
+      action: setupNodeAction,
+      key: 'node-version',
+      label,
+      missingMessage: `${label} ${setupNodeAction} step must declare with.node-version.`,
+      nonStringMessage: `${label} ${setupNodeAction} step must declare string with.node-version.`,
+      step,
+    }),
+  );
+
 const extractPnpmActionVersions = (
   steps: ReadonlyArray<Record<string, unknown>>,
   label: string,
 ): ReadonlyArray<string> => {
-  const versions: Array<string> = [];
+  const versions = requiredActionSteps(
+    steps,
+    pnpmSetupAction,
+    `${label} must install pnpm through ${pnpmSetupAction}.`,
+  ).map((step) =>
+    requiredActionWithStringField({
+      action: pnpmSetupAction,
+      key: 'version',
+      label,
+      missingMessage: `${label} ${pnpmSetupAction} step must declare with.version.`,
+      nonStringMessage: `${label} ${pnpmSetupAction} step must declare with.version.`,
+      step,
+    }),
+  );
 
-  for (const step of actionSteps(steps, 'pnpm/action-setup@v4')) {
-    const { version } = stepWith(step, 'pnpm/action-setup@v4', label);
-    const versionText =
-      typeof version === 'string'
-        ? version
-        : fail(`${label} pnpm/action-setup@v4 step must declare with.version.`);
-
-    if (!exactSemverPattern.test(versionText)) {
-      fail(`${label} pnpm/action-setup@v4 version ${versionText} must be exact semver.`);
+  for (const version of versions) {
+    if (!exactSemverPattern.test(version)) {
+      fail(`${label} ${pnpmSetupAction} version ${version} must be exact semver.`);
     }
-
-    versions.push(versionText);
   }
 
   return versions;
+};
+
+const miseActionStepHasInstallTrue = (step: Record<string, unknown>): boolean => {
+  const withConfig = step['with'];
+  return isObjectRecord(withConfig) && withConfig['install'] === true;
 };
 
 const assertMiseActionInstallsTools = (
   steps: ReadonlyArray<Record<string, unknown>>,
   label: string,
 ): void => {
-  const miseSteps = actionSteps(steps, 'jdx/mise-action@v3');
+  const miseSteps = actionSteps(steps, miseAction);
   if (miseSteps.length === 0) {
-    fail(`${label} must install Bun through jdx/mise-action@v3 with install: true.`);
+    fail(`${label} must install Bun through ${miseAction} with install: true.`);
   }
 
-  const installsTools = miseSteps.some(
-    (step) => stepWith(step, 'jdx/mise-action@v3', label)['install'] === true,
-  );
+  // Mise-action is presence-only for Bun because mise.toml owns the exact tool pins.
+  const installsTools = miseSteps.some(miseActionStepHasInstallTrue);
   if (!installsTools) {
-    fail(`${label} jdx/mise-action@v3 step must declare with.install: true.`);
+    fail(`${label} ${miseAction} step must declare with.install: true.`);
   }
 };
 
@@ -149,9 +216,7 @@ export const assertVersionPinContract = (inputs: VersionPinContractInput): void 
 
   for (const { label, text: workflow } of inputs.workflows) {
     const steps = workflowSteps(workflow, label);
-    const nodePins = actionSteps(steps, 'actions/setup-node@v6')
-      .map((step) => stepWith(step, 'actions/setup-node@v6', label)['node-version'])
-      .filter((value): value is string => typeof value === 'string');
+    const nodePins = extractNodeActionVersions(steps, label);
     const pnpmPins = extractPnpmActionVersions(steps, label);
 
     assertMiseActionInstallsTools(steps, label);
