@@ -26,7 +26,7 @@
     "prose:files": "scripts/prose-files.sh",
     "prose:sync": "scripts/vale-ensure-styles.sh",
     "smoke:oxlint-packed-consumer": "node scripts/packages/oxlint-standards/smoke-packed-consumer.ts",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:mutation": "stryker run",
     "typecheck": "tsc -b",
     "version-packages": "changeset version && pnpm install --lockfile-only",
