@@ -1,5 +1,5 @@
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,23 @@ export const printLine = (message: string): void => {
 
 export const fail = (message: string): never => {
   throw new Error(message);
+};
+
+export const readText = (path: string): string => readFileSync(path, 'utf8');
+
+export const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const isStringRecord = (value: unknown): value is Record<string, string> =>
+  isObjectRecord(value) && Object.values(value).every((item) => typeof item === 'string');
+
+export const readJsonRecord = (path: string, label: string): Record<string, unknown> => {
+  const parsed: unknown = JSON.parse(readText(path));
+  if (isObjectRecord(parsed)) {
+    return parsed;
+  }
+
+  return fail(`${label} must be a JSON object.`);
 };
 
 export const assertIncludes = (text: string, expected: string, label: string): void => {

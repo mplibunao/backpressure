@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import { fail, repoRoot } from './script-runtime.ts';
+import { fail, isObjectRecord, readText, repoRoot } from './script-runtime.ts';
 
 const packageJsonPath = join(repoRoot, 'package.json');
 const workspacePath = join(repoRoot, 'pnpm-workspace.yaml');
@@ -9,7 +8,6 @@ const misePath = join(repoRoot, 'mise.toml');
 const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'ci.yml'),
   join(repoRoot, '.github', 'workflows', 'release.yml'),
-  join(repoRoot, '.github', 'workflows', 'version-packages.yml'),
 ];
 
 interface RootPackageJson {
@@ -23,14 +21,10 @@ interface CanonicalVersions {
   readonly typescript: string;
 }
 
-const readText = (path: string) => readFileSync(path, 'utf8');
 const exactSemverPattern = /^\d+\.\d+\.\d+$/u;
 const missingIndex = -1;
 const workflowStepPattern = /^ {6}- /u;
 const leadingSpacesPattern = /^ */u;
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const readPackageJson = (): RootPackageJson => {
   const packageJson: unknown = JSON.parse(readText(packageJsonPath));

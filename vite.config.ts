@@ -77,6 +77,6 @@ export default defineConfig({
   },
   test: {
     exclude: ['**/node_modules/**', '**/dist/**'],
-    include: ['packages/**/*.test.ts'],
+    include: ['packages/**/*.test.ts', 'scripts/**/*.test.ts'],
   },
 });
