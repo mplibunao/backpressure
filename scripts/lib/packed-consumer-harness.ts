@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { runNpmPackTarballJson, type NpmPackJsonResultWithTarball } from './npm-pack.ts';
 import { ensureSuccess, repoRoot, runCommand } from './script-runtime.ts';
-import { packageManagerSpec } from './version-pins.ts';
+import { packageManagerSpec } from './tool-versions.ts';
 
 const jsonIndentSpaces = 2;
 const npmCacheDir = join(repoRoot, '.npm-cache');

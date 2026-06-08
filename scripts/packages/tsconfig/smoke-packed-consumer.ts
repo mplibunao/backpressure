@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -14,7 +14,7 @@ import {
 } from '../../lib/script-runtime.ts';
 import { assertTsconfigPackedArtifact } from './artifact-assertions.ts';
 import { tsconfigPackageDir } from './package.ts';
-import { canonicalVersions } from '../../lib/version-pins.ts';
+import { canonicalVersions } from '../../lib/tool-versions.ts';
 import {
   installConsumerDevDependencies,
   installPackedTarball,
@@ -23,12 +23,10 @@ import {
   writeTempConsumerPackageJson,
 } from '../../lib/packed-consumer-harness.ts';
 
-// Bun types are installed only in the throwaway consumer so server.json can prove its Bun types resolve.
-// Keep this outside repo version policy unless Bun becomes first-party repo tooling.
-const bunTypesVersion = 'bun-types@1.3.11';
 const packDestinationPrefix = 'backpressure-tsconfig-pack-';
 const consumerPrefix = 'backpressure-tsconfig-consumer-';
 const versions = canonicalVersions();
+const bunTypesVersion = `bun-types@${versions.bun}`;
 const consumerTypescriptVersion = `typescript@${versions.typescript}`;
 const installConsumerDependencies = (consumerDir: string, tarballPath: string): void => {
   installConsumerDevDependencies(

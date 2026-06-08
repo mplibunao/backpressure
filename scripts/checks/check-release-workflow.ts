@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -73,7 +73,7 @@ const parseReleaseWorkflow = (workflow: string): Record<string, unknown> => {
   const document = parseDocument(workflow, { uniqueKeys: true });
   if (document.errors.length > 0) {
     const details = document.errors.map((error) => error.message).join('; ');
-    return fail(`release workflow YAML must parse without duplicate keys: ${details}.`);
+    return fail(`release workflow YAML must parse without YAML errors: ${details}.`);
   }
 
   const parsed = document.toJS() as unknown;

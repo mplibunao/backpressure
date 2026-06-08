@@ -1,151 +1,229 @@
 import { basename, join } from 'node:path';
 
-import { fail, isObjectRecord, readText, repoRoot } from './script-runtime.ts';
+import { parseDocument } from 'yaml';
 
-const packageJsonPath = join(repoRoot, 'package.json');
-const workspacePath = join(repoRoot, 'pnpm-workspace.yaml');
-const misePath = join(repoRoot, 'mise.toml');
+import { fail, isObjectRecord, readText, repoRoot } from './script-runtime.ts';
+import {
+  type CanonicalVersionInput,
+  type CanonicalVersions,
+  type RootPackageJson,
+  parseRootPackageJson,
+  readCanonicalVersionInputs,
+  readCanonicalVersions,
+} from './tool-versions.ts';
+
 const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'ci.yml'),
   join(repoRoot, '.github', 'workflows', 'release.yml'),
 ];
 
-interface RootPackageJson {
-  readonly packageManager: string;
+const setupNodeAction = 'actions/setup-node@v6';
+const pnpmSetupAction = 'pnpm/action-setup@v4';
+const miseAction = 'jdx/mise-action@v3';
+
+interface WorkflowPinInput {
+  readonly label: string;
+  readonly text: string;
 }
 
-interface CanonicalVersions {
-  readonly node: string;
-  readonly oxlint: string;
-  readonly pnpm: string;
-  readonly typescript: string;
+interface VersionPinContractInput extends CanonicalVersionInput {
+  readonly workflows: ReadonlyArray<WorkflowPinInput>;
+}
+
+interface RequiredActionWithStringFieldInput {
+  readonly action: string;
+  readonly key: string;
+  readonly label: string;
+  readonly missingMessage: string;
+  readonly nonStringMessage: string;
+  readonly step: Record<string, unknown>;
 }
 
 const exactSemverPattern = /^\d+\.\d+\.\d+$/u;
-const missingIndex = -1;
-const workflowStepPattern = /^ {6}- /u;
-const leadingSpacesPattern = /^ */u;
 
-const readPackageJson = (): RootPackageJson => {
-  const packageJson: unknown = JSON.parse(readText(packageJsonPath));
-  if (isObjectRecord(packageJson) && typeof packageJson['packageManager'] === 'string') {
-    return { packageManager: packageJson['packageManager'] };
+const workflowSteps = (workflow: string, label: string): ReadonlyArray<Record<string, unknown>> => {
+  const document = parseDocument(workflow, { uniqueKeys: true });
+  if (document.errors.length > 0) {
+    const details = document.errors.map((error) => error.message).join('; ');
+    return fail(`${label} workflow YAML must parse without YAML errors: ${details}.`);
   }
 
-  return fail('package.json did not expose a string packageManager');
-};
-
-const matchRequired = (text: string, pattern: RegExp, label: string): string => {
-  const match = text.match(pattern);
-
-  const matchedValue = match?.[1];
-  if (typeof matchedValue === 'string') {
-    return matchedValue;
+  const parsed = document.toJS() as unknown;
+  if (!isObjectRecord(parsed)) {
+    return fail(`${label} workflow must parse to a mapping.`);
   }
 
-  return fail(`Could not read ${label}`);
+  const { jobs } = parsed;
+  if (!isObjectRecord(jobs)) {
+    return fail(`${label} workflow must include jobs.`);
+  }
+
+  const steps: Array<Record<string, unknown>> = [];
+  for (const [jobName, job] of Object.entries(jobs)) {
+    if (!isObjectRecord(job)) {
+      return fail(`${label} jobs.${jobName} must be a mapping.`);
+    }
+
+    const jobSteps = job['steps'];
+    if (!Array.isArray(jobSteps)) {
+      return fail(`${label} jobs.${jobName} must include steps.`);
+    }
+
+    for (const step of jobSteps) {
+      if (isObjectRecord(step)) {
+        steps.push(step);
+      }
+    }
+  }
+
+  return steps;
 };
 
-const readBareCatalogVersion = (name: string): string =>
-  matchRequired(
-    readText(workspacePath),
-    new RegExp(`^  ${name}: ([^\\n]+)$`, 'm'),
-    `catalog version for ${name}`,
+const actionSteps = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  action: string,
+): ReadonlyArray<Record<string, unknown>> => steps.filter((step) => step['uses'] === action);
+
+const requiredActionSteps = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  action: string,
+  missingMessage: string,
+): ReadonlyArray<Record<string, unknown>> => {
+  const matchingSteps = actionSteps(steps, action);
+  return matchingSteps.length > 0 ? matchingSteps : fail(missingMessage);
+};
+
+const stepWith = (
+  step: Record<string, unknown>,
+  action: string,
+  label: string,
+): Record<string, unknown> => {
+  const withConfig = step['with'];
+  return isObjectRecord(withConfig)
+    ? withConfig
+    : fail(`${label} ${action} step must declare with.`);
+};
+
+const requiredActionWithStringField = ({
+  action,
+  key,
+  label,
+  missingMessage,
+  nonStringMessage,
+  step,
+}: RequiredActionWithStringFieldInput): string => {
+  const withConfig = stepWith(step, action, label);
+  if (!(key in withConfig)) {
+    return fail(missingMessage);
+  }
+
+  const value = withConfig[key];
+  return typeof value === 'string' ? value : fail(nonStringMessage);
+};
+
+const extractNodeActionVersions = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  label: string,
+): ReadonlyArray<string> =>
+  requiredActionSteps(
+    steps,
+    setupNodeAction,
+    `${label} must install Node through ${setupNodeAction}.`,
+  ).map((step) =>
+    requiredActionWithStringField({
+      action: setupNodeAction,
+      key: 'node-version',
+      label,
+      missingMessage: `${label} ${setupNodeAction} step must declare with.node-version.`,
+      nonStringMessage: `${label} ${setupNodeAction} step must declare string with.node-version.`,
+      step,
+    }),
   );
 
-const leadingSpaceCount = (text: string): number =>
-  leadingSpacesPattern.exec(text)?.[0].length ?? 0;
+const extractPnpmActionVersions = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  label: string,
+): ReadonlyArray<string> => {
+  const versions = requiredActionSteps(
+    steps,
+    pnpmSetupAction,
+    `${label} must install pnpm through ${pnpmSetupAction}.`,
+  ).map((step) =>
+    requiredActionWithStringField({
+      action: pnpmSetupAction,
+      key: 'version',
+      label,
+      missingMessage: `${label} ${pnpmSetupAction} step must declare with.version.`,
+      nonStringMessage: `${label} ${pnpmSetupAction} step must declare string with.version.`,
+      step,
+    }),
+  );
 
-const findStepStartIndex = (lines: ReadonlyArray<string>, lineIndex: number): number => {
-  for (let index = lineIndex; index >= 0; index -= 1) {
-    if (workflowStepPattern.test(lines[index] ?? '')) {
-      return index;
-    }
-  }
-
-  return missingIndex;
-};
-
-const extractPnpmActionVersions = (workflow: string, label: string): ReadonlyArray<string> => {
-  const lines = workflow.split('\n');
-  const versions: Array<string> = [];
-
-  for (const [lineIndex, line] of lines.entries()) {
-    if (!line.includes('uses: pnpm/action-setup@v4')) {
-      continue;
-    }
-
-    const stepStartIndex = findStepStartIndex(lines, lineIndex);
-    if (stepStartIndex === missingIndex) {
-      fail(`${label} pnpm/action-setup@v4 step must be a workflow step item.`);
-    }
-
-    const stepEndIndex = lines.findIndex(
-      (candidate, candidateIndex) =>
-        candidateIndex > stepStartIndex && workflowStepPattern.test(candidate),
-    );
-    const stepLines = lines.slice(
-      stepStartIndex,
-      stepEndIndex === missingIndex ? lines.length : stepEndIndex,
-    );
-    const withLineIndex = stepLines.findIndex((stepLine) => stepLine.trim() === 'with:');
-    if (withLineIndex === missingIndex) {
-      fail(`${label} pnpm/action-setup@v4 step must declare with.version.`);
-    }
-
-    const withLine =
-      stepLines[withLineIndex] ?? fail(`${label} pnpm/action-setup@v4 step is invalid.`);
-    const withIndent = leadingSpaceCount(withLine);
-    const versionLine =
-      stepLines.slice(withLineIndex + 1).find((stepLine) => {
-        const indent = leadingSpaceCount(stepLine);
-        return indent > withIndent && stepLine.trimStart().startsWith('version:');
-      }) ?? fail(`${label} pnpm/action-setup@v4 step must declare with.version.`);
-
-    const version = versionLine
-      .trim()
-      .replace(/^version:\s*/u, '')
-      .trim();
+  for (const version of versions) {
     if (!exactSemverPattern.test(version)) {
-      fail(`${label} pnpm/action-setup@v4 version ${version} must be exact semver.`);
+      fail(`${label} ${pnpmSetupAction} version ${version} must be exact semver.`);
     }
-
-    versions.push(version);
   }
 
   return versions;
 };
 
-export const canonicalVersions = (): CanonicalVersions => {
-  const packageJson = readPackageJson();
-  const [pnpmName, pnpmVersion] = packageJson.packageManager.split('@');
-
-  if (pnpmName === 'pnpm' && typeof pnpmVersion === 'string') {
-    return {
-      node: matchRequired(readText(misePath), /^node = "([^"]+)"$/m, 'mise node version'),
-      oxlint: readBareCatalogVersion('oxlint'),
-      pnpm: pnpmVersion,
-      typescript: readBareCatalogVersion('typescript'),
-    };
-  }
-
-  return fail(`Unexpected packageManager: ${packageJson.packageManager}`);
+const miseActionStepHasInstallTrue = (step: Record<string, unknown>): boolean => {
+  const withConfig = step['with'];
+  return isObjectRecord(withConfig) && withConfig['install'] === true;
 };
 
-export const packageManagerSpec = (): string => `pnpm@${canonicalVersions().pnpm}`;
+const assertMiseActionInstallsTools = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  label: string,
+): void => {
+  const miseSteps = actionSteps(steps, miseAction);
+  if (miseSteps.length === 0) {
+    fail(`${label} must install Bun through ${miseAction} with install: true.`);
+  }
 
-export const assertWorkflowPins = (): void => {
-  const versions = canonicalVersions();
+  // Mise-action is presence-only for Bun because mise.toml owns the exact tool pins.
+  const installsTools = miseSteps.some(miseActionStepHasInstallTrue);
+  if (!installsTools) {
+    fail(`${label} ${miseAction} step must declare with.install: true.`);
+  }
+};
 
-  for (const workflowPath of workflowPaths) {
-    const workflow = readText(workflowPath);
-    const label = basename(workflowPath);
-    const nodePins = workflow.matchAll(/^ {10}node-version: ([^\n]+)$/gm);
-    const pnpmPins = extractPnpmActionVersions(workflow, label);
+const readVersionPinInputs = (): VersionPinContractInput => ({
+  ...readCanonicalVersionInputs(),
+  workflows: workflowPaths.map((workflowPath) => ({
+    label: basename(workflowPath),
+    text: readText(workflowPath),
+  })),
+});
 
-    for (const match of nodePins) {
-      if (match[1] !== versions.node) {
-        fail(`${label} node-version ${match[1]} does not match mise node ${versions.node}`);
+const assertPackageEnginePins = (
+  packageJson: RootPackageJson,
+  versions: CanonicalVersions,
+): void => {
+  if (packageJson.engines.bun !== versions.bun) {
+    fail(
+      `package.json engines.bun ${packageJson.engines.bun ?? '<missing>'} does not match mise bun ${versions.bun}`,
+    );
+  }
+};
+
+export const assertVersionPinContract = (inputs: VersionPinContractInput): void => {
+  const packageJson = parseRootPackageJson(inputs.packageJson);
+  const versions = readCanonicalVersions(inputs);
+
+  assertPackageEnginePins(packageJson, versions);
+
+  for (const { label, text: workflow } of inputs.workflows) {
+    const steps = workflowSteps(workflow, label);
+    const nodePins = extractNodeActionVersions(steps, label);
+    const pnpmPins = extractPnpmActionVersions(steps, label);
+
+    assertMiseActionInstallsTools(steps, label);
+
+    for (const nodePin of nodePins) {
+      if (nodePin !== versions.node) {
+        fail(`${label} node-version ${nodePin} does not match mise node ${versions.node}`);
       }
     }
 
@@ -157,4 +235,8 @@ export const assertWorkflowPins = (): void => {
       }
     }
   }
+};
+
+export const assertWorkflowPins = (): void => {
+  assertVersionPinContract(readVersionPinInputs());
 };

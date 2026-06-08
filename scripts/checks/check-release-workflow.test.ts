@@ -413,7 +413,7 @@ const registerDuplicateKeyContractTests = (): void => {
     );
 
     expect(() => runContract({ workflow: workflowWithDuplicatePermission })).toThrow(
-      'release workflow YAML must parse without duplicate keys',
+      'release workflow YAML must parse without YAML errors',
     );
   });
 };

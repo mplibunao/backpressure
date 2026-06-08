@@ -45,3 +45,9 @@ WG3 refactor review on 2026-05-31 extracted shared import, wrapper-ownership, si
 ### TD-010: `no-effect-as` named barrel import policy
 
 The 2026-05-31 refactor review preserved the existing `no-effect-as` binding behavior: the standalone `no-effect-as` rule recognizes namespace imports such as `import * as Effect from "effect/Effect"` and the `Effect` namespace alias from the `effect` barrel, but it does not currently diagnose the named barrel form `import { Effect } from "effect"; Effect.as(...)`. This was not changed during WG3 refactor fixes because changing it would expand behavior after a clean correctness review. Revisit when deciding whether `no-barrel-import` fully owns named barrel imports in presets or whether each standalone rule should also catch named barrel imports; add explicit RuleTester and replay cases for whichever policy is chosen.
+
+### TD-011: Revisit dropping `yaml` if Bun gains strict YAML parsing
+
+The Bun runtime migration (`docs/exec-plans/active/bun-runtime-migration-2026-06-07.md`) keeps the `yaml` dependency. `scripts/checks/check-release-workflow.ts` needs duplicate-key rejection, and Bun's built-in `Bun.YAML.parse` silently keeps the last value on duplicate keys (probed on Bun 1.3.11; the current API reference still exposes only `parse(input: string)` with no strict option). YAML 1.2 treats duplicate mapping keys as an error, so `yaml` with `{ uniqueKeys: true }` is the spec-correct parser and Bun's built-in is a lenient gap.
+
+Revisit swapping `yaml` for `Bun.YAML` only when Bun adds duplicate-key rejection or a strict parsing option. The single consumer is `check-release-workflow.ts`, and the duplicate-key test in `check-release-workflow.test.ts` is the guard to keep green through any future swap. No upstream issue was filed (decision 2026-06-07).

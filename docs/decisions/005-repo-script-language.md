@@ -9,7 +9,9 @@ Repo-authored scripts are release and quality gates. They should fail during nor
 
 ## Decision
 
-Write repo-authored scripts in TypeScript by default. Keep scripts under `scripts/**/*.ts` so `tsconfig.scripts.json` includes them in `pnpm typecheck`.
+Write repo-authored scripts in TypeScript by default. Run runnable `scripts/**/*.ts` entrypoints with Bun, using `#!/usr/bin/env bun` for executable files and `bun <relative-path-to-scripts/...>.ts` from package scripts. Keep scripts under `scripts/**/*.ts` so `tsconfig.scripts.json` includes them in `pnpm typecheck`.
+
+Keep package binaries owned by their packages. pnpm owns installs and workspace recursion; Vitest owns tests; `tsc` owns typechecking; Changesets owns versioning and publishing; Stryker owns mutation testing. Do not wrap those package binaries in `bun run --bun` unless a future ADR changes the owner boundary.
 
 Organize TypeScript scripts by purpose:
 
@@ -22,6 +24,7 @@ Use JavaScript or MJS only for tool config files or external tool constraints th
 
 ## Consequences
 
-- New gate scripts, smoke tests, and inventory checks should follow the existing `scripts/**/*.ts` pattern.
-- Release-readiness checks participate in the same typechecking gate as package code.
+- New gate scripts, smoke tests, and inventory checks should follow the existing `scripts/**/*.ts` pattern and use Bun when they are runnable entrypoints.
+- Release-readiness checks participate in the same typechecking gate as package code, even though Bun is the execution runtime for authored scripts.
 - Tool config files such as `stryker.config.mjs` may stay in the format required by the tool.
+- Runtime pin drift is checked separately: `mise.toml` owns the Bun version and `package.json.engines.bun` must match it.

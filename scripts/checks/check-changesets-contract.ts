@@ -1,8 +1,13 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expectedReleasePrepareScript, expectedReleaseScript } from '../lib/release-contract.ts';
+import { assertPackagePackScriptsUseBun } from '../lib/package-script-contract.ts';
+import {
+  expectedReleasePrepareScript,
+  expectedReleaseScript,
+  releasePackages,
+} from '../lib/release-contract.ts';
 import {
   fail,
   isStringRecord,
@@ -24,13 +29,15 @@ interface ChangesetsConfig {
 
 const requiredScripts = {
   changeset: 'changeset',
-  'changesets:check': 'node scripts/checks/check-changesets-contract.ts',
+  'changesets:check': 'bun scripts/checks/check-changesets-contract.ts',
   release: expectedReleaseScript,
   'version-packages': 'changeset version && pnpm install --lockfile-only',
 } as const;
 
 const versionWorkflowPath = join(repoRoot, '.github', 'workflows', 'version-packages.yml');
-
+const packageJsonPaths = releasePackages.map((releasePackage) =>
+  join(repoRoot, releasePackage.packageJsonPath),
+);
 const rootPackageJson = readJsonRecord(join(repoRoot, 'package.json'), 'package.json');
 const workspace = readText(join(repoRoot, 'pnpm-workspace.yaml'));
 const changesetsConfig = readJsonRecord(
@@ -56,6 +63,16 @@ if (packageScripts['release:prepare'] !== expectedReleasePrepareScript) {
 
 if (!packageScripts['check']?.includes('pnpm changesets:check')) {
   fail('package.json check script must run pnpm changesets:check.');
+}
+
+for (const packageJsonPath of packageJsonPaths) {
+  const packageJson = readJsonRecord(packageJsonPath, packageJsonPath);
+  const scriptsCandidate = packageJson['scripts'];
+  const scripts = isStringRecord(scriptsCandidate)
+    ? scriptsCandidate
+    : fail(`${packageJsonPath} scripts must be a string map.`);
+
+  assertPackagePackScriptsUseBun(packageJsonPath, scripts);
 }
 
 const devDependenciesCandidate = rootPackageJson['devDependencies'];

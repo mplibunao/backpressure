@@ -77,6 +77,7 @@ Only these test or test-support files may appear dirty at the end of a worker pa
 
 - `packages/oxlint-standards/src/**/*.test.ts` (package test files)
 - `scripts/checks/fixture-replay.ts` (fixture replay helper)
+- `scripts/checks/check-version-pins.test.ts` (version-pin contract tests for `scripts/lib/version-pins.ts`)
 
 Production source files, Stryker artifacts (`reports/mutation/`), and unexpected scripts are blockers. The orchestrator may commit allowed-surface changes between workers; standalone workers should start from and return to a clean tree except for accepted allowed-surface edits.
 
