@@ -20,6 +20,7 @@ const pnpmVersion = '11.4.0';
 const multiDigitMinorPnpmVersion = '11.44.0';
 const multiDigitPatchPnpmVersion = '11.4.10';
 const olderPnpmVersion = '11.3.0';
+const nonStringPnpmVersionYaml = '11.4';
 
 const packageJsonFor = (bunEngine = bunVersion): string =>
   JSON.stringify({
@@ -225,7 +226,7 @@ describe('version pin workflow shape validation', () => {
     ]);
 
     expect(() => assertVersionPinContract(contractInput({ ciWorkflow: workflow }))).toThrow(
-      'ci.yml workflow YAML must parse without duplicate keys',
+      'ci.yml workflow YAML must parse without YAML errors',
     );
   });
 
@@ -347,11 +348,23 @@ describe('version pin pnpm action validation', () => {
     );
   });
 
-  it('rejects pnpm action steps without a string version', () => {
+  it('rejects pnpm action steps without version', () => {
     const workflow = workflowWithSteps([miseStep(), pnpmStepWithoutVersion(), setupNodeStep()]);
 
     expect(() => assertVersionPinContract(contractInput({ ciWorkflow: workflow }))).toThrow(
       'ci.yml pnpm/action-setup@v4 step must declare with.version',
+    );
+  });
+
+  it('rejects pnpm action steps with non-string version', () => {
+    const workflow = workflowWithSteps([
+      miseStep(),
+      pnpmStep(nonStringPnpmVersionYaml),
+      setupNodeStep(),
+    ]);
+
+    expect(() => assertVersionPinContract(contractInput({ ciWorkflow: workflow }))).toThrow(
+      'ci.yml pnpm/action-setup@v4 step must declare string with.version',
     );
   });
 

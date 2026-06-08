@@ -45,7 +45,7 @@ const workflowSteps = (workflow: string, label: string): ReadonlyArray<Record<st
   const document = parseDocument(workflow, { uniqueKeys: true });
   if (document.errors.length > 0) {
     const details = document.errors.map((error) => error.message).join('; ');
-    return fail(`${label} workflow YAML must parse without duplicate keys: ${details}.`);
+    return fail(`${label} workflow YAML must parse without YAML errors: ${details}.`);
   }
 
   const parsed = document.toJS() as unknown;
@@ -154,7 +154,7 @@ const extractPnpmActionVersions = (
       key: 'version',
       label,
       missingMessage: `${label} ${pnpmSetupAction} step must declare with.version.`,
-      nonStringMessage: `${label} ${pnpmSetupAction} step must declare with.version.`,
+      nonStringMessage: `${label} ${pnpmSetupAction} step must declare string with.version.`,
       step,
     }),
   );
