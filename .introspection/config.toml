@@ -1,0 +1,23 @@
+schema_version = 1
+repo_key = "BP"
+repo_slug = "backpressure"
+
+[records]
+root = "docs/records"
+
+[defaults]
+visibility = "local-only"
+
+[prime]
+default_limit = 5
+hard_limit = 20
+
+[[policy_docs]]
+name = "Agent router"
+path = "CLAUDE.md"
+applies_to = ["tech-debt"]
+
+[[policy_docs]]
+name = "Rule intake"
+path = "docs/design-docs/rule-intake.md"
+applies_to = ["tech-debt"]

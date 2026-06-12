@@ -2,6 +2,8 @@ node_modules/
 dist/
 coverage/
 .pnpm-store/
+.introspection/.locks/
+.introspection/generated/
 .stryker-tmp/
 reports/mutation/
 .tsbuildinfo/

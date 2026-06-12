@@ -16,6 +16,10 @@ Run these steps in order.
 4. **Check whether it earns its own package.** A new rule stays a preset or rule inside this package until the split triggers in `docs/decisions/003-monorepo-scope-and-naming.md` apply.
 5. **Record it.** Add the rule to `src/rule-manifest.ts` with its domain, gating, severity, and a note. Add tests, and for a port, attribution.
 
+## Known candidates
+
+The WI-14 introspection migration moved two optional hygiene candidates out of the legacy tracker and into this intake owner doc: `no-js-extension-imports` and `no-opaque-instance-fields`. Both candidates should be evaluated through the triage sequence above, using the effect-smol `@effect/oxc` implementations as reference material rather than as automatic acceptance.
+
 ## Coherence
 
 Two rules can target the same problem. The pack resolves that overlap by routing each rule to one owner preset. Overlap never justifies dropping a useful rule. The coherence rules live in `docs/design-docs/preset-architecture.md`.
