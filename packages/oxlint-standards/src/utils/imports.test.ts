@@ -1,7 +1,5 @@
 /* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
    vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion --
-   Mock helpers intentionally provide only the properties exercised by the code under test. */
 import type { Context, ESTree } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -107,8 +105,6 @@ const parentScopeCtx: Context = {
     }),
   },
 } as unknown as Context;
-
-/* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
 
 // ── getImportSource ───────────────────────────────────────────────────────────
 

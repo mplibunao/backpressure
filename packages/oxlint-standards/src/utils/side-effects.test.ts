@@ -13,9 +13,6 @@ vi.setConfig({ testTimeout: 1000 });
 // Range presence (not its value) satisfies the `'range' in value` check in isNodeLike
 const RANGE: [number, number] = [0, 1];
 
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion --
-   Mock helpers intentionally provide only the properties exercised by the code under test. */
-
 const id = (name: string): NodeLike =>
   ({ type: 'Identifier', name, range: RANGE }) as unknown as NodeLike;
 
@@ -53,8 +50,6 @@ const importCtx = (...names: Array<string>): Context => {
 const bareCtx: Context = {
   sourceCode: { getScope: () => ({ set: new Map(), upper: null }) },
 } as unknown as Context;
-
-/* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
 
 const effects = new Set(['Effect']);
 const atoms = new Set(['Atom']);

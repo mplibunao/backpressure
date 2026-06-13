@@ -21,9 +21,6 @@ const RANGE: [number, number] = [0, 1];
 
 // ── Mock helpers ──────────────────────────────────────────────────────────────
 
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion --
-   Mock helpers intentionally provide only the properties exercised by the code under test. */
-
 const id = (name: string): NodeLike =>
   ({ type: 'Identifier', name, range: RANGE }) as unknown as NodeLike;
 
@@ -69,8 +66,6 @@ const importCtx = (...names: Array<string>): Context => {
 const bareCtx: Context = {
   sourceCode: { getScope: () => ({ set: new Map(), upper: null }) },
 } as unknown as Context;
-
-/* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
 
 const effects = new Set(['Effect']);
 
@@ -248,7 +243,6 @@ describe('isEffectWrapperPipeExpression()', () => {
 
 // ── isReturnedFromNamedWrapperDeclaration ─────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- building parent chains
 const mut = (node: unknown): Record<string, unknown> => node as Record<string, unknown>;
 
 // Builds arrow-to-declarator-to-declaration chains with parent links pre-wired.

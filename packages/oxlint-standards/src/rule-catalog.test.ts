@@ -1,4 +1,3 @@
-/* oxlint-disable max-lines -- The catalog parity matrix intentionally keeps all rule examples together. */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

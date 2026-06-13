@@ -70,6 +70,22 @@ export default defineConfig({
       'sort-keys': 'off',
       'vitest/no-importing-vitest-globals': 'off',
     },
+    overrides: [
+      {
+        // Structural size/complexity ceilings are meaningless for test files; tests are intentionally large and fixture-heavy.
+        // Exception: max-depth and max-params stay strict — they flag real structural smells even in tests.
+        // The max-statements rule is included for cross-repo parity with introspection; currently off globally so this override is a harmless no-op today.
+        files: ['**/*.test.ts'],
+        rules: {
+          'max-lines': 'off',
+          'max-lines-per-function': 'off',
+          'max-statements': 'off',
+          'import/max-dependencies': 'off',
+          'no-magic-numbers': 'off',
+          '@typescript-eslint/no-unsafe-type-assertion': 'off',
+        },
+      },
+    ],
   },
   staged: {
     '*.{js,ts,tsx,jsx,json}': 'vp check --fix',
