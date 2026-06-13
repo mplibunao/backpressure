@@ -8,7 +8,7 @@ root = "docs/records"
 [defaults]
 visibility = "local-only"
 
-[prime]
+[records.list]
 default_limit = 5
 hard_limit = 20
 
