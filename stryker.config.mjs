@@ -47,11 +47,7 @@ const resolveMutate = () => {
   if (process.env.STRYKER_SWEEP === '1') {
     return [SOURCE_MUTATION_GLOB, ...UNIVERSAL_MUTATION_EXCLUSIONS];
   }
-  return [
-    SOURCE_MUTATION_GLOB,
-    ...UNIVERSAL_MUTATION_EXCLUSIONS,
-    ...DEFAULT_BEHAVIORAL_EXCLUSIONS,
-  ];
+  return [SOURCE_MUTATION_GLOB, ...UNIVERSAL_MUTATION_EXCLUSIONS, ...DEFAULT_BEHAVIORAL_EXCLUSIONS];
 };
 
 const mutate = resolveMutate();
