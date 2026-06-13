@@ -7,6 +7,5 @@ description = "Backpressure rule candidates and intake policy follow-up work."
 applies_to = ["tech-debt"]
 
 [terms.provenance]
-kind = "plan"
-ref = "/Users/mp/Projects/personal/introspection/docs/exec-plans/active/introspection-v1-bootstrap-2026-06-10.md#wi-14-adopt-introspection-in-backpressure"
+kind = "human"
 noted_at = "2026-06-12T00:00:00Z"

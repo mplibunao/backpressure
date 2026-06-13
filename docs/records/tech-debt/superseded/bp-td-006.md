@@ -18,13 +18,10 @@ tags:
   - visibility/local-only
 source:
   discovered_at: 2026-06-10T00:00:00Z
-  refs:
-    - kind: tracker
-      ref: docs/exec-plans/tech-debt-tracker.md#td-006
 resolution:
   disposition: superseded
   resolved_at: 2026-06-10T00:00:00Z
-  rationale: Earn-the-gate candidates are rule intake's job. During WI-14, add the two named rule candidates (`no-js-extension-imports`, `no-opaque-instance-fields`; reference impls in effect-smol `@effect/oxc`) to `rule-intake.md` if absent.
+  rationale: Earn-the-gate candidates are rule intake's job. Add the two named rule candidates (`no-js-extension-imports`, `no-opaque-instance-fields`; reference impls in effect-smol `@effect/oxc`) to `rule-intake.md` if absent.
   evidence_refs:
     - kind: doc
       ref: docs/design-docs/rule-intake.md
@@ -37,8 +34,8 @@ Madge circular-dependency checks, bundle-size diffs, ast-grep repo hygiene, `no-
 
 ## Why deferred
 
-Earn-the-gate candidates are rule intake's job. During WI-14, add the two named rule candidates (`no-js-extension-imports`, `no-opaque-instance-fields`; reference impls in effect-smol `@effect/oxc`) to `rule-intake.md` if absent.
+Earn-the-gate candidates are rule intake's job. Add the two named rule candidates (`no-js-extension-imports`, `no-opaque-instance-fields`; reference impls in effect-smol `@effect/oxc`) to `rule-intake.md` if absent.
 
 ## Revisit trigger
 
-No further trigger remains; the WI-12 migration disposition closed this legacy entry as superseded.
+No further trigger remains; the introspection migration disposition closed this legacy entry as superseded.

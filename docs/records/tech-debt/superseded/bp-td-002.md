@@ -18,9 +18,6 @@ tags:
   - visibility/local-only
 source:
   discovered_at: 2026-06-10T00:00:00Z
-  refs:
-    - kind: tracker
-      ref: docs/exec-plans/tech-debt-tracker.md#td-002
 resolution:
   disposition: superseded
   resolved_at: 2026-06-10T00:00:00Z
@@ -41,4 +38,4 @@ Split-trigger policy is owned by the package/preset design docs.
 
 ## Revisit trigger
 
-No further trigger remains; the WI-12 migration disposition closed this legacy entry as superseded.
+No further trigger remains; the introspection migration disposition closed this legacy entry as superseded.

@@ -18,9 +18,6 @@ tags:
   - visibility/local-only
 source:
   discovered_at: 2026-06-10T00:00:00Z
-  refs:
-    - kind: tracker
-      ref: docs/exec-plans/tech-debt-tracker.md#td-011
 ---
 Revisit dropping `yaml` if Bun gains strict YAML parsing.
 

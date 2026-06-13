@@ -18,9 +18,6 @@ tags:
   - visibility/local-only
 source:
   discovered_at: 2026-06-10T00:00:00Z
-  refs:
-    - kind: tracker
-      ref: docs/exec-plans/tech-debt-tracker.md#td-004
 resolution:
   disposition: rejected
   resolved_at: 2026-06-10T00:00:00Z
@@ -38,4 +35,4 @@ Oxlint-only direction is settled; the portability cross-check was not pursued.
 
 ## Revisit trigger
 
-No further trigger remains; the WI-12 migration disposition closed this legacy entry as rejected.
+No further trigger remains; the introspection migration disposition closed this legacy entry as rejected.

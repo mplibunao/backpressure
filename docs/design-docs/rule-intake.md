@@ -18,7 +18,7 @@ Run these steps in order.
 
 ## Known candidates
 
-The WI-14 introspection migration moved two optional hygiene candidates out of the legacy tracker and into this intake owner doc: `no-js-extension-imports` and `no-opaque-instance-fields`. Both candidates should be evaluated through the triage sequence above, using the effect-smol `@effect/oxc` implementations as reference material rather than as automatic acceptance.
+The introspection migration moved two optional hygiene candidates out of the legacy tracker and into this intake owner doc: `no-js-extension-imports` and `no-opaque-instance-fields`. Both candidates should be evaluated through the triage sequence above, using the effect-smol `@effect/oxc` implementations as reference material rather than as automatic acceptance.
 
 ## Coherence
 

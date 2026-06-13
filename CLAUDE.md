@@ -14,7 +14,6 @@ This repo is MP's personal monorepo for code-quality backpressure tooling. The v
 - Lint architecture terminology (rule / plugin / preset / shareable config): `docs/references/lint-glossary.md`.
 - Accepted decisions index: `docs/decisions/index.md`.
 - Deferred work records: run `introspection prime` before planning and `introspection check` before finishing changes.
-- Legacy tracker pointer: `docs/exec-plans/tech-debt-tracker.md` explains the cutover to `docs/records/tech-debt/`.
 - Prose gate policy: `docs/references/prose-gate.md`.
 
 ## Tooling posture
@@ -23,7 +22,7 @@ This repo is MP's personal monorepo for code-quality backpressure tooling. The v
 - Authored TypeScript script runtime: Bun, pinned in `mise.toml` and `package.json.engines.bun`; CI and release get Bun from the existing `jdx/mise-action` install step. ADR-005 owns the detailed runtime boundary.
 - Local front door: vite-plus (`vp`) for formatting, linting, testing, and hooks.
 - Non-npm tooling: `mise.toml`, currently Bun, Node, and Vale.
-- Introspection CLI: consumed from the local `../introspection` checkout during the WI-14 dogfood phase; `pnpm check` runs `introspection check` before prose.
+- Introspection CLI: consumed from the local `../introspection` checkout during dogfooding; `pnpm check` runs `introspection check` before prose.
 - Prose gate: repo-local Vale config, always run with `--no-global`.
 
 ## Working rules
