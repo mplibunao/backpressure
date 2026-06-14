@@ -123,7 +123,7 @@ const contractInput = ({
   packageJson = packageJsonFor(bunEngine),
   releaseWorkflow = validWorkflow(),
 }: VersionPinFixture = {}) => ({
-  mise: `[tools]\nbun = "${bunVersion}"\nnode = "${nodeVersion}"\nvale = "3.9.6"\n`,
+  mise: `[tools]\nbun = "${bunVersion}"\nnode = "${nodeVersion}"\nvale = "3.14.1"\n`,
   packageJson,
   pnpmWorkspace: 'catalog:\n  oxlint: 1.0.0\n  typescript: 5.9.2\n',
   workflows: [
