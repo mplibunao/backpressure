@@ -76,7 +76,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | DONE | `71f5622` |
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | DONE | `45d3845` |
 | WI-6 | Effective-config generation + inventory gate | L | DONE | `fbfa23a` |
-| WI-7 | README + `rules.md` consumption model | M | PENDING | |
+| WI-7 | README + `rules.md` consumption model | M | DONE | `2753fc8` |
 | WI-8 | Dogfood in backpressure root (delete local block, decompose `max-statements`) | L | PENDING | |
 | WI-9 | Packed-consumer smoke covers new exports | M | PENDING | |
 | WI-10 | Changesets for both packages | S | PENDING | |
@@ -421,8 +421,68 @@ Entries are appended here as each item passes its gates and commits.
 - **Commits:** `fbfa23a` for the generator, shared lib, artifact, gate extension, and the
   jest-hygiene scoping fix to `vitestConfig`/manifest/drift-guards, plus this ledger-record
   commit.
-- **Issues:** a known lockfile-sync warning (`node_modules out of sync with lockfile`) prints
-  on pnpm commands because the WI-2 `oxlint` dev dependency landed in the lockfile but the
-  working copy was not re-installed; it does not block any gate (the binary resolves and all
-  checks pass). Run `pnpm install` to clear it before the WI-8 dogfood.
+- **Gate-integrity follow-up (`14976c1`):** running `pnpm install --frozen-lockfile` during
+  WI-7 prep surfaced a real defect in the WI-6 gate. The generator emits expanded JSON arrays,
+  but the pre-commit `vp check --fix` formatter compacts them in the committed file, so the
+  staleness gate (which compares the committed file against raw generator output) failed every
+  time and would have failed CI. The orchestrator confirmed the cause by running `vp fmt` and
+  watching it rewrite the artifact, then fixed it by excluding
+  `docs/references/effective-config.json` from the formatter via `toolIgnorePatterns` in
+  `vite.config.ts` (the same golden-fixture precedent that exempts generated output), and
+  regenerated the artifact. Verified: regeneration is deterministic, the formatter no longer
+  touches the file, and the staleness gate passes. A WI-7 build agent had first misdiagnosed
+  this as a node_modules or pre-existing problem; the orchestrator rejected that and traced the
+  formatter as the root cause.
+- **Issues:** the lockfile-sync warning (`node_modules out of sync with lockfile`) from the WI-2
+  `oxlint` dev dependency is cleared by `pnpm install --frozen-lockfile`, run during WI-7 prep.
+  No open issues.
 - **Action items for MP:** none.
+
+### WI-7: README + rules.md consumption model (DONE)
+
+- **Build:** one `engineer` agent (Claude Code, sonnet:high) drafted the docs. It replaced the
+  README "Usage" section with a "Consumption model" section that separates the two export kinds
+  (custom-rule presets shaped `{ jsPlugins, rules }` versus full `OxlintConfig` fragments), shows
+  the `composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig, {...})` assembly, explains
+  why the helper replaces native `extends` (overrides use replace-semantics, so `extends` would
+  drop the base test-file overrides), gives an Effect-preset tail-override example, and points to
+  the generated effective-config reference. It removed a stale note claiming inline vite-plus
+  config might work later, since the WI-1 spike already proved that path. In `rules.md` it added a
+  pointer to `effective-config.md` and clarified that the catalog sections cover custom AST rules
+  only. The agent ran the prose gate clean.
+- **Review gate:** one `context_builder` review on chat `wi7-docs-review-384FD8`. It returned two
+  must-fix items and one suggestion. The orchestrator verified each against the source rather than
+  applying on report, and none produced an in-scope doc change:
+  - **Must-fix DISPROVEN (orchestrator override).** The review claimed the Effect example was wrong
+    to place `jsPlugins` inside an `overrides[]` entry, inferring jsPlugins is top-level only. The
+    reviewer had flagged that it could not read the installed oxlint type. The orchestrator read it
+    directly: `OxlintOverride.jsPlugins?: null | ExternalPluginEntry[]` exists at
+    `node_modules/oxlint/dist/index.d.ts:400`, so override-level jsPlugins is valid in oxlint
+    1.58.0 and the example is correct. No change. Recorded here because overriding a review must-fix
+    is a judgment MP should be able to audit.
+  - **Must-fix OUT-OF-SCOPE (routed to WI-17).** The review noted the pre-existing "Rule severity"
+    copy (the "quieter level" wording for style rules, and the line about agents skipping a warn
+    tier) no longer matches the binary error/off posture with the `STYLE_AT_ERROR_EXCEPTIONS`
+    allowlist. That copy mirrors ADR-004, and reconciling ADR-004 with the binary posture is WI-17.
+    Rewriting it in WI-7 would pre-empt that policy decision and create README-versus-ADR drift.
+    Left unchanged and folded into the existing WI-17 action item.
+  - **Suggestion REJECTED.** The review suggested making the effective-config pointer a
+    repo-root-relative link. Every other doc reference in this README (`docs/references/rules.md`,
+    `docs/decisions/004-...`) uses the same repo-root-relative backtick form, so matching the
+    convention is correct. The npm-publish-visibility point it raised is pre-existing across all
+    references and out of WI-7 scope.
+  The review independently confirmed the compose example, the why-not-extends rationale, and the
+  rules.md DRY split as accurate.
+- **Refactor gate:** one `context_builder` analysis on chat `wi7-docs-review-871217`. Clean pass,
+  no must-fix, suggestion, or nit. The new "Consumption model" section (export taxonomy and shape)
+  and the existing "Presets" section (per-preset purpose) are complementary, section ordering is
+  sensible for a first-time consumer, and the rules.md pointer sits before the catalog details. No
+  changes applied.
+- **Checks:** the change is markdown only, with no code or test impact. The prose gate
+  (`pnpm prose`) is green and the commit-msg ai-tells gate passed on commit. The orchestrator read
+  both diffs in full before running the gates.
+- **Commits:** `2753fc8` for the README and rules.md consumption-model docs.
+- **Issues:** the WI-17 severity reconciliation now also owns the README "Rule severity" section
+  copy (the warn-tier language), not only ADR-004 and TD-CARD-033.
+- **Action items for MP:** none new. The WI-17 style-at-error decision (from WI-5) now also covers
+  updating or removing the README warn-tier copy when the posture is ratified.
