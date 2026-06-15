@@ -72,7 +72,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | --- | --- | --- | --- | --- |
 | WI-1 | Pre-build resolutions (fragment type, compose vs extends, naming lock) | S | DONE | `3428581` |
 | WI-2 | Config-fragment type + composition (helper built: `extends` cannot concat overrides) | M | DONE | `196dcb8` |
-| WI-3 | `baseConfig` canonical baseline | L | PENDING | |
+| WI-3 | `baseConfig` canonical baseline | L | DONE | `63a2651` |
 | WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | PENDING | |
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | PENDING | |
 | WI-6 | Effective-config generation + inventory gate | L | PENDING | |
@@ -192,3 +192,62 @@ Entries are appended here as each item passes its gates and commits.
 - **Issues:** none open.
 - **Action items for MP:** none. The `oxlint` dev dependency uses the repo `catalog:`
   spec, consistent with the catalog-only policy that rejects `file:` and `link:`.
+
+### WI-3: baseConfig canonical baseline (DONE)
+
+- **Build:** one `pair` agent (Codex CLI, gpt-5.5, reasoning high). It added
+  `baseConfig` as an `OxlintConfig` fragment in `src/configs/base.ts` with `base.test.ts`,
+  exported through both barrels. It folds the live root config (`vite.config.ts:24-86`)
+  into the package and applies every plan decision: graded categories (correctness,
+  suspicious, restriction error; nursery, pedantic, style off), the type-import quartet
+  (`consistent-type-imports` inline, `no-import-type-side-effects` error,
+  `consistent-type-specifier-style` off, explicit `no-duplicate-imports` off) plus
+  inline-aware `import/no-duplicates`, `array-simple`, `max-statements` at 10, the
+  structural ceilings, `no-non-null-assertion`/`no-shadow`/`sort-imports` error,
+  `sort-keys` dropped, group-A hygiene, `...generalPreset.rules` and jsPlugins, options
+  with no `typeAware`/`typeCheck`, and the test-file ceiling-relaxation override. Rules
+  use the `@typescript-eslint/*` namespace. The agent verified by materializing the
+  fragment to a temp `.oxlintrc.json` and running `oxlint --print-config`.
+- **Review gate:** one `context_builder` review on chat `review-base-config-831EB3` plus
+  two follow-ups. It caught two substantive P1 issues the orchestrator confirmed and
+  delegated back:
+  - The `style: off` flip silently dropped rules that grade as safety/correctness, not
+    cosmetic (TD-CARD-033 grade-by-kind). Nine were re-listed as explicit `error` after
+    verifying each against `oxlint --rules`: `prefer-promise-reject-errors`,
+    `no-return-assign`, `guard-for-in`, `no-new-func`, `no-script-url`,
+    `no-template-curly-in-string`, `no-implicit-coercion`, `no-multi-assign`, and
+    `@typescript-eslint/no-empty-interface`. Genuinely cosmetic rules
+    (`consistent-type-definitions`, `prefer-for-of`, `default-case-last`,
+    `consistent-type-assertions`) stayed dropped.
+  - Behavior-parity gap: `baseConfig` loaded the `import` plugin under `restriction:
+    error` but did not carry the live root's explicit import-policy offs. An empirical
+    `oxlint --print-config` confirmed `import/no-default-export`,
+    `import/no-relative-parent-imports`, and `import/no-cycle` were active as `deny`,
+    which would have banned default exports repo-wide and broken WI-8 dogfood parity. The
+    full live-root-disabled set plus the deferred architecture rules (`import/no-cycle`,
+    `oxc/no-barrel-file`, using oxlint's exact rule name) were set to `off`; the
+    after-state print-config shows all as `allow`.
+  Also fixed: removed the stray `10` from the `no-magic-numbers` ignore list (back to the
+  live `[0, 1, 4, 15, 20, 75, 500]`). Two boundary tests were added (style-off
+  kept-vs-dropped, deferred import policy stays out of base) plus a `generalPreset`
+  inclusion test. The third review pass cleared the item with one non-blocking nit, which
+  was applied.
+- **Refactor gate:** explore scouts skipped, since `baseConfig` is declarative config
+  data. One `context_builder` analysis on chat `wi3-refactor-review-523766`; it judged
+  the file at a good local optimum and rejected the tempting extractions (sharing
+  constants between source and tests would reduce drift detection; the flat rules map is
+  the clearest form; the `no-magic-numbers` ignores are policy, not derived values). One
+  low finding (a test named after the transient WI-3 label) was applied as a rename. No
+  follow-up needed.
+- **Checks:** the orchestrator ran the checks independently after each gate, green every
+  time: `pnpm --filter @mplibunao/oxlint-standards typecheck` (clean), the package vitest
+  suite (674 tests pass across 9 files), and `pnpm lint` (`vp lint --max-warnings 0`: 0
+  warnings and 0 errors over 61 files). The effective-config evidence for the style-off
+  drop set (51 rules) and the import-policy offs was produced ad-hoc via
+  `oxlint --print-config`; WI-6 formalizes it as a checked-in gate.
+- **Commits:** `63a2651` for `baseConfig`, its tests, and the exports, plus this
+  ledger-record commit.
+- **Issues:** none open. Deferred to WI-6: a checked-in effective-config view that pins
+  the style-off drop set, the import-policy offs, and documents the `typeAware`/`typeCheck`
+  omission, so future oxlint version bumps cannot silently change the effective posture.
+- **Action items for MP:** none.
