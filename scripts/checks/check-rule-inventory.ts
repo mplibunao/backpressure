@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/* oxlint-disable max-lines -- The inventory gate intentionally co-locates manifest, source, and runtime invariants. */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -26,14 +27,18 @@ const delegatedParity = 'delegated';
 const notApplicableParity = 'not-applicable';
 const minimumSemanticInvalidCases = 1;
 const minimumSemanticValidCases = 2;
+const minimumQuietOrOffCollectionEntries = 5;
 
 interface ManifestEntry {
   readonly disposition: string;
   readonly gating: string;
   readonly implementationStatus: string;
+  readonly collections: ReadonlyArray<string>;
   readonly name: string;
+  readonly note: string;
   readonly parityStatus: string;
-  readonly presetEnabled: boolean;
+  readonly rationaleClass: string;
+  readonly severity: string;
   readonly sourceOwnership: string;
   readonly sourcePresets: ReadonlyArray<string>;
   readonly testSource: string;
@@ -58,8 +63,19 @@ interface SourceFixtureSet {
   readonly valid: ReadonlyArray<string>;
 }
 
+interface RuleConfigOverride {
+  readonly rules?: Record<string, unknown>;
+}
+
+interface RuleConfigFragment {
+  readonly overrides?: ReadonlyArray<RuleConfigOverride>;
+  readonly rules?: Record<string, unknown>;
+}
+
 interface InventoryPackageEntry {
+  readonly configs: Record<string, RuleConfigFragment>;
   readonly manifestEntries: ReadonlyArray<ManifestEntry>;
+  readonly pluginName: string;
   readonly rules: Record<string, unknown>;
 }
 
@@ -70,6 +86,16 @@ const sorted = (values: ReadonlyArray<string>) => [...values].sort(compareText);
 const sameList = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 const list = (values: ReadonlyArray<string>) => (values.length === 0 ? 'none' : values.join(', '));
+// Pending WI-17 / ADR-004 policy reconciliation: these are the only style-class rules
+// Currently allowed to stay at error because they are mechanical, autofixable exceptions.
+const styleAtErrorExceptions = new Set([
+  '@typescript-eslint/array-type',
+  '@typescript-eslint/dot-notation',
+  '@typescript-eslint/no-inferrable-types',
+  '@typescript-eslint/prefer-function-type',
+  'prefer-template',
+  'sort-imports',
+]);
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -80,9 +106,12 @@ const isManifestEntry = (value: unknown): value is ManifestEntry =>
   typeof value['disposition'] === 'string' &&
   typeof value['gating'] === 'string' &&
   typeof value['implementationStatus'] === 'string' &&
+  isStringArray(value['collections']) &&
   typeof value['name'] === 'string' &&
+  typeof value['note'] === 'string' &&
   typeof value['parityStatus'] === 'string' &&
-  typeof value['presetEnabled'] === 'boolean' &&
+  typeof value['rationaleClass'] === 'string' &&
+  typeof value['severity'] === 'string' &&
   typeof value['sourceOwnership'] === 'string' &&
   isStringArray(value['sourcePresets']) &&
   typeof value['testSource'] === 'string';
@@ -103,6 +132,14 @@ const isReplaySuites = (value: unknown): value is ReadonlyArray<ReplaySuite> =>
   Array.isArray(value) && value.every(isReplaySuite);
 const isManifestEntries = (value: unknown): value is ReadonlyArray<ManifestEntry> =>
   Array.isArray(value) && value.every(isManifestEntry);
+const isRuleConfigOverride = (value: unknown): value is RuleConfigOverride =>
+  isObjectRecord(value) &&
+  (typeof value['rules'] === 'undefined' || isObjectRecord(value['rules']));
+const isRuleConfigFragment = (value: unknown): value is RuleConfigFragment =>
+  isObjectRecord(value) &&
+  (typeof value['rules'] === 'undefined' || isObjectRecord(value['rules'])) &&
+  (typeof value['overrides'] === 'undefined' ||
+    (Array.isArray(value['overrides']) && value['overrides'].every(isRuleConfigOverride)));
 const readReplaySuites = (moduleNamespace: unknown): ReadonlyArray<ReplaySuite> => {
   if (isObjectRecord(moduleNamespace) && isReplaySuites(moduleNamespace['replaySuites'])) {
     return moduleNamespace['replaySuites'];
@@ -114,12 +151,47 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
   if (
     isObjectRecord(moduleNamespace) &&
     isManifestEntries(moduleNamespace['ruleManifest']) &&
-    isObjectRecord(moduleNamespace['rules'])
+    isObjectRecord(moduleNamespace['rules']) &&
+    typeof moduleNamespace['pluginName'] === 'string' &&
+    isRuleConfigFragment(moduleNamespace['baseConfig']) &&
+    isRuleConfigFragment(moduleNamespace['vitestConfig']) &&
+    isRuleConfigFragment(moduleNamespace['nodeRuntimeConfig'])
   ) {
-    return { manifestEntries: moduleNamespace['ruleManifest'], rules: moduleNamespace['rules'] };
+    return {
+      configs: {
+        baseConfig: moduleNamespace['baseConfig'],
+        nodeRuntimeConfig: moduleNamespace['nodeRuntimeConfig'],
+        vitestConfig: moduleNamespace['vitestConfig'],
+      },
+      manifestEntries: moduleNamespace['ruleManifest'],
+      pluginName: moduleNamespace['pluginName'],
+      rules: moduleNamespace['rules'],
+    };
   }
 
-  return fail('Built package did not export ruleManifest and runtime rules.');
+  return fail('Built package did not export ruleManifest, configs, and runtime rules.');
+};
+
+const configuredSeverity = (setting: unknown): unknown =>
+  Array.isArray(setting) ? setting[0] : setting;
+const normalizeConfigRuleName = (ruleName: string, pluginRulePrefix: string): string =>
+  ruleName.startsWith(pluginRulePrefix) ? ruleName.slice(pluginRulePrefix.length) : ruleName;
+const explicitConfiguredRules = (
+  config: RuleConfigFragment,
+  pluginRulePrefix: string,
+): ReadonlyArray<readonly [string, unknown]> => {
+  const rules = Object.entries(config.rules ?? {}).map(
+    ([ruleName, setting]) =>
+      [normalizeConfigRuleName(ruleName, pluginRulePrefix), configuredSeverity(setting)] as const,
+  );
+  const overrideRules = (config.overrides ?? []).flatMap((override) =>
+    Object.entries(override.rules ?? {}).map(
+      ([ruleName, setting]) =>
+        [normalizeConfigRuleName(ruleName, pluginRulePrefix), configuredSeverity(setting)] as const,
+    ),
+  );
+
+  return [...rules, ...overrideRules];
 };
 
 const sourceRuleNames = uniqueSorted(
@@ -164,7 +236,8 @@ const [replayModule, packageEntry]: [unknown, unknown] = await Promise.all([
   import(pathToFileURL(distEntryPath).href),
 ]);
 const replaySuites = readReplaySuites(replayModule);
-const { manifestEntries, rules } = readPackageEntry(packageEntry);
+const { configs, manifestEntries, pluginName, rules } = readPackageEntry(packageEntry);
+const pluginRulePrefix = `${pluginName}/`;
 const manifestNames = manifestEntries.map((entry) => entry.name);
 const duplicateNames = uniqueSorted(
   manifestNames.filter((name, index) => manifestNames.indexOf(name) !== index),
@@ -238,8 +311,24 @@ for (const name of sourceConfigAnomalies) {
   }
 }
 
-const enabledWithoutImplementation = manifestEntries.filter(
-  (entry) => entry.presetEnabled && entry.implementationStatus !== 'implemented',
+const collectionEntries = manifestEntries.filter((entry) => entry.collections.length > 0);
+const collectionEntriesFor = (collection: string): ReadonlyArray<ManifestEntry> =>
+  manifestEntries.filter((entry) => entry.collections.includes(collection));
+const omittedNonErrorRuleAllowlist = new Set([
+  // Test files disable unsafe assertions because fixture-heavy tests need boundary casts.
+  '@typescript-eslint/no-unsafe-type-assertion',
+  // The linteffect no-ternary source row stays collection-less; base explicitly leaves it off.
+  'no-ternary',
+  // Vitest and Unicorn non-owned rules are explicitly silenced to prevent category bleed.
+  ...Object.keys(configs['vitestConfig']?.rules ?? {}).map((ruleName) =>
+    normalizeConfigRuleName(ruleName, pluginRulePrefix),
+  ),
+  ...Object.keys(configs['nodeRuntimeConfig']?.rules ?? {})
+    .filter((ruleName) => ruleName !== 'unicorn/prefer-node-protocol')
+    .map((ruleName) => normalizeConfigRuleName(ruleName, pluginRulePrefix)),
+]);
+const enabledWithoutImplementation = collectionEntries.filter(
+  (entry) => entry.implementationStatus !== 'implemented',
 );
 if (enabledWithoutImplementation.length > 0) {
   fail(
@@ -247,16 +336,85 @@ if (enabledWithoutImplementation.length > 0) {
   );
 }
 
-const enabledWithoutParity = manifestEntries.filter(
+const enabledWithoutParity = collectionEntries.filter(
   (entry) =>
-    entry.presetEnabled &&
     entry.disposition !== 'built-in' &&
     ![sourceFixtureParity, semanticScenarioParity].includes(entry.parityStatus),
 );
 if (enabledWithoutParity.length > 0) {
   fail(
-    `Preset-enabled custom rules require source or semantic parity: ${list(enabledWithoutParity.map((entry) => entry.name))}.`,
+    `Collection-backed custom rules require source or semantic parity: ${list(enabledWithoutParity.map((entry) => entry.name))}.`,
   );
+}
+
+const quietOrOffEntries = collectionEntries.filter((entry) => entry.severity !== 'error');
+if (quietOrOffEntries.length <= minimumQuietOrOffCollectionEntries) {
+  fail('Collection-backed manifest looks blanket-all-error; expected a meaningful quiet/off set.');
+}
+
+for (const rationaleClass of ['correctness', 'safety', 'agent-failure-mode', 'style']) {
+  if (!collectionEntries.some((entry) => entry.rationaleClass === rationaleClass)) {
+    fail(`Collection-backed manifest lacks ${rationaleClass} rationale coverage.`);
+  }
+}
+
+const quietlyEnabledCriticalRules = collectionEntries.filter(
+  (entry) =>
+    ['correctness', 'safety'].includes(entry.rationaleClass) &&
+    entry.severity !== 'off' &&
+    entry.severity !== 'error',
+);
+if (quietlyEnabledCriticalRules.length > 0) {
+  fail(
+    `Enabled correctness/safety rules must stay at error: ${list(quietlyEnabledCriticalRules.map((entry) => entry.name))}.`,
+  );
+}
+
+const styleErrorEntries = collectionEntries.filter(
+  (entry) => entry.rationaleClass === 'style' && entry.severity === 'error',
+);
+const styleErrorNames = sorted(styleErrorEntries.map((entry) => entry.name));
+const styleErrorExceptionNames = sorted([...styleAtErrorExceptions]);
+if (!sameList(styleErrorNames, styleErrorExceptionNames)) {
+  fail(
+    `Style-class error rules must exactly match the pending-policy exception allowlist. Expected [${styleErrorExceptionNames.join(', ')}], got [${styleErrorNames.join(', ')}].`,
+  );
+}
+
+const styleErrorsWithoutAutofixEvidence = styleErrorEntries.filter(
+  (entry) => !entry.note.includes('autofixable') || !entry.note.includes('vp check --fix'),
+);
+if (styleErrorsWithoutAutofixEvidence.length > 0) {
+  fail(
+    `Style-class error exceptions must evidence autofixable + vp check --fix: ${list(styleErrorsWithoutAutofixEvidence.map((entry) => entry.name))}.`,
+  );
+}
+
+for (const [collection, config] of Object.entries(configs)) {
+  const manifestNamesForCollection = new Set(
+    collectionEntriesFor(collection).map((entry) => entry.name),
+  );
+  const configuredRules = explicitConfiguredRules(config, pluginRulePrefix);
+  const missingErrorRules = configuredRules
+    .filter(([, severity]) => severity === 'error')
+    .map(([ruleName]) => ruleName)
+    .filter((ruleName) => !manifestNamesForCollection.has(ruleName));
+  if (missingErrorRules.length > 0) {
+    fail(`${collection} explicit error rules missing manifest rows: ${list(missingErrorRules)}.`);
+  }
+
+  const missingNonErrorRules = configuredRules
+    .filter(([, severity]) => severity !== 'error')
+    .map(([ruleName]) => ruleName)
+    .filter(
+      (ruleName) =>
+        !manifestNamesForCollection.has(ruleName) && !omittedNonErrorRuleAllowlist.has(ruleName),
+    );
+  if (missingNonErrorRules.length > 0) {
+    fail(
+      `${collection} non-error manifest omissions must be allowlisted: ${list(missingNonErrorRules)}.`,
+    );
+  }
 }
 
 const implementedWithoutRuntimeRule = implementedCustomEntries.filter(

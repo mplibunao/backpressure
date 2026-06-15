@@ -1,6 +1,25 @@
 /* oxlint-disable max-lines -- The manifest is intentionally data-dense because it is the canonical machine-checkable catalog. */
 
-export type RuleDomain = 'effect' | 'effect-react' | 'general' | 'boundaries' | 'lsp';
+export type RuleDomain =
+  | 'effect'
+  | 'effect-react'
+  | 'general'
+  | 'boundaries'
+  | 'lsp'
+  | 'base'
+  | 'test'
+  | 'runtime';
+export type RuleCollection =
+  | 'generalPreset'
+  | 'effectPreset'
+  | 'effectReactPreset'
+  | 'boundariesPreset'
+  | 'baseConfig'
+  | 'vitestConfig'
+  | 'nodeRuntimeConfig';
+export type RuleRationaleClass = 'correctness' | 'safety' | 'agent-failure-mode' | 'style';
+export type RuleManifestSeverity = 'off' | 'info' | 'warning' | 'error';
+export type RuleConfigSeverity = 'off' | 'warn' | 'error';
 export type RuleDisposition =
   | 'ported'
   | 'reimplemented'
@@ -15,6 +34,7 @@ export type RuleSourceOwnership =
   | 'recon:t3code'
   | 'recon'
   | 'built-in'
+  | 'oxlint-native'
   | 'LSP';
 export type RuleTestSource = 'linteffect-fixture' | 't3code' | 'scenario-only' | 'none';
 export type RuleParityStatus =
@@ -28,13 +48,16 @@ export type RuleGating =
   | 'effect-react-import'
   | 'ungated-broad'
   | 'stack-neutral'
+  | 'test-file'
+  | 'runtime'
   | 'boundary';
 
 export interface RuleManifestEntry {
   readonly name: string;
   readonly domain: RuleDomain;
   readonly sourcePresets: ReadonlyArray<string>;
-  readonly severity: 'off' | 'info' | 'warning' | 'error';
+  readonly severity: RuleManifestSeverity;
+  readonly rationaleClass: RuleRationaleClass;
   readonly implementationStatus: 'implemented' | 'not-implemented' | 'delegated';
   readonly testStatus: 'covered' | 'not-applicable';
   readonly parityStatus: RuleParityStatus;
@@ -43,11 +66,64 @@ export interface RuleManifestEntry {
   readonly sourceOwnership: RuleSourceOwnership;
   readonly testSource: RuleTestSource;
   readonly gating: RuleGating;
-  readonly presetEnabled: boolean;
+  readonly collections: ReadonlyArray<RuleCollection>;
   readonly note: string;
 }
 
-const sourceRule = (entry: RuleManifestEntry): RuleManifestEntry => entry;
+type RuleManifestEntryInput = Omit<RuleManifestEntry, 'rationaleClass'> & {
+  readonly rationaleClass?: RuleRationaleClass;
+};
+
+const presetCollectionByDomain: Partial<Record<RuleDomain, RuleCollection>> = {
+  boundaries: 'boundariesPreset',
+  effect: 'effectPreset',
+  'effect-react': 'effectReactPreset',
+  general: 'generalPreset',
+};
+
+const defaultCollectionsForDomain = (domain: RuleDomain): ReadonlyArray<RuleCollection> => {
+  const presetCollection = presetCollectionByDomain[domain];
+  if (typeof presetCollection === 'undefined') {
+    return [];
+  }
+
+  return domain === 'general' ? [presetCollection, 'baseConfig'] : [presetCollection];
+};
+
+const inferRationaleClass = (entry: RuleManifestEntryInput): RuleRationaleClass => {
+  if (entry.disposition === 'LSP-delegated') {
+    return 'correctness';
+  }
+
+  if (entry.gating === 'boundary') {
+    return 'safety';
+  }
+
+  if (['info', 'warning'].includes(entry.severity)) {
+    return 'agent-failure-mode';
+  }
+
+  if (entry.severity === 'off') {
+    return 'style';
+  }
+
+  if (entry.gating === 'ungated-broad' || entry.name.includes('ladder')) {
+    return 'agent-failure-mode';
+  }
+
+  return 'correctness';
+};
+
+const sourceRule = (entry: RuleManifestEntryInput): RuleManifestEntry => {
+  if (entry.collections.length > 0 && typeof entry.rationaleClass === 'undefined') {
+    throw new Error(`Collection-backed rule ${entry.name} requires an explicit rationaleClass.`);
+  }
+
+  return {
+    ...entry,
+    rationaleClass: entry.rationaleClass ?? inferRationaleClass(entry),
+  };
+};
 
 const lspDelegatedCheck = (name: string): RuleManifestEntry =>
   sourceRule({
@@ -63,7 +139,7 @@ const lspDelegatedCheck = (name: string): RuleManifestEntry =>
     sourceOwnership: 'LSP',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: false,
+    collections: [],
     note: '@effect/language-service owns this semantic/type-aware diagnostic.',
   });
 
@@ -80,9 +156,10 @@ interface PortedScenarioRuleOptions {
   readonly name: string;
   readonly domain: RuleDomain;
   readonly sourcePresets: ReadonlyArray<string>;
-  readonly severity: 'off' | 'info' | 'warning' | 'error';
+  readonly severity: RuleManifestSeverity;
+  readonly rationaleClass: RuleRationaleClass;
   readonly gating: RuleGating;
-  readonly presetEnabled: boolean;
+  readonly collections: ReadonlyArray<RuleCollection>;
   readonly note: string;
 }
 
@@ -95,32 +172,36 @@ export const portedScenarioRule = ({
   domain,
   sourcePresets,
   severity,
+  rationaleClass,
   gating,
-  presetEnabled,
+  collections,
   note,
-}: PortedScenarioRuleOptions): RuleManifestEntry => ({
-  name,
-  domain,
-  sourcePresets,
-  severity,
-  implementationStatus: 'implemented',
-  testStatus: 'covered',
-  parityStatus: 'semantic-scenario-replay',
-  disposition: 'ported',
-  effectVersionSensitivity: 'v4-primary structural',
-  sourceOwnership: 'linteffect',
-  testSource: 'none',
-  gating,
-  presetEnabled,
-  note,
-});
+}: PortedScenarioRuleOptions): RuleManifestEntry =>
+  sourceRule({
+    name,
+    domain,
+    sourcePresets,
+    severity,
+    rationaleClass,
+    implementationStatus: 'implemented',
+    testStatus: 'covered',
+    parityStatus: 'semantic-scenario-replay',
+    disposition: 'ported',
+    effectVersionSensitivity: 'v4-primary structural',
+    sourceOwnership: 'linteffect',
+    testSource: 'none',
+    gating,
+    collections,
+    note,
+  });
 
 interface PortedFixtureRuleOptions {
   readonly name: string;
   readonly domain: RuleDomain;
   readonly sourcePresets: ReadonlyArray<string>;
+  readonly rationaleClass: RuleRationaleClass;
   readonly gating: RuleGating;
-  readonly presetEnabled: boolean;
+  readonly collections: ReadonlyArray<RuleCollection>;
   readonly note: string;
 }
 
@@ -132,35 +213,39 @@ export const portedFixtureRule = ({
   name,
   domain,
   sourcePresets,
+  rationaleClass,
   gating,
-  presetEnabled,
+  collections,
   note,
-}: PortedFixtureRuleOptions): RuleManifestEntry => ({
-  name,
-  domain,
-  sourcePresets,
-  severity: 'error',
-  implementationStatus: 'implemented',
-  testStatus: 'covered',
-  parityStatus: 'source-fixture-replay',
-  disposition: 'ported',
-  effectVersionSensitivity: 'v4-primary structural',
-  sourceOwnership: 'linteffect',
-  testSource: 'linteffect-fixture',
-  gating,
-  presetEnabled,
-  note,
-});
+}: PortedFixtureRuleOptions): RuleManifestEntry =>
+  sourceRule({
+    name,
+    domain,
+    sourcePresets,
+    severity: 'error',
+    rationaleClass,
+    implementationStatus: 'implemented',
+    testStatus: 'covered',
+    parityStatus: 'source-fixture-replay',
+    disposition: 'ported',
+    effectVersionSensitivity: 'v4-primary structural',
+    sourceOwnership: 'linteffect',
+    testSource: 'linteffect-fixture',
+    gating,
+    collections,
+    note,
+  });
 
 interface ReimplementedScenarioRuleOptions {
   readonly name: string;
   readonly domain: RuleDomain;
-  readonly severity: 'off' | 'info' | 'warning' | 'error';
+  readonly severity: RuleManifestSeverity;
+  readonly rationaleClass: RuleRationaleClass;
   readonly effectVersionSensitivity: string;
   readonly sourceOwnership: RuleSourceOwnership;
   readonly testSource: RuleTestSource;
   readonly gating: RuleGating;
-  readonly presetEnabled: boolean;
+  readonly collections: ReadonlyArray<RuleCollection>;
   readonly note: string;
 }
 
@@ -172,35 +257,39 @@ export const reimplementedScenarioRule = ({
   name,
   domain,
   severity,
+  rationaleClass,
   effectVersionSensitivity,
   sourceOwnership,
   testSource,
   gating,
-  presetEnabled,
+  collections,
   note,
-}: ReimplementedScenarioRuleOptions): RuleManifestEntry => ({
-  name,
-  domain,
-  sourcePresets: [],
-  severity,
-  implementationStatus: 'implemented',
-  testStatus: 'covered',
-  parityStatus: 'semantic-scenario-replay',
-  disposition: 'reimplemented',
-  effectVersionSensitivity,
-  sourceOwnership,
-  testSource,
-  gating,
-  presetEnabled,
-  note,
-});
+}: ReimplementedScenarioRuleOptions): RuleManifestEntry =>
+  sourceRule({
+    name,
+    domain,
+    sourcePresets: [],
+    severity,
+    rationaleClass,
+    implementationStatus: 'implemented',
+    testStatus: 'covered',
+    parityStatus: 'semantic-scenario-replay',
+    disposition: 'reimplemented',
+    effectVersionSensitivity,
+    sourceOwnership,
+    testSource,
+    gating,
+    collections,
+    note,
+  });
 
 interface BuiltInRuleOptions {
   readonly name: string;
   readonly domain: RuleDomain;
-  readonly severity: 'off' | 'info' | 'warning' | 'error';
+  readonly severity: RuleManifestSeverity;
+  readonly rationaleClass: RuleRationaleClass;
   readonly gating: RuleGating;
-  readonly presetEnabled: boolean;
+  readonly collections: ReadonlyArray<RuleCollection>;
   readonly note: string;
 }
 
@@ -212,25 +301,84 @@ export const builtInRule = ({
   name,
   domain,
   severity,
+  rationaleClass,
   gating,
-  presetEnabled,
+  collections,
   note,
-}: BuiltInRuleOptions): RuleManifestEntry => ({
+}: BuiltInRuleOptions): RuleManifestEntry =>
+  sourceRule({
+    name,
+    domain,
+    sourcePresets: [],
+    severity,
+    rationaleClass,
+    implementationStatus: 'implemented',
+    testStatus: 'not-applicable',
+    parityStatus: 'not-applicable',
+    disposition: 'built-in',
+    effectVersionSensitivity: 'structural',
+    sourceOwnership: 'built-in',
+    testSource: 'none',
+    gating,
+    collections,
+    note,
+  });
+
+interface NativeRuleOptions {
+  readonly name: string;
+  readonly domain: RuleDomain;
+  readonly severity: RuleManifestSeverity;
+  readonly rationaleClass: RuleRationaleClass;
+  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly gating: RuleGating;
+  readonly note: string;
+}
+
+/**
+ * Native oxlint/plugin rule explicitly decided by an exported config fragment.
+ * Category-swept native rules are intentionally not represented here; WI-6 owns the generated effective-config view.
+ */
+export const nativeRule = ({
   name,
   domain,
-  sourcePresets: [],
   severity,
-  implementationStatus: 'implemented',
-  testStatus: 'not-applicable',
-  parityStatus: 'not-applicable',
-  disposition: 'built-in',
-  effectVersionSensitivity: 'structural',
-  sourceOwnership: 'built-in',
-  testSource: 'none',
+  rationaleClass,
+  collections,
   gating,
-  presetEnabled,
   note,
-});
+}: NativeRuleOptions): RuleManifestEntry =>
+  sourceRule({
+    name,
+    domain,
+    sourcePresets: [],
+    severity,
+    rationaleClass,
+    implementationStatus: 'implemented',
+    testStatus: 'not-applicable',
+    parityStatus: 'not-applicable',
+    disposition: 'built-in',
+    effectVersionSensitivity: 'native oxlint/plugin rule',
+    sourceOwnership: 'oxlint-native',
+    testSource: 'none',
+    gating,
+    collections,
+    note,
+  });
+
+const baseConfigCollections = ['baseConfig'] as const;
+const vitestConfigCollections = ['vitestConfig'] as const;
+const nodeRuntimeConfigCollections = ['nodeRuntimeConfig'] as const;
+
+const baseRule = (options: Omit<NativeRuleOptions, 'collections' | 'domain'>): RuleManifestEntry =>
+  nativeRule({ ...options, collections: baseConfigCollections, domain: 'base' });
+const vitestRule = (
+  options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
+): RuleManifestEntry =>
+  nativeRule({ ...options, collections: vitestConfigCollections, domain: 'test' });
+const nodeRuntimeRule = (
+  options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
+): RuleManifestEntry =>
+  nativeRule({ ...options, collections: nodeRuntimeConfigCollections, domain: 'runtime' });
 
 export const ruleManifest = [
   sourceRule({
@@ -238,6 +386,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -246,7 +395,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -254,6 +403,7 @@ export const ruleManifest = [
     domain: 'effect-react',
     sourcePresets: ['web', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -262,7 +412,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect-react'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -270,6 +420,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -278,7 +429,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -294,7 +445,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: false,
+    collections: [],
     note: 'Implemented and replay-covered, but omitted from presets because no-effect-call-in-effect-arg owns the overlapping shallow nested-call intent.',
   }),
   sourceRule({
@@ -302,6 +453,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -310,7 +462,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -318,6 +470,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -326,7 +479,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -334,6 +487,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -342,7 +496,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -350,6 +504,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -358,7 +513,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -366,6 +521,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -374,7 +530,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -382,6 +538,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -390,7 +547,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -406,7 +563,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: false,
+    collections: [],
     note: 'Effect.fn generator bodies are preferred traced units of logic.',
   }),
   sourceRule({
@@ -414,6 +571,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -422,7 +580,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -430,6 +588,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -438,7 +597,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -446,6 +605,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -454,7 +614,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -462,6 +622,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -470,7 +631,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -478,6 +639,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'warning',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -486,7 +648,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -494,6 +656,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -502,7 +665,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -510,6 +673,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -518,7 +682,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -526,6 +690,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -534,7 +699,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment. Ownership split: direct Effect.gen wrapper declarations (const arrow or function declaration returning Effect.gen) are intentionally excluded and owned by prefer-effect-fn; pipe(Effect.gen(...), ...) aliases remain owned by this rule.',
   }),
   sourceRule({
@@ -542,6 +707,7 @@ export const ruleManifest = [
     domain: 'effect-react',
     sourcePresets: ['web', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
@@ -550,7 +716,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating: 'effect-react-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect-react'),
     note: 'Source-fixture-faithful structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -558,6 +724,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'warning',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -566,7 +733,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -574,6 +741,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -582,7 +750,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -598,7 +766,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: false,
+    collections: [],
     note: 'Conflicts with gen-first posture; guards inside generators are allowed.',
   }),
   sourceRule({
@@ -606,6 +774,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -614,7 +783,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -622,6 +791,7 @@ export const ruleManifest = [
     domain: 'effect-react',
     sourcePresets: ['web'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -630,7 +800,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect-react'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -638,6 +808,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -646,7 +817,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -654,6 +825,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -662,7 +834,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -670,6 +842,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -678,7 +851,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -686,6 +859,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
@@ -694,7 +868,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Source-fixture-faithful structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -702,6 +876,7 @@ export const ruleManifest = [
     domain: 'effect-react',
     sourcePresets: ['web', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
@@ -710,7 +885,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect-react'),
     note: 'Source-fixture-backed structural port. JSON.parse ownership is intentionally delegated to no-json-parse in composed presets so object-state update diagnostics stay focused on stringify/object-rebuild shapes.',
   }),
   sourceRule({
@@ -726,7 +901,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: false,
+    collections: [],
     note: 'Implemented and replay-covered, but omitted from presets because no-effect-ladder owns the overlapping deep nested-call intent.',
   }),
   sourceRule({
@@ -734,6 +909,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -742,7 +918,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -750,6 +926,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -758,7 +935,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -766,6 +943,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -774,7 +952,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -782,6 +960,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -790,7 +969,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -798,6 +977,7 @@ export const ruleManifest = [
     domain: 'effect-react',
     sourcePresets: ['web', 'full'],
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -806,7 +986,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'ungated-broad',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect-react'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -814,6 +994,7 @@ export const ruleManifest = [
     domain: 'effect-react',
     sourcePresets: ['web', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -822,7 +1003,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect-react'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -830,6 +1011,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'info',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -838,7 +1020,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -846,6 +1028,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'info',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -854,7 +1037,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -862,6 +1045,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -870,7 +1054,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -878,6 +1062,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -886,7 +1071,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -894,6 +1079,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -902,7 +1088,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -910,6 +1096,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -918,7 +1105,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -926,6 +1113,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
@@ -934,7 +1122,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Source-fixture-faithful structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -950,7 +1138,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: false,
+    collections: [],
     note: 'Blanket ternary ban is too broad; general enables built-in no-nested-ternary instead.',
   }),
   sourceRule({
@@ -958,6 +1146,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -966,7 +1155,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -974,6 +1163,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -982,7 +1172,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -990,6 +1180,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -998,7 +1189,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -1006,6 +1197,7 @@ export const ruleManifest = [
     domain: 'general',
     sourcePresets: ['core', 'full'],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1014,7 +1206,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'stack-neutral',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('general'),
     note: 'Scenario-covered structural port with RuleTester and replay coverage.',
   }),
   sourceRule({
@@ -1022,6 +1214,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'warning',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1030,7 +1223,7 @@ export const ruleManifest = [
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
   }),
   sourceRule({
@@ -1038,6 +1231,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1046,7 +1240,7 @@ export const ruleManifest = [
     sourceOwnership: 'recon',
     testSource: 'none',
     gating: 'effect-callee',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Net-new D3 rule; counts direct pipe provide steps with Effect namespace binding.',
   }),
   sourceRule({
@@ -1054,6 +1248,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1062,7 +1257,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Executor-derived structural nullish predicate rule.',
   }),
   sourceRule({
@@ -1070,6 +1265,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1078,7 +1274,7 @@ export const ruleManifest = [
     sourceOwnership: 'recon',
     testSource: 'scenario-only',
     gating: 'effect-callee',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Recon-derived gen-first rule: redundant wrappers around Effect.gen should become Effect.fn/fnUntraced.',
   }),
   sourceRule({
@@ -1086,6 +1282,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1094,7 +1291,7 @@ export const ruleManifest = [
     sourceOwnership: 'recon:effect-smol',
     testSource: 'scenario-only',
     gating: 'ungated-broad',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'effect-smol scenario port: named and namespace value imports from effect only.',
   }),
   sourceRule({
@@ -1102,6 +1299,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1110,7 +1308,7 @@ export const ruleManifest = [
     sourceOwnership: 'recon:t3code',
     testSource: 't3code',
     gating: 'effect-callee',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 't3code scenario port for inline Schema compiler calls inside function bodies.',
   }),
   sourceRule({
@@ -1118,6 +1316,7 @@ export const ruleManifest = [
     domain: 'boundaries',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'safety',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1126,7 +1325,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'boundary',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('boundaries'),
     note: 'Executor-derived cross-package relative import rule.',
   }),
   sourceRule({
@@ -1134,6 +1333,7 @@ export const ruleManifest = [
     domain: 'general',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1142,7 +1342,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'stack-neutral',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('general'),
     note: 'Executor-derived primitive as-cast rule.',
   }),
   sourceRule({
@@ -1150,6 +1350,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1158,7 +1359,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-callee',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Executor-derived Effect die/orDie escape-hatch rule.',
   }),
   sourceRule({
@@ -1166,6 +1367,7 @@ export const ruleManifest = [
     domain: 'general',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1174,7 +1376,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'stack-neutral',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('general'),
     note: 'Executor-derived double cast rule.',
   }),
   sourceRule({
@@ -1182,6 +1384,7 @@ export const ruleManifest = [
     domain: 'general',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1190,15 +1393,16 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'stack-neutral',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('general'),
     note: 'Executor-derived ts-nocheck rule.',
   }),
   builtInRule({
     name: 'no-nested-ternary',
     domain: 'general',
     severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     gating: 'stack-neutral',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('general'),
     note: 'Built-in oxlint rule enabled instead of linteffect no-ternary.',
   }),
   sourceRule({
@@ -1206,6 +1410,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1214,7 +1419,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1222,6 +1427,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1230,7 +1436,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1238,6 +1444,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1246,7 +1453,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1254,6 +1461,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1262,7 +1470,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1270,6 +1478,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1278,7 +1487,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1286,6 +1495,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1294,7 +1504,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1302,6 +1512,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1310,7 +1521,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1318,6 +1529,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1326,7 +1538,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1334,6 +1546,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1342,7 +1555,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1350,6 +1563,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1358,7 +1572,7 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
   }),
   sourceRule({
@@ -1366,6 +1580,7 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
+    rationaleClass: 'correctness',
     implementationStatus: 'implemented',
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
@@ -1374,8 +1589,541 @@ export const ruleManifest = [
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
-    presetEnabled: true,
+    collections: defaultCollectionsForDomain('effect'),
     note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+  }),
+
+  baseRule({
+    name: '@typescript-eslint/array-type',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Style rule enforced at error because it is autofixable, preserves consistency, reduces diff churn, and is fixed automatically by `vp check --fix`.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/ban-ts-comment',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Suppressing TypeScript diagnostics is a type-safety escape hatch, not style.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/consistent-type-exports',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Type-only exports must stay explicit so runtime exports are reviewable.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/consistent-type-imports',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Owns the inline side of the hybrid type-import policy for mixed imports.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/dot-notation',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Style rule enforced at error because it is autofixable, preserves property-access consistency, reduces diff churn, and is fixed automatically by `vp check --fix`.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/explicit-function-return-type',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Global explicit return types are too broad; a future scoped API config owns that policy.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-empty-interface',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Empty interfaces create misleading type surfaces.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-explicit-any',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Explicit any is a type-safety escape hatch.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-import-type-side-effects',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Owns the type-only side of the hybrid policy by preventing runtime import side effects.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-inferrable-types',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Style rule enforced at error because it is autofixable, preserves annotation consistency, reduces diff churn, and is fixed automatically by `vp check --fix`.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-invalid-void-type',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Invalid void positions distort API meaning.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-non-null-assertion',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Non-null assertions hide nullability risk from review and runtime checks.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-restricted-types',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Restricted types prevent known-unsafe type surfaces.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-this-alias',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Former warning promoted under --max-warnings 0; avoids confusing generated aliases.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-unnecessary-type-constraint',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Former warning promoted under --max-warnings 0; removes redundant generic noise.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-unused-vars',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Unused variables hide dead code while allowing intentional underscore placeholders.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/no-useless-constructor',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Removes generated class boilerplate that adds no behavior.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/prefer-function-type',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Style rule enforced at error because it is autofixable, preserves type-shape consistency, reduces diff churn, and is fixed automatically by `vp check --fix`.',
+  }),
+  baseRule({
+    name: '@typescript-eslint/prefer-optional-chain',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Optional chains reduce nullish branch mistakes.',
+  }),
+  baseRule({
+    name: 'complexity',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Structural ceiling that forces decomposition before functions become hard to review.',
+  }),
+  baseRule({
+    name: 'curly',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Braces prevent accidental single-line control-flow edits.',
+  }),
+  baseRule({
+    name: 'default-param-last',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Default parameters before required parameters make calls ambiguous.',
+  }),
+  baseRule({
+    name: 'eqeqeq',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Strict equality avoids coercion bugs.',
+  }),
+  baseRule({
+    name: 'guard-for-in',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Prototype keys in for-in loops are a correctness and security footgun.',
+  }),
+  baseRule({
+    name: 'import/consistent-type-specifier-style',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Explicitly off because either preference conflicts with the hybrid type-import policy.',
+  }),
+  baseRule({
+    name: 'import/exports-last',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Export ordering is not part of the base policy.',
+  }),
+  baseRule({
+    name: 'import/first',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Imports stay before executable statements so module evaluation order is obvious.',
+  }),
+  baseRule({
+    name: 'import/group-exports',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Grouped exports are not a base readability invariant.',
+  }),
+  baseRule({
+    name: 'import/max-dependencies',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Structural dependency ceiling prevents modules from becoming broad coordination points.',
+  }),
+  baseRule({
+    name: 'import/no-cycle',
+    severity: 'off',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Cycle policy belongs to a future architecture config, not the base layer.',
+  }),
+  baseRule({
+    name: 'import/no-default-export',
+    severity: 'off',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Named-export policy belongs to a future namedExportsConfig.',
+  }),
+  baseRule({
+    name: 'import/no-duplicates',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Replacement for no-duplicate-imports that supports inline type specifiers.',
+  }),
+  baseRule({
+    name: 'import/no-named-export',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'No-named-export conflicts with the package named-export preference.',
+  }),
+  baseRule({
+    name: 'import/no-nodejs-modules',
+    severity: 'off',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Browser/runtime portability belongs to a future browser config, not Node/Bun base.',
+  }),
+  baseRule({
+    name: 'import/no-relative-parent-imports',
+    severity: 'off',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Parent-import architecture policy belongs to a future architecture config.',
+  }),
+  baseRule({
+    name: 'import/no-self-import',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Self-imports create circular or nonsensical module edges.',
+  }),
+  baseRule({
+    name: 'import/prefer-default-export',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Default-export preference conflicts with named-export package posture.',
+  }),
+  baseRule({
+    name: 'max-depth',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Structural ceiling keeps nested control flow reviewable.',
+  }),
+  baseRule({
+    name: 'max-lines',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'File-size ceiling prevents unreviewable modules.',
+  }),
+  baseRule({
+    name: 'max-lines-per-function',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Function-size ceiling forces decomposition of large generated routines.',
+  }),
+  baseRule({
+    name: 'max-params',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Parameter ceiling prevents overloaded function contracts.',
+  }),
+  baseRule({
+    name: 'max-statements',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Statement ceiling forces decomposition before functions become procedural slabs.',
+  }),
+  baseRule({
+    name: 'no-async-promise-executor',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Async Promise executors can drop thrown errors.',
+  }),
+  baseRule({
+    name: 'no-cond-assign',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Assignments in conditions are almost always mistakes.',
+  }),
+  baseRule({
+    name: 'no-console',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Console output in package code leaks ad hoc diagnostics into consumers.',
+  }),
+  baseRule({
+    name: 'no-continue',
+    severity: 'off',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Continue is allowed when it simplifies loop guard structure.',
+  }),
+  baseRule({
+    name: 'no-debugger',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Debugger statements must not ship.',
+  }),
+  baseRule({
+    name: 'no-duplicate-imports',
+    severity: 'off',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Explicitly off because import/no-duplicates with preferInline owns this check.',
+  }),
+  baseRule({
+    name: 'no-else-return',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Removes generated branch nesting after early returns.',
+  }),
+  baseRule({
+    name: 'no-empty',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Empty blocks hide incomplete control-flow branches.',
+  }),
+  baseRule({
+    name: 'no-eval',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Eval is a code-injection and reviewability hazard.',
+  }),
+  baseRule({
+    name: 'no-implicit-coercion',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Implicit coercion makes runtime conversion behavior unclear.',
+  }),
+  baseRule({
+    name: 'no-magic-numbers',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Magic-number ceiling keeps thresholds and sentinels named unless centrally exempted.',
+  }),
+  baseRule({
+    name: 'no-multi-assign',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Chained assignment makes mutation targets easy to miss.',
+  }),
+  baseRule({
+    name: 'no-new-func',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Dynamic function construction is a code-injection hazard.',
+  }),
+  baseRule({
+    name: 'no-param-reassign',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Parameter reassignment hides mutation at function boundaries.',
+  }),
+  baseRule({
+    name: 'no-return-assign',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Assignments in returns hide side effects in value expressions.',
+  }),
+  baseRule({
+    name: 'no-script-url',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Script URLs are an injection hazard.',
+  }),
+  baseRule({
+    name: 'no-shadow',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Base forbids shadowing; effectPreset keeps the explicit gen-first carve-out.',
+  }),
+  baseRule({
+    name: 'no-template-curly-in-string',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Template placeholders in plain strings are usually interpolation mistakes.',
+  }),
+  baseRule({
+    name: 'no-undef',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Undefined references are runtime failures.',
+  }),
+  baseRule({
+    name: 'no-unneeded-ternary',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Removes generated boolean-expression noise.',
+  }),
+  baseRule({
+    name: 'no-unsafe-optional-chaining',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Unsafe optional chains can still dereference undefined.',
+  }),
+  baseRule({
+    name: 'no-unused-private-class-members',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Unused private members indicate dead or incomplete class state.',
+  }),
+  baseRule({
+    name: 'no-useless-catch',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Useless catch blocks add control-flow noise without handling failures.',
+  }),
+  baseRule({
+    name: 'no-void',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Void expressions can hide intentionally discarded results.',
+  }),
+  baseRule({
+    name: 'oxc/no-barrel-file',
+    severity: 'off',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Barrel-file architecture policy belongs to a future architecture config.',
+  }),
+  baseRule({
+    name: 'prefer-const',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Const declarations make mutation intent explicit.',
+  }),
+  baseRule({
+    name: 'prefer-promise-reject-errors',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Rejected values should preserve error semantics.',
+  }),
+  baseRule({
+    name: 'prefer-template',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Style rule enforced at error because it is autofixable, preserves string-composition consistency, reduces diff churn, and is fixed automatically by `vp check --fix`.',
+  }),
+  baseRule({
+    name: 'sort-imports',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Style rule enforced at error because it is autofixable, provides diff-determinism, preserves import-order consistency, and is fixed automatically by `vp check --fix`.',
+  }),
+  vitestRule({
+    name: 'vitest/hoisted-apis-on-top',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'test-file',
+    note: 'Vitest hoisted APIs must appear before other statements or mocks can behave incorrectly.',
+  }),
+  vitestRule({
+    name: 'vitest/no-conditional-tests',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'test-file',
+    note: 'Conditional tests hide failures when a branch never runs.',
+  }),
+  vitestRule({
+    name: 'vitest/require-awaited-expect-poll',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'test-file',
+    note: 'Unawaited expect.poll calls can false-pass.',
+  }),
+  vitestRule({
+    name: 'vitest/warn-todo',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'test-file',
+    note: 'Committed todo/skip markers silently omit test coverage.',
+  }),
+  nodeRuntimeRule({
+    name: 'unicorn/prefer-node-protocol',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'runtime',
+    note: 'The node: protocol removes ambiguity between built-ins and same-named packages.',
   }),
   ...lspDelegatedChecks([
     'importFromBarrel',
@@ -1399,8 +2147,8 @@ export const implementedCustomRuleNames = ruleManifest
     (entry) => entry.implementationStatus === 'implemented' && entry.disposition !== 'built-in',
   )
   .map((entry) => entry.name);
-export const presetEnabledRuleNames = ruleManifest
-  .filter((entry) => entry.presetEnabled)
+export const collectionRuleNames = ruleManifest
+  .filter((entry) => entry.collections.length > 0)
   .map((entry) => entry.name);
 export const lspOwnedChecks = ruleManifest
   .filter((entry) => entry.disposition === 'LSP-delegated')
@@ -1417,20 +2165,44 @@ interface PresetRulesOptions {
   readonly includeBuiltIn?: boolean;
 }
 
-// Maps manifest severity to the two-value oxlint preset severity (info and warning both collapse to warn).
-export const oxlintSeverityForManifestEntry = (entry: RuleManifestEntry): 'error' | 'warn' =>
-  entry.severity === 'error' ? 'error' : 'warn';
+// Config fragments accept only off/warn/error. The manifest keeps info/warning distinct
+// Because rule provenance may care about advisory strength; both advisory severities collapse to warn.
+// Repos running `--max-warnings 0` then make warn fail CI the same way error does.
+export const collapseManifestSeverity = (severity: RuleManifestSeverity): RuleConfigSeverity => {
+  if (severity === 'off') {
+    return 'off';
+  }
 
-// Returns preset-enabled manifest entries for the given domains without plugin prefixes.
+  return severity === 'error' ? 'error' : 'warn';
+};
+
+export const oxlintSeverityForManifestEntry = (entry: RuleManifestEntry): RuleConfigSeverity =>
+  collapseManifestSeverity(entry.severity);
+
+export const entriesForCollections = (
+  collections: ReadonlyArray<RuleCollection>,
+): ReadonlyArray<RuleManifestEntry> =>
+  ruleManifest.filter((entry) =>
+    entry.collections.some((collection) => collections.includes(collection)),
+  );
+
+const presetCollectionOnlyForDomain = (domain: RuleDomain): RuleCollection | undefined =>
+  presetCollectionByDomain[domain];
+
+// Returns preset-collection manifest entries for the given domains without plugin prefixes.
 // Preset assemblers should call pluginRuleName on each result to build rule config keys.
 // Scripts and tests can use entry.name values directly without any plugin prefix.
 export const presetEntriesForDomains = (
   domains: ReadonlyArray<RuleDomain>,
   { includeBuiltIn = false }: PresetRulesOptions = {},
-): ReadonlyArray<RuleManifestEntry> =>
-  ruleManifest.filter(
+): ReadonlyArray<RuleManifestEntry> => {
+  const presetCollections = domains
+    .map(presetCollectionOnlyForDomain)
+    .filter((collection): collection is RuleCollection => typeof collection !== 'undefined');
+
+  return ruleManifest.filter(
     (entry) =>
-      domains.includes(entry.domain) &&
-      entry.presetEnabled &&
+      entry.collections.some((collection) => presetCollections.includes(collection)) &&
       (includeBuiltIn || entry.disposition !== 'built-in'),
   );
+};
