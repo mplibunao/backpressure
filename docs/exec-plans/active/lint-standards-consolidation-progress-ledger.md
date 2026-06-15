@@ -70,8 +70,8 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
-| WI-1 | Pre-build resolutions (fragment type, compose vs extends, naming lock) | S | DONE | `<pending>` |
-| WI-2 | Config-fragment type + composition (helper built: `extends` cannot concat overrides) | M | PENDING | |
+| WI-1 | Pre-build resolutions (fragment type, compose vs extends, naming lock) | S | DONE | `3428581` |
+| WI-2 | Config-fragment type + composition (helper built: `extends` cannot concat overrides) | M | DONE | `196dcb8` |
 | WI-3 | `baseConfig` canonical baseline | L | PENDING | |
 | WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | PENDING | |
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | PENDING | |
@@ -142,8 +142,53 @@ Entries are appended here as each item passes its gates and commits.
   `pnpm prose` over the changed docs reported 0 errors.
 - **Refactor gate:** not applicable, because no code changed.
 - **Checks:** prose gate green on the plan and ledger edits.
-- **Commits:** this commit records the WI-1 resolution edits to the plan and this
-  ledger; its SHA is backfilled into the status table on the next item's ledger update.
+- **Commits:** `3428581` for the WI-1 resolution edits to the plan and the ledger.
 - **Issues:** none open. The overrides REPLACE-semantics constraint is carried forward
   into WI-2 (helper concat) and WI-3 (where `baseConfig` test overrides live).
 - **Action items for MP:** none.
+
+### WI-2: Config-fragment type + composeLintConfigs (DONE)
+
+- **Build:** one `pair` agent (Codex CLI, gpt-5.5, reasoning high). It added
+  `composeLintConfigs(...configs: OxlintConfig[]): OxlintConfig` in new
+  `src/configs/compose.ts`, barrelled through `src/configs/index.ts`, and re-exported
+  from `src/index.ts`. Fragments are typed as oxlint's `OxlintConfig`; the package
+  gained `oxlint` as a peer dependency (`^1.58.0`) and a dev dependency (`catalog:`,
+  resolved to `1.58.0`). The existing custom-rule presets and their `PresetConfig`
+  shape are untouched. The helper returns a single flat config with no `extends` and
+  merges rules later-wins, plugins and jsPlugins by stable de-duped union, categories
+  per-category later-wins, overrides by concat, the option-like maps shallow-merge
+  later-wins, and ignorePatterns concat with de-dup; empty fields are omitted. The
+  jsPlugins de-dup key separates string entries from object entries so the two variants
+  cannot collide.
+- **Review gate:** one `context_builder` review on chat `wi-2-review-39583F` plus a
+  follow-up. The first pass returned zero must-fix and four test-hardening suggestions
+  plus one nit; the orchestrator judged them cheap and worth applying to a core merge
+  helper and delegated them back. The agent added a compile-time field-drift guard (a
+  bidirectional `AssertNever` over `keyof OxlintConfig` versus the handled-plus-ignored
+  key set, so a future oxlint field forces an explicit merge-or-ignore and fails the
+  typecheck otherwise), expanded jsPlugins identity coverage (same name with a different
+  specifier stays distinct; a string entry cannot collide with an object key), added a
+  standalone `extends`-drop test with no overrides involved, and added an
+  input-immutability and reference-identity test. The nit (`vi.setConfig` timeout) was
+  kept because sibling package tests use that convention. The follow-up review on the
+  same chat found no remaining must-fix or substantive issue and cleared the item to
+  commit.
+- **Refactor gate:** explore scouts skipped, since the surface is one small pure helper.
+  One `context_builder` analysis on chat `compose-refactor-review-7FAE7F`; it found no
+  high, medium, or low value opportunities and explicitly rejected both candidate angles
+  (unifying the two dedup helpers, and a data-driven result-omission table) with reasons:
+  the split avoids forcing an identity key function on the common string-array case, and
+  the explicit omission block spells out each emitted field. No follow-up needed; the
+  loop converged on the first pass.
+- **Checks:** the orchestrator ran the checks independently after each gate, green every
+  time: `pnpm --filter @mplibunao/oxlint-standards typecheck` (clean), the package
+  vitest suite (661 tests pass, 7 of them in the new `compose.test.ts`), `pnpm lint`
+  (`vp lint --max-warnings 0`: 0 warnings and 0 errors over 59 files with 300 rules),
+  and `pnpm --filter @mplibunao/oxlint-standards build` (clean).
+- **Commits:** `196dcb8` for the helper, tests, exports, and the `oxlint` peer and dev
+  dependency, plus this ledger-record commit. The WI-1 commit SHA `3428581` is
+  backfilled into the status table here.
+- **Issues:** none open.
+- **Action items for MP:** none. The `oxlint` dev dependency uses the repo `catalog:`
+  spec, consistent with the catalog-only policy that rejects `file:` and `link:`.
