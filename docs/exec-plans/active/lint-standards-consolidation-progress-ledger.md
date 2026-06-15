@@ -75,7 +75,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | WI-3 | `baseConfig` canonical baseline | L | DONE | `63a2651` |
 | WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | DONE | `71f5622` |
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | DONE | `45d3845` |
-| WI-6 | Effective-config generation + inventory gate | L | PENDING | |
+| WI-6 | Effective-config generation + inventory gate | L | DONE | `fbfa23a` |
 | WI-7 | README + `rules.md` consumption model | M | PENDING | |
 | WI-8 | Dogfood in backpressure root (delete local block, decompose `max-statements`) | L | PENDING | |
 | WI-9 | Packed-consumer smoke covers new exports | M | PENDING | |
@@ -363,3 +363,66 @@ Entries are appended here as each item passes its gates and commits.
 - **Action items for MP:** decide the style-at-error policy when the canon phase (WI-17)
   is reached: ratify "autofixable mechanical style may be error" in ADR-004 / TD-CARD-033,
   or downgrade the six allowlisted rules to `off`. Not blocking the Phase-1 publishable cut.
+
+### WI-6: effective-config generation + inventory gate (DONE)
+
+- **Build:** a first `pair` agent (Codex) stalled with no file output after many cycles
+  on the open-ended brief, so the orchestrator cancelled it (nothing had landed) and
+  re-dispatched with prescriptive decisions baked in. The replacement `engineer` agent
+  (Claude Code, sonnet:high) built: a generator (`scripts/checks/generate-effective-config.ts`)
+  and shared lib (`scripts/lib/effective-config.ts`) that materialize a temp
+  `.oxlintrc.json` per composition, run `oxlint --print-config`, normalize the
+  `typescript/*` alias to the canonical `@typescript-eslint/*`, and emit a sorted,
+  deterministic checked-in artifact `docs/references/effective-config.json`. The artifact
+  captures four scopes: `base.global`, `base.test`, `full.global`, `full.test` (test scope
+  synthesized by flattening `**/*.test.ts` overrides into global, because `--print-config`
+  ignores per-file overrides). A `gen:effective-config` script regenerates it. The
+  inventory gate (`check-rule-inventory.ts`) was extended to fail on a stale artifact, an
+  unknown configured rule, a non-canonical `typescript/*` namespace, and an alias
+  collision.
+- **Review gate:** one `context_builder` review on chat `wi6-config-review-C58912` plus
+  four follow-ups, which caught a chain of real issues:
+  - The unknown-rule check was fooled by a generic basename fallback (`bogus/no-unused-vars`
+    passed) and a blanket `oxc/*` bypass (`oxc/no-barrell-file` passed). Fixed by building
+    an authoritative catalog from `oxlint --rules --format=json` and a centralized
+    `isConfiguredRuleKnown` predicate.
+  - The `@typescript-eslint/*` alias synthesis was still over-permissive
+    (`@typescript-eslint/no-alert` would pass). Narrowed to an explicit extension-rule
+    allowlist (`no-unused-vars`, `no-useless-constructor`), grounded in the empirical fact
+    that only those two appear under oxlint's `eslint` scope while every other configured
+    TS rule is in the `typescript` scope.
+  - The regression test inlined a COPY of the recognition logic (guarding nothing). Moved
+    to `scripts/lib/effective-config.test.ts`, importing and exercising the real functions
+    against live `oxlint --rules`, asserting a 9-case recognized/rejected table.
+  - The artifact surfaced 11 `jest/*` rules bleeding active globally from the vitest
+    plugin. These are useful vitest test-hygiene rules the live root config kept, so rather
+    than silence them (a regression), they were made intentional and test-scoped: off
+    globally, re-enabled at `error` in the `**/*.test.ts` override, given manifest rows,
+    and pinned by the drift guard.
+  Final review pass: no remaining must-fix.
+- **Orchestrator independent verification (beyond agent self-report):** the orchestrator
+  tampered one severity in the committed artifact and confirmed the staleness gate fires
+  with the regenerate message, then restored it; confirmed the four artifact scopes and
+  rule counts (`base` 201, `full` 359); and confirmed `full.global` has zero active
+  `jest/*`/`vitest/*` rules while `full.test` carries exactly the intended 11 jest + 4
+  vitest. The orchestrator also caught the first agent's stall via repeated no-progress
+  polling and a git-status check.
+- **Refactor gate:** one `context_builder` analysis on chat `wi6-refactor-review-D7A3F0`;
+  only low findings, all recommended deferred: keep the WI-4 drift guards' materialization
+  logic independent of the script lib (independence boundary), do not extract the
+  built-package export validation until a third consumer, and leave the test-glob matcher
+  as is (the `**/*.test.ts` contract is already documented in `vitest.ts`). No changes
+  applied; the code is at a good local optimum.
+- **Checks:** the orchestrator ran the checks independently after each gate:
+  `pnpm --filter @mplibunao/oxlint-standards typecheck` (clean), the full vitest suite
+  (767 tests pass across 17 files, including the engine-backed regression and drift
+  guards), `pnpm exec vp lint --max-warnings 0` (0 over the repo), and `pnpm inventory:rules`
+  (passed; the staleness, unknown-rule, namespace, and collision checks all run).
+- **Commits:** `fbfa23a` for the generator, shared lib, artifact, gate extension, and the
+  jest-hygiene scoping fix to `vitestConfig`/manifest/drift-guards, plus this ledger-record
+  commit.
+- **Issues:** a known lockfile-sync warning (`node_modules out of sync with lockfile`) prints
+  on pnpm commands because the WI-2 `oxlint` dev dependency landed in the lockfile but the
+  working copy was not re-installed; it does not block any gate (the binary resolves and all
+  checks pass). Run `pnpm install` to clear it before the WI-8 dogfood.
+- **Action items for MP:** none.
