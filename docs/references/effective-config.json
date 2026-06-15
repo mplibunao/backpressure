@@ -78,7 +78,12 @@
       "@typescript-eslint/use-unknown-in-catch-callback-variable": "deny",
       "block-scoped-var": "deny",
       "class-methods-use-this": "deny",
-      "complexity": ["deny", [20]],
+      "complexity": [
+        "deny",
+        [
+          20
+        ]
+      ],
       "constructor-super": "deny",
       "curly": "deny",
       "default-case": "deny",
@@ -126,10 +131,30 @@
       "import/no-webpack-loader-syntax": "deny",
       "import/prefer-default-export": "allow",
       "import/unambiguous": "deny",
-      "max-depth": ["deny", [4]],
-      "max-lines": ["deny", [500]],
-      "max-lines-per-function": ["deny", [75]],
-      "max-params": ["deny", [4]],
+      "max-depth": [
+        "deny",
+        [
+          4
+        ]
+      ],
+      "max-lines": [
+        "deny",
+        [
+          500
+        ]
+      ],
+      "max-lines-per-function": [
+        "deny",
+        [
+          75
+        ]
+      ],
+      "max-params": [
+        "deny",
+        [
+          4
+        ]
+      ],
       "max-statements": [
         "deny",
         [
@@ -183,7 +208,15 @@
         "deny",
         [
           {
-            "ignore": [0, 1, 4, 15, 20, 75, 500]
+            "ignore": [
+              0,
+              1,
+              4,
+              15,
+              20,
+              75,
+              500
+            ]
           }
         ]
       ],
@@ -323,7 +356,12 @@
       "@typescript-eslint/use-unknown-in-catch-callback-variable": "deny",
       "block-scoped-var": "deny",
       "class-methods-use-this": "deny",
-      "complexity": ["deny", [20]],
+      "complexity": [
+        "deny",
+        [
+          20
+        ]
+      ],
       "constructor-super": "deny",
       "curly": "deny",
       "default-case": "deny",
@@ -364,10 +402,20 @@
       "import/no-webpack-loader-syntax": "deny",
       "import/prefer-default-export": "allow",
       "import/unambiguous": "deny",
-      "max-depth": ["deny", [4]],
+      "max-depth": [
+        "deny",
+        [
+          4
+        ]
+      ],
       "max-lines": "allow",
       "max-lines-per-function": "allow",
-      "max-params": ["deny", [4]],
+      "max-params": [
+        "deny",
+        [
+          4
+        ]
+      ],
       "max-statements": "allow",
       "no-alert": "deny",
       "no-async-promise-executor": "deny",
@@ -549,7 +597,12 @@
       "@typescript-eslint/use-unknown-in-catch-callback-variable": "deny",
       "block-scoped-var": "deny",
       "class-methods-use-this": "deny",
-      "complexity": ["deny", [20]],
+      "complexity": [
+        "deny",
+        [
+          20
+        ]
+      ],
       "constructor-super": "deny",
       "curly": "deny",
       "default-case": "deny",
@@ -608,10 +661,30 @@
       "jest/valid-describe-callback": "allow",
       "jest/valid-expect": "allow",
       "jest/valid-title": "allow",
-      "max-depth": ["deny", [4]],
-      "max-lines": ["deny", [500]],
-      "max-lines-per-function": ["deny", [75]],
-      "max-params": ["deny", [4]],
+      "max-depth": [
+        "deny",
+        [
+          4
+        ]
+      ],
+      "max-lines": [
+        "deny",
+        [
+          500
+        ]
+      ],
+      "max-lines-per-function": [
+        "deny",
+        [
+          75
+        ]
+      ],
+      "max-params": [
+        "deny",
+        [
+          4
+        ]
+      ],
       "max-statements": [
         "deny",
         [
@@ -665,7 +738,15 @@
         "deny",
         [
           {
-            "ignore": [0, 1, 4, 15, 20, 75, 500]
+            "ignore": [
+              0,
+              1,
+              4,
+              15,
+              20,
+              75,
+              500
+            ]
           }
         ]
       ],
@@ -952,7 +1033,12 @@
       "@typescript-eslint/use-unknown-in-catch-callback-variable": "deny",
       "block-scoped-var": "deny",
       "class-methods-use-this": "deny",
-      "complexity": ["deny", [20]],
+      "complexity": [
+        "deny",
+        [
+          20
+        ]
+      ],
       "constructor-super": "deny",
       "curly": "deny",
       "default-case": "deny",
@@ -1004,10 +1090,20 @@
       "jest/valid-describe-callback": "deny",
       "jest/valid-expect": "deny",
       "jest/valid-title": "deny",
-      "max-depth": ["deny", [4]],
+      "max-depth": [
+        "deny",
+        [
+          4
+        ]
+      ],
       "max-lines": "allow",
       "max-lines-per-function": "allow",
-      "max-params": ["deny", [4]],
+      "max-params": [
+        "deny",
+        [
+          4
+        ]
+      ],
       "max-statements": "allow",
       "no-alert": "deny",
       "no-async-promise-executor": "deny",
