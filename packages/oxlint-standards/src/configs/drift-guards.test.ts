@@ -85,14 +85,17 @@ describe('drift guards — engine-backed suppression contracts', () => {
   });
 
   // ─── vitestConfig ────────────────────────────────────────────────────────────
-  // Two guards prove the vitest scoping contract together.
-  // Global guard (print-config): all vitest rules resolve to off/allow at the global level.
-  // Behavioral guard (fixture lint): warn-todo fires on `.test.ts` but not on `.ts`.
-  // Together with the exact-set assertion in vitest.test.ts, this validates the full test-file scoping.
+  // Three guards prove the vitest scoping contract together:
+  // 1. Global guard (print-config, full composition): zero active vitest/* and jest/* rules.
+  // 2. Test-scope guard (synthesized flat config): exactly 4 vitest + 11 jest hygiene rules active.
+  // 3. Behavioral guard (fixture lint): warn-todo fires on `.test.ts` but not on `.ts`.
+  // Together with the exact-set assertions in vitest.test.ts, this validates the full test-file scoping.
   describe('vitestConfig: test-file override scoping', () => {
-    it('--print-config on baseConfig + vitestConfig shows zero active vitest rules globally', () => {
-      const composed = composeLintConfigs(baseConfig, vitestConfig);
+    it('full composition shows zero active vitest/* and jest/* rules at the global level', () => {
       // Non-test path: `--print-config` reflects only global rules, not per-file overrides.
+      // Full composition (base + vitest + nodeRuntime) is used so nodeRuntimeConfig interactions
+      // Cannot inadvertently re-activate a vitest or jest rule.
+      const composed = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig);
       const { configPath, filePath } = writeOxlintFixture(
         composed,
         'subject.ts',
@@ -101,11 +104,56 @@ describe('drift guards — engine-backed suppression contracts', () => {
 
       const result = runOxlint(['--config', configPath, '--print-config', filePath]);
       const effectiveConfig = parsePrintConfig(result.stdout);
-      const activeVitestRules = Object.entries(effectiveConfig.rules ?? {})
-        .filter(([key]) => key.startsWith('vitest/'))
+      const activeTestHygieneRules = Object.entries(effectiveConfig.rules ?? {})
+        .filter(([key]) => key.startsWith('vitest/') || key.startsWith('jest/'))
         .filter(([, value]) => value !== 'allow');
 
-      expect(activeVitestRules).toStrictEqual([]);
+      expect(activeTestHygieneRules).toStrictEqual([]);
+    });
+
+    it('test-scope activates exactly the 4 vitest and 11 jest hygiene rules', () => {
+      // --print-config does not activate file-path overrides regardless of target path.
+      // Synthesize the test-file scope: merge the test override into global rules and
+      // Strip overrides so print-config sees a flat config — the same approach as
+      // FlattenTestOverridesIntoGlobal in scripts/lib/effective-config.ts.
+      const testOverrideRules = vitestConfig.overrides?.[0]?.rules ?? {};
+      const testScopeVitestConfig = {
+        ...vitestConfig,
+        rules: { ...vitestConfig.rules, ...testOverrideRules },
+        overrides: [],
+      } as OxlintConfig;
+      const composed = composeLintConfigs(baseConfig, testScopeVitestConfig, nodeRuntimeConfig);
+      const { configPath, filePath } = writeOxlintFixture(
+        composed,
+        'subject.ts',
+        'export const x = 1;\n',
+      );
+
+      const result = runOxlint(['--config', configPath, '--print-config', filePath]);
+      const effectiveConfig = parsePrintConfig(result.stdout);
+      const activeHygieneRules = Object.entries(effectiveConfig.rules ?? {})
+        .filter(([key]) => key.startsWith('vitest/') || key.startsWith('jest/'))
+        .filter(([, value]) => value !== 'allow')
+        .map(([key]) => key)
+        .sort();
+
+      expect(activeHygieneRules).toStrictEqual([
+        'jest/expect-expect',
+        'jest/no-commented-out-tests',
+        'jest/no-conditional-expect',
+        'jest/no-disabled-tests',
+        'jest/no-export',
+        'jest/no-focused-tests',
+        'jest/no-standalone-expect',
+        'jest/require-to-throw-message',
+        'jest/valid-describe-callback',
+        'jest/valid-expect',
+        'jest/valid-title',
+        'vitest/hoisted-apis-on-top',
+        'vitest/no-conditional-tests',
+        'vitest/require-awaited-expect-poll',
+        'vitest/warn-todo',
+      ]);
     });
 
     it('warn-todo fires on a .test.ts fixture', () => {

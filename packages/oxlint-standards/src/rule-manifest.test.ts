@@ -193,6 +193,18 @@ describe('rule manifest schema', () => {
     const vitestEntries = entriesForCollection('vitestConfig');
 
     expect(vitestEntries.map((entry) => entry.name).sort()).toStrictEqual([
+      // Jest-namespace rules exposed by oxlint's vitest plugin (vitest implements the jest API).
+      'jest/expect-expect',
+      'jest/no-commented-out-tests',
+      'jest/no-conditional-expect',
+      'jest/no-disabled-tests',
+      'jest/no-export',
+      'jest/no-focused-tests',
+      'jest/no-standalone-expect',
+      'jest/require-to-throw-message',
+      'jest/valid-describe-callback',
+      'jest/valid-expect',
+      'jest/valid-title',
       'vitest/hoisted-apis-on-top',
       'vitest/no-conditional-tests',
       'vitest/require-awaited-expect-poll',

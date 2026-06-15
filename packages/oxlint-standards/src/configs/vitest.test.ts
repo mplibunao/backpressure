@@ -42,6 +42,39 @@ describe('vitest config fragment', () => {
     expect(testFileOverride?.files).toContain('**/*.test.ts');
   });
 
+  it('silences all jest/* rules globally to prevent category bleed onto non-test files', () => {
+    // Oxlint routes vitest-compatible hygiene through jest/* because vitest implements the jest API.
+    // Every jest/* rule must be explicitly off at global level; the override re-enables them scoped.
+    const jestRules = Object.entries(globalRules).filter(([key]) => key.startsWith('jest/'));
+    const activeGlobalJestRules = jestRules.filter(([, value]) => value !== 'off');
+
+    expect(activeGlobalJestRules).toStrictEqual([]);
+    expect(jestRules.length).toBeGreaterThan(0);
+  });
+
+  it('enables exactly these 11 jest test-hygiene rules in the test-file override', () => {
+    const overrideRules = testFileOverride?.rules ?? {};
+    const activeJestOverrideRules = Object.entries(overrideRules)
+      .filter(([key]) => key.startsWith('jest/'))
+      .filter(([, value]) => value !== 'off')
+      .map(([key]) => key)
+      .sort();
+
+    expect(activeJestOverrideRules).toStrictEqual([
+      'jest/expect-expect',
+      'jest/no-commented-out-tests',
+      'jest/no-conditional-expect',
+      'jest/no-disabled-tests',
+      'jest/no-export',
+      'jest/no-focused-tests',
+      'jest/no-standalone-expect',
+      'jest/require-to-throw-message',
+      'jest/valid-describe-callback',
+      'jest/valid-expect',
+      'jest/valid-title',
+    ]);
+  });
+
   it('enables exactly these four hygiene rules in the test-file override and no others', () => {
     const overrideRules = testFileOverride?.rules ?? {};
     // Sorting makes the assertion order-independent and deterministic across future edits.

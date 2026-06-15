@@ -13,6 +13,7 @@
     "introspection:check": "introspection check",
     "check:fix": "vp check --fix",
     "fixture:replay": "bun scripts/checks/fixture-replay.ts",
+    "gen:effective-config": "bun scripts/checks/generate-effective-config.ts",
     "inventory:rules": "bun scripts/checks/check-rule-inventory.ts",
     "fmt": "vp fmt",
     "format": "pnpm fmt",

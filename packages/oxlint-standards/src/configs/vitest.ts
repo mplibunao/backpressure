@@ -40,6 +40,20 @@ export const vitestConfig = {
     // Individual test timeouts conflict with the vi.setConfig({ testTimeout }) pattern.
     'vitest/require-test-timeout': 'off',
     'vitest/warn-todo': 'off',
+    // Oxlint routes vitest-compatible test hygiene through the jest/* namespace because
+    // Vitest implements the jest API surface. These rules bleed globally when the vitest
+    // Plugin is declared and categories are active; silence them here, re-enable scoped below.
+    'jest/expect-expect': 'off',
+    'jest/no-commented-out-tests': 'off',
+    'jest/no-conditional-expect': 'off',
+    'jest/no-disabled-tests': 'off',
+    'jest/no-export': 'off',
+    'jest/no-focused-tests': 'off',
+    'jest/no-standalone-expect': 'off',
+    'jest/require-to-throw-message': 'off',
+    'jest/valid-describe-callback': 'off',
+    'jest/valid-expect': 'off',
+    'jest/valid-title': 'off',
   },
   overrides: [
     {
@@ -53,6 +67,20 @@ export const vitestConfig = {
         'vitest/require-awaited-expect-poll': 'error',
         // The .todo / .skip markers left in CI silently omit coverage without failing.
         'vitest/warn-todo': 'error',
+        // Oxlint routes vitest-compatible test hygiene through the jest/* namespace
+        // (vitest implements the jest API). Re-enable here intentionally, matching the
+        // Live root config's active jest/* set — making the behavior explicit, not silent bleed.
+        'jest/expect-expect': 'error',
+        'jest/no-commented-out-tests': 'error',
+        'jest/no-conditional-expect': 'error',
+        'jest/no-disabled-tests': 'error',
+        'jest/no-export': 'error',
+        'jest/no-focused-tests': 'error',
+        'jest/no-standalone-expect': 'error',
+        'jest/require-to-throw-message': 'error',
+        'jest/valid-describe-callback': 'error',
+        'jest/valid-expect': 'error',
+        'jest/valid-title': 'error',
       },
     },
   ],

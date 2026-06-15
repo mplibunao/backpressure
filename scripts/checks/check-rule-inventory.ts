@@ -4,8 +4,16 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import {
+  buildOxlintRuleCatalog,
+  configuredRuleEntries,
+  generateEffectiveConfigArtifact,
+  isConfiguredRuleKnown,
+  type RuleEntry,
+  serializeArtifact,
+} from '../lib/effective-config.ts';
 import { fail, repoRoot } from '../lib/script-runtime.ts';
-import { buildOxlintStandards } from '../packages/oxlint-standards/package.ts';
+import { buildOxlintStandards, oxlintBin } from '../packages/oxlint-standards/package.ts';
 
 const distEntryPath = join(repoRoot, 'packages', 'oxlint-standards', 'dist', 'index.js');
 const sourceRoot =
@@ -140,6 +148,22 @@ const isRuleConfigFragment = (value: unknown): value is RuleConfigFragment =>
   (typeof value['rules'] === 'undefined' || isObjectRecord(value['rules'])) &&
   (typeof value['overrides'] === 'undefined' ||
     (Array.isArray(value['overrides']) && value['overrides'].every(isRuleConfigOverride)));
+
+// Type alias for the composeLintConfigs factory function exported from the built package.
+type ComposeConfigsFn = (...configs: ReadonlyArray<object>) => object;
+
+const isComposeConfigsFn = (value: unknown): value is ComposeConfigsFn =>
+  typeof value === 'function';
+
+const extractComposeConfigsFn = (namespace: unknown): ComposeConfigsFn => {
+  if (isObjectRecord(namespace)) {
+    const composeFn = namespace['composeLintConfigs'];
+    if (isComposeConfigsFn(composeFn)) {
+      return composeFn;
+    }
+  }
+  return fail('Built package did not export composeLintConfigs.');
+};
 const readReplaySuites = (moduleNamespace: unknown): ReadonlyArray<ReplaySuite> => {
   if (isObjectRecord(moduleNamespace) && isReplaySuites(moduleNamespace['replaySuites'])) {
     return moduleNamespace['replaySuites'];
@@ -237,6 +261,86 @@ const [replayModule, packageEntry]: [unknown, unknown] = await Promise.all([
 ]);
 const replaySuites = readReplaySuites(replayModule);
 const { configs, manifestEntries, pluginName, rules } = readPackageEntry(packageEntry);
+
+// ─── Effective-config staleness gate ────────────────────────────────────────
+// Bracket notation required because configs is Record<string, RuleConfigFragment>.
+// Nullish coalesce with fail() narrows from RuleConfigFragment|undefined to RuleConfigFragment.
+const baseConfigEntry = configs['baseConfig'] ?? fail('Package missing baseConfig entry.');
+const vitestConfigEntry = configs['vitestConfig'] ?? fail('Package missing vitestConfig entry.');
+const nodeRuntimeConfigEntry =
+  configs['nodeRuntimeConfig'] ?? fail('Package missing nodeRuntimeConfig entry.');
+const composeLintConfigsFn = extractComposeConfigsFn(packageEntry);
+const fullComposed = composeLintConfigsFn(
+  baseConfigEntry,
+  vitestConfigEntry,
+  nodeRuntimeConfigEntry,
+);
+const freshArtifact = serializeArtifact(
+  generateEffectiveConfigArtifact(baseConfigEntry, fullComposed, oxlintBin),
+);
+const effectiveConfigPath = join(repoRoot, 'docs', 'references', 'effective-config.json');
+if (!existsSync(effectiveConfigPath)) {
+  fail('effective-config.json is missing. Run `pnpm gen:effective-config` to generate it.');
+}
+if (read(effectiveConfigPath) !== freshArtifact) {
+  fail('effective-config.json is stale. Run `pnpm gen:effective-config` to regenerate it.');
+}
+
+// ─── Unknown-rule gate ───────────────────────────────────────────────────────
+const allConfiguredEntries: ReadonlyArray<RuleEntry> = [
+  ...configuredRuleEntries(baseConfigEntry),
+  ...configuredRuleEntries(vitestConfigEntry),
+  ...configuredRuleEntries(nodeRuntimeConfigEntry),
+];
+
+// P1-4a: Assert canonical namespace — the package must author @typescript-eslint/* directly.
+// Authoring typescript/* (oxlint's internal alias) is a namespace regression that must fail loudly.
+const nonCanonicalEntries = allConfiguredEntries.filter((entry) =>
+  entry.rawName.startsWith('typescript/'),
+);
+if (nonCanonicalEntries.length > 0) {
+  fail(
+    `Configured rules must use @typescript-eslint/* namespace, not typescript/*: ${list(uniqueSorted(nonCanonicalEntries.map((entry) => entry.rawName)))}.`,
+  );
+}
+
+// P1-4b: Collision detection — two different raw names normalizing to the same canonical key
+// With different severities would silently shadow one configuration. Fail instead.
+const entriesByCanonical = new Map<string, Array<RuleEntry>>();
+for (const entry of allConfiguredEntries) {
+  const group = entriesByCanonical.get(entry.canonicalName) ?? [];
+  group.push(entry);
+  entriesByCanonical.set(entry.canonicalName, group);
+}
+const canonicalCollisions: Array<string> = [];
+for (const [canonicalName, group] of entriesByCanonical) {
+  const rawNames = new Set(group.map((ruleEntry) => ruleEntry.rawName));
+  const severities = new Set(group.map((ruleEntry) => JSON.stringify(ruleEntry.severity)));
+  if (rawNames.size > 1 && severities.size > 1) {
+    canonicalCollisions.push(canonicalName);
+  }
+}
+if (canonicalCollisions.length > 0) {
+  fail(
+    `Canonical rule names have conflicting raw aliases with different severities: ${list(canonicalCollisions)}.`,
+  );
+}
+
+// P1-1 + P1-2: Authoritative catalog from `oxlint --rules` — checks every configured rule name
+// Against every rule oxlint actually knows, after the same canonical normalization.
+// Custom plugin rules (prefixed with pluginName/) are excluded: they are JS-plugin rules
+// That oxlint's --rules output does not enumerate.
+const oxlintCatalog = buildOxlintRuleCatalog(oxlintBin);
+const allCanonicalNames = uniqueSorted(allConfiguredEntries.map((entry) => entry.canonicalName));
+const unknownConfiguredRules = allCanonicalNames.filter(
+  (ruleName) => !isConfiguredRuleKnown(ruleName, oxlintCatalog, pluginName),
+);
+if (unknownConfiguredRules.length > 0) {
+  fail(
+    `The package configures rules oxlint does not recognize (check for typos): ${list(unknownConfiguredRules)}.`,
+  );
+}
+
 const pluginRulePrefix = `${pluginName}/`;
 const manifestNames = manifestEntries.map((entry) => entry.name);
 const duplicateNames = uniqueSorted(
