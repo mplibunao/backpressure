@@ -74,7 +74,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | WI-2 | Config-fragment type + composition (helper built: `extends` cannot concat overrides) | M | DONE | `196dcb8` |
 | WI-3 | `baseConfig` canonical baseline | L | DONE | `63a2651` |
 | WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | DONE | `71f5622` |
-| WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | PENDING | |
+| WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | DONE | `45d3845` |
 | WI-6 | Effective-config generation + inventory gate | L | PENDING | |
 | WI-7 | README + `rules.md` consumption model | M | PENDING | |
 | WI-8 | Dogfood in backpressure root (delete local block, decompose `max-statements`) | L | PENDING | |
@@ -307,3 +307,59 @@ Entries are appended here as each item passes its gates and commits.
   future layer fragment that adds a plugin needs the same suppress-plus-drift-guard
   treatment. WI-9 covers the new exports in the packed-consumer smoke.
 - **Action items for MP:** none.
+
+### WI-5: rule-manifest schema extension (DONE)
+
+- **Build:** one `pair` agent (Codex CLI, gpt-5.5, reasoning high). It extended
+  `rule-manifest.ts`: replaced the boolean `presetEnabled` with a `collections` array
+  (`generalPreset`/`effectPreset`/.../`baseConfig`/`vitestConfig`/`nodeRuntimeConfig`),
+  added a `rationaleClass` field (`correctness | safety | agent-failure-mode | style`),
+  and added a typed severity-collapse helper (`off|info|warning|error` to
+  `off|warn|error`, noting `--max-warnings 0` makes `warn` fail like `error`). It added
+  manifest rows for the explicit `baseConfig`/`vitestConfig`/`nodeRuntimeConfig` rule
+  decisions (not for category-swept rules, which WI-6's generated effective-config view
+  will own), kept the `generalPreset` rule set unchanged, and updated the consumers
+  (`rule-manifest-selection.ts`, preset construction, `check-rule-inventory.ts`,
+  `src/index.ts`) plus a new `rule-manifest.test.ts`. The pre-existing
+  `oxlint-disable max-lines` on the manifest is an accepted data-catalog exception, not a
+  new suppression.
+- **Review gate:** one `context_builder` review on chat `wi-5-review-52C36C` plus two
+  follow-ups. The substantive catch: the agent had graded cosmetic rules
+  (`array-type`, `dot-notation`, `no-inferrable-types`, `prefer-function-type`,
+  `prefer-template`, `sort-imports`) as `agent-failure-mode` to satisfy a self-imposed
+  "no error rule is style" invariant, which is reverse-engineering the grade. Fix: those
+  rules are now graded `style` (severities unchanged at `error`, a settled WI-3
+  and live-parity decision), each with a note justifying enforcement (autofixable,
+  diff-determinism, auto-fixed by `vp check --fix`). The wrong invariant was replaced with
+  the real grade-by-kind invariants applied across all collection-backed rules
+  (not blanket-all-error; correctness and safety rules must be `error`; style-at-error
+  rules must be in an explicit `STYLE_AT_ERROR_EXCEPTIONS` allowlist and carry autofix
+  evidence), mirrored into `check-rule-inventory.ts`. `sourceRule` now throws if a
+  collection-backed entry omits an explicit `rationaleClass` (inference is kept only for
+  legacy non-collection rows), and a reverse-completeness check asserts every explicit
+  config `error` rule has a manifest row (allowlist for intentional offs and bleed-guards).
+- **Deferred policy decision (recorded, not resolved here):** whether autofixable
+  mechanical style rules may sit at `error` is a deliberate exception to TD-CARD-033,
+  which says style rules stay quieter. WI-5 makes the exception explicit and reviewable via the
+  `STYLE_AT_ERROR_EXCEPTIONS` allowlist but does NOT ratify it. Ratifying or rejecting it
+  (downgrade those rules to `off`, or document the exception in ADR-004 / TD-CARD-033) is
+  deferred to the canon-edit phase (WI-17) and listed in the WI-21 deferred records. This
+  is the orchestrator holding the scope line: WI-5 records the rule grades and flags the
+  tension while leaving settled severities and canon untouched.
+- **Refactor gate:** one `context_builder` analysis on chat `wi5-refactor-review-59E2B6`;
+  it kept the data-dense manifest and the intentional source-vs-built-package invariant
+  duplication. Applied: derived `check-rule-inventory.ts`'s `pluginRulePrefix` from the
+  built package's exported `pluginName` (removing a hardcoded second source of truth);
+  routed `nativeRule()` through the `sourceRule()` finalizer so the explicit-rationale
+  guard stays centralized; renamed two helpers that read alike
+  (`defaultCollectionsForDomain`, `presetCollectionOnlyForDomain`).
+- **Checks:** the orchestrator ran the checks independently after each gate:
+  `pnpm --filter @mplibunao/oxlint-standards typecheck` (clean), the package vitest suite
+  (699 tests pass across 13 files), `pnpm exec vp lint --max-warnings 0` (0 over 67
+  files), and `pnpm inventory:rules` (passed: 50 source rules represented, parity intact).
+- **Commits:** `45d3845` for the manifest schema, rows, consumers, and tests, plus this
+  ledger-record commit.
+- **Issues:** the style-at-error policy decision above is open and tracked for WI-17.
+- **Action items for MP:** decide the style-at-error policy when the canon phase (WI-17)
+  is reached: ratify "autofixable mechanical style may be error" in ADR-004 / TD-CARD-033,
+  or downgrade the six allowlisted rules to `off`. Not blocking the Phase-1 publishable cut.
