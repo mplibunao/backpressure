@@ -4,6 +4,10 @@
 
 The machine-checkable catalog is `packages/oxlint-standards/src/rule-manifest.ts`. The inventory gate is `scripts/checks/check-rule-inventory.ts`.
 
+For the full effective rule view (all categories expanded, standard plugin rules, and
+severity at each file scope across base and full compositions), see
+`docs/references/effective-config.md`. The sections below cover custom AST rules only.
+
 ## Catalog summary
 
 - **linteffect source coverage:** 50 v0.0.6 source rules are represented. 47 are ported. 3 are explicitly dropped: `no-if-statement`, `no-effect-fn-generator`, and `no-ternary`.

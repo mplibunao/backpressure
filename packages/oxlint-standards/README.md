@@ -1,12 +1,83 @@
 # @mplibunao/oxlint-standards
 
-Opinionated oxlint presets for MP's code-quality backpressure package.
+Opinionated oxlint rule pack for MP's code-quality backpressure package.
 
-The package exports an oxlint JS plugin plus preset objects for Effect, Effect-in-React, stack-neutral JavaScript/TypeScript hygiene, and monorepo boundaries.
+The package exports an oxlint JS plugin, custom-rule presets, and full config fragments.
 
-## Usage
+## Consumption model
 
-Install the package, then load it from a standalone `.oxlintrc.json`:
+The package ships two kinds of named exports.
+
+**Presets** (`generalPreset`, `effectPreset`, `effectReactPreset`, `boundariesPreset`)
+carry the package's own AST rules. Their shape is `{ jsPlugins, rules }`. Presets do
+not set categories, options, or standard plugin rules; they add only the custom rule
+group the consumer opts into.
+
+**Config fragments** (`baseConfig`, `vitestConfig`, `nodeRuntimeConfig`) are typed
+`OxlintConfig` objects with categories, options, plugins, rules, and overrides. They
+encode the canonical TypeScript lint baseline and opt-in stack layers. Compose them
+with `composeLintConfigs` inside a `vite.config.ts`:
+
+```typescript
+import {
+  baseConfig,
+  composeLintConfigs,
+  nodeRuntimeConfig,
+  vitestConfig,
+} from '@mplibunao/oxlint-standards';
+import { defineConfig } from 'vite-plus';
+
+export default defineConfig({
+  lint: composeLintConfigs(
+    baseConfig,
+    vitestConfig,
+    nodeRuntimeConfig,
+    {
+      rules: { /* project-specific rules */ },
+      overrides: [ /* project-specific overrides */ ],
+    },
+  ),
+});
+```
+
+`composeLintConfigs` accepts any number of `OxlintConfig` fragments and returns a
+single flat config: rules merge with later-wins semantics, plugins and `jsPlugins`
+merge by union, and overrides concatenate.
+
+**Why `composeLintConfigs` instead of `extends`:** oxlint's native `extends` field
+merges `rules`, `categories`, and `plugins`, but it uses replace semantics for
+`overrides`; a child config's `overrides` array replaces the parent's rather than
+appending to it. `baseConfig` ships test-file overrides that relax structural ceilings
+for test code. Using `extends` would silently drop those overrides in every consumer.
+`composeLintConfigs` concatenates `overrides` arrays instead.
+
+For Effect-heavy repos, scope `effectPreset` to Effect source files via a tail
+override:
+
+```typescript
+lint: composeLintConfigs(
+  baseConfig,
+  vitestConfig,
+  nodeRuntimeConfig,
+  {
+    overrides: [
+      {
+        files: ['src/**/*.ts'],
+        rules: { ...effectPreset.rules },
+        jsPlugins: [...effectPreset.jsPlugins],
+      },
+    ],
+  },
+),
+```
+
+For the full effective rule view (all categories expanded, standard plugin rules, and
+severity at each file scope), see `docs/references/effective-config.md`.
+
+### Preset-only usage
+
+To load a custom-rule preset without a full config baseline, reference it from a
+standalone `.oxlintrc.json`:
 
 ```json
 {
@@ -17,8 +88,6 @@ Install the package, then load it from a standalone `.oxlintrc.json`:
   }
 }
 ```
-
-The compiled package is the supported consumer path. Inline vite-plus `jsPlugins` config may work later, but this package validates the standalone oxlint config path first.
 
 ## Rule severity
 
