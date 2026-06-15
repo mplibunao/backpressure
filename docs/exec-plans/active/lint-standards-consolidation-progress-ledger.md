@@ -59,9 +59,9 @@ recorded here with its resolution before the dependent item is dispatched.
 
 | Resolution | Blocks | Status | Resolution ref |
 | --- | --- | --- | --- |
-| (a) Config-fragment type source: oxlint `OxlintConfig` vs hand-rolled | WI-2 | PENDING | |
-| (b) `composeLintConfigs` vs oxlint native `extends` (does inline `extends` merge fragments at the vite-plus boundary?) | WI-2 | PENDING | |
-| (c) Naming taxonomy lock (`…Preset` for rule packs, `…Config` for fragments, one React surface) | WI-2, WI-3 | PENDING | |
+| (a) Config-fragment type source: oxlint `OxlintConfig` vs hand-rolled | WI-2 | RESOLVED | reuse `OxlintConfig`, add `oxlint` peer+dev dep (WI-1 detail) |
+| (b) `composeLintConfigs` vs oxlint native `extends` | WI-2 | RESOLVED | build the helper; `extends` cannot concat base `overrides` (WI-1 detail) |
+| (c) Naming taxonomy lock (`…Preset` for rule packs, `…Config` for fragments, one React surface) | WI-2, WI-3 | RESOLVED | locked (WI-1 detail) |
 
 ## Status
 
@@ -70,8 +70,8 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
-| WI-1 | Pre-build resolutions (fragment type, compose vs extends, naming lock) | S | PENDING | |
-| WI-2 | Config-fragment type + composition | M | PENDING | |
+| WI-1 | Pre-build resolutions (fragment type, compose vs extends, naming lock) | S | DONE | `<pending>` |
+| WI-2 | Config-fragment type + composition (helper built: `extends` cannot concat overrides) | M | PENDING | |
 | WI-3 | `baseConfig` canonical baseline | L | PENDING | |
 | WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | PENDING | |
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | PENDING | |
@@ -95,3 +95,55 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 ## Per-item detail
 
 Entries are appended here as each item passes its gates and commits.
+
+### WI-1: Pre-build resolutions (DONE)
+
+- **Spike:** one `engineer` agent (sonnet:high) ran a read-only empirical spike in
+  throwaway temp dirs against the installed `oxlint@1.58.0` and `vite-plus@0.1.15`.
+  It touched no package files. The orchestrator approved each command, declined the
+  `dtrace`/`lsof` mechanism probe as not decision-relevant, and steered the agent to
+  finalize once the decision-relevant facts were captured.
+- **(a) Fragment type source: reuse oxlint `OxlintConfig`.** `packages/oxlint-standards`
+  declares zero dependencies today. `vite-plus` types its `lint?` field as a single
+  `OxlintConfig` imported from `oxlint` (`vite-plus/dist/index.d.ts:4,11`), and
+  `OxlintConfig` re-adds inline-object `extends?: OxlintConfig[]`
+  (`oxlint/dist/index.d.ts:687-688`) over the raw `Oxlintrc` whose `extends` is
+  `string[]` file paths. Decision: type fragments as `OxlintConfig` and add `oxlint`
+  as a peer dependency (every consumer already installs it through `vite-plus`) plus a
+  dev dependency for the package's own typecheck. This makes fragments unable to drift
+  from what a consumer's `lint:` assignment accepts.
+- **(b) Build `composeLintConfigs`, do not rely on `extends` alone.** The spike proved
+  native `extends` merges `rules` with child-later-wins precedence and carries a base
+  fragment's `categories`/`plugins`-resolved rule severities into the consumer's
+  effective rule set, all the way through the vite-plus to oxlint runtime boundary. The
+  end-to-end check: a temp `vite.config.ts` with
+  `lint: { extends: [baseConfig, vitestConfig], rules: { 'no-console': 'warn' } }` ran
+  `vp lint` at exit 0, with `no-console` firing as a warning (child wins over base
+  `error`) and `no-debugger` firing as a warning (carried from the base fragment).
+  The decisive caveat: `overrides` is REPLACE-semantics. When the consumer's `lint:`
+  omits `overrides`, the base fragment's `overrides` are dropped from the effective
+  config. Because the shared test-file overrides live in `baseConfig`, an `extends`-only
+  path would silently strip them in every consumer and defeat the consolidation. The
+  helper resolves this: it returns a single flat `OxlintConfig` (no `extends`) merging
+  rules later-wins, plugins and jsPlugins by union, categories per-category later-wins,
+  and overrides by concat. Overrides concat is the helper's sole reason to exist, the
+  one merge `extends` cannot perform; this is evidence-gated, not speculative.
+- **(c) Naming taxonomy locked.** Custom rule packs keep the `…Preset` suffix
+  (`generalPreset`, `effectPreset`, `effectReactPreset`, `boundariesPreset`); full
+  config fragments take the `…Config` suffix (`baseConfig`, `vitestConfig`,
+  `nodeRuntimeConfig`); the merge helper is `composeLintConfigs`. The React surface is
+  deferred to WI-20, will ship as a single surface, and is never named off the reserved
+  `react` preset (PA-2/PA-5).
+- **Review gate:** a code review does not apply, because this item produced decisions,
+  not code. The review ran as orchestrator verification plus the prose gate. The
+  orchestrator cross-checked every claim against the spike's command output and the
+  cited `oxlint`/`vite-plus` type line numbers, and confirmed the overrides footgun
+  changes WI-2 from a conditional build into building the helper unconditionally.
+  `pnpm prose` over the changed docs reported 0 errors.
+- **Refactor gate:** not applicable, because no code changed.
+- **Checks:** prose gate green on the plan and ledger edits.
+- **Commits:** this commit records the WI-1 resolution edits to the plan and this
+  ledger; its SHA is backfilled into the status table on the next item's ledger update.
+- **Issues:** none open. The overrides REPLACE-semantics constraint is carried forward
+  into WI-2 (helper concat) and WI-3 (where `baseConfig` test overrides live).
+- **Action items for MP:** none.

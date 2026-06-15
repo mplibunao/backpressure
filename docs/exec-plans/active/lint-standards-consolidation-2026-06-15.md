@@ -297,24 +297,38 @@ stacked-branch runway (WI-11) gates any publish.
 
 ### Phase 1: package base, dogfood, publish, introspection
 
-1. **Pre-build resolutions (settle before WI-2/WI-3).** Three things the critique says
-   must be decided before building. (a) **Fragment type source:** reuse oxlint's
-   `OxlintConfig` (which adds `oxlint`/`vite-plus` as a dep or peer; the package has
-   neither today and hand-rolls `PresetConfig` at `shared.ts:11-16`) vs a hand-rolled
-   structural type that can drift from what `lint:` accepts. (b) **`composeLintConfigs`
-   vs oxlint `extends`:** verify at the vite-plus to oxlint runtime boundary whether
-   inline `lint: { extends: [baseConfig, vitestConfig], … }` merges fragments
-   (plugins-union, overrides-concat); if it does, the helper is largely redundant.
-   (c) **Naming taxonomy lock** (D-B). Done when each is decided and recorded here.
-   Size S.
-2. **Config-fragment type + composition.** Adopt the WI-1(a) decision: a config must be
-   assignable to what `vite-plus`'s `lint:` accepts (a single `OxlintConfig` from
-   `oxlint`). Build `composeLintConfigs` ONLY if WI-1(b) shows oxlint's native `extends`
-   does not merge in-memory fragments; if it does, use `extends` and skip the helper. If
-   the helper is needed, its return type is `OxlintConfig` and its merge is
-   plugins-union / later-wins rules / concat overrides, with tests for duplicate-plugin
-   removal and precedence. Existing presets compile unchanged. Key:
-   `src/presets/shared.ts:11-16`, `src/presets/index.ts`, `src/index.ts`. Size M.
+1. **Pre-build resolutions (RESOLVED 2026-06-15 by the WI-1 spike).** (a) **Fragment
+   type source: reuse oxlint's `OxlintConfig`.** `vite-plus` types `lint?: OxlintConfig`
+   (`vite-plus/dist/index.d.ts:4,11`) and `OxlintConfig` re-adds inline-object
+   `extends?: OxlintConfig[]` (`oxlint/dist/index.d.ts:687-688`). The package declares
+   zero dependencies today and hand-rolls `PresetConfig` at `shared.ts:11-16`; add
+   `oxlint` as a peer dependency (every consumer already installs it through `vite-plus`)
+   plus a dev dependency for the package's own typecheck. Fragments are typed
+   `OxlintConfig`, so they cannot drift from what `lint:` accepts. (b)
+   **`composeLintConfigs` is built, not skipped.** The spike confirmed native `extends`
+   merges `rules` (child later-wins) and carries base `categories`/`plugins` rule
+   severities through the full vite-plus to oxlint boundary (`vp lint` exit 0, base rules
+   fire). But `overrides` is REPLACE-semantics: a base fragment's `overrides` are dropped
+   unless the consumer re-declares them. The shared test-file overrides live in
+   `baseConfig`, so relying on `extends` would silently drop them in every consumer and
+   defeat the consolidation. The helper returns a single flat `OxlintConfig` (no
+   `extends`) that merges rules later-wins, plugins and jsPlugins by union, categories
+   per-category later-wins, and overrides by concat, which is the one merge `extends`
+   cannot do. (c) **Naming taxonomy locked:** custom rule packs keep `…Preset`
+   (`generalPreset`, `effectPreset`, `effectReactPreset`, `boundariesPreset`); full
+   fragments are `…Config` (`baseConfig`, `vitestConfig`, `nodeRuntimeConfig`); the merge
+   helper is `composeLintConfigs`; the React surface is deferred (WI-20), is a single
+   surface when built, and is never named off the reserved `react` preset. Size S.
+2. **Config-fragment type + composition.** Type every fragment as `OxlintConfig` from
+   `oxlint` (WI-1a) and add `oxlint` as a peer plus dev dependency. Build
+   `composeLintConfigs` (WI-1b): return type `OxlintConfig`, merge is plugins and
+   jsPlugins union, later-wins rules, per-category later-wins categories, and concat
+   overrides (the gap native `extends` cannot fill). Tests cover duplicate-plugin removal,
+   rule precedence, and overrides concat across at least two fragments plus a consumer
+   tail. Document native `extends` as the lightweight rules-only alternative, but the
+   shipped consumer path is the helper so base-fragment overrides reach consumers.
+   Existing presets compile unchanged. Key: `src/presets/shared.ts:11-16`, new
+   `src/configs/`, `src/index.ts`. Size M.
 3. **`baseConfig`.** The canonical baseline: graded categories (`correctness`,
    `suspicious`, `restriction` error; `style` off with explicit rules re-listed),
    `options` (`reportUnusedDisableDirectives`), structural ceilings incl.
