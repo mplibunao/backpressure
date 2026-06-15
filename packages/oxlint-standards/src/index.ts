@@ -14,7 +14,7 @@ export type {
   RuleSourceOwnership,
   RuleTestSource,
 } from './rule-manifest.js';
-export { composeLintConfigs } from './configs/index.js';
+export { baseConfig, composeLintConfigs } from './configs/index.js';
 export {
   boundariesPreset,
   effectPreset,
