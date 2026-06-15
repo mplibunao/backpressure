@@ -73,7 +73,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | WI-1 | Pre-build resolutions (fragment type, compose vs extends, naming lock) | S | DONE | `3428581` |
 | WI-2 | Config-fragment type + composition (helper built: `extends` cannot concat overrides) | M | DONE | `196dcb8` |
 | WI-3 | `baseConfig` canonical baseline | L | DONE | `63a2651` |
-| WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | PENDING | |
+| WI-4 | `vitestConfig` + `nodeRuntimeConfig` | M | DONE | `71f5622` |
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | PENDING | |
 | WI-6 | Effective-config generation + inventory gate | L | PENDING | |
 | WI-7 | README + `rules.md` consumption model | M | PENDING | |
@@ -250,4 +250,60 @@ Entries are appended here as each item passes its gates and commits.
 - **Issues:** none open. Deferred to WI-6: a checked-in effective-config view that pins
   the style-off drop set, the import-policy offs, and documents the `typeAware`/`typeCheck`
   omission, so future oxlint version bumps cannot silently change the effective posture.
+- **Action items for MP:** none.
+
+### WI-4: vitestConfig + nodeRuntimeConfig (DONE)
+
+- **Build:** one `engineer` agent (Claude Code, sonnet:high). It added `vitestConfig`
+  (`src/configs/vitest.ts`) and `nodeRuntimeConfig` (`src/configs/node-runtime.ts`) as
+  opt-in `OxlintConfig` layer fragments, with `vitest.test.ts`, `node-runtime.test.ts`,
+  and `drift-guards.test.ts`, exported through both barrels. `vitestConfig` enables the
+  vitest plugin, silences all vitest rules globally, and re-enables four hygiene rules
+  (`hoisted-apis-on-top`, `no-conditional-tests`, `require-awaited-expect-poll`,
+  `warn-todo`) under a `**/*.test.ts` override. `nodeRuntimeConfig` enables only
+  `unicorn/prefer-node-protocol`.
+- **Review gate:** one `context_builder` review on chat `wi4-lint-review-790734` plus two
+  follow-ups. The core finding (which the agent had independently surfaced mid-build): a
+  layer fragment that enables a plugin gets that plugin's whole category set swept on when
+  composed with `baseConfig`'s error categories. Empirically, unicorn swept 33 rules and
+  vitest swept several. The agent suppressed the unwanted rules by explicit enumeration
+  (an exhaustive unicorn off-list; all vitest rules off globally, four re-enabled in the
+  override). The review's must-fixes hardened this from a brittle hand-list into a proven
+  contract by adding engine-backed drift guards in `drift-guards.test.ts`: they shell out
+  to the real `oxlint` binary, materialize `composeLintConfigs(baseConfig, fragment)`, and
+  assert via `oxlint --print-config` that the only active `unicorn/*` rule is
+  `prefer-node-protocol` and that zero `vitest/*` rules are active globally, plus a
+  real-fixture lint proving `warn-todo` fires only in `.test.ts`. A sanity check (forcing
+  a stray unicorn rule on) confirmed the node guard fails on bleed. `vitest.test.ts` was
+  tightened to assert the override re-enables exactly the four rules. The
+  `--print-config`-ignores-per-file-overrides quirk was accounted for: global suppression
+  is proven by print-config, per-file scoping by fixture lint plus the static exact-set
+  assertion. Final review pass found no remaining issue.
+- **Orchestrator-caught regression (verify gate):** the agent's scoped self-check reported
+  lint clean, but the orchestrator's independent full `vp lint --max-warnings 0` found 10
+  errors (`eslint(capitalized-comments)`, `eslint(id-length)`) in the two new test files
+  under the current root config's `style: 'error'`. They would vanish once WI-8 switches
+  the root to `baseConfig` (style off), but the repo had to be green now to commit through
+  the pre-commit `vp check` gate. The agent fixed them by editing code (capitalized the
+  comments, renamed single-character identifiers), not by suppressing rules.
+- **Refactor gate:** one `context_builder` analysis on chat `wi4-refactor-review-178A6C`;
+  only low findings. Applied: extracted a `writeOxlintFixture` helper for the repeated
+  temp-config and fixture setup in the drift guards, and corrected a comment that
+  overstated what the drift tests alone prove (crediting `vitest.test.ts` for the
+  exact-set proof). Declined the cross-file namespace-filter helper as not worthwhile for
+  two files. The exhaustive unicorn off-list was kept (accepted design, protected by the
+  drift guard).
+- **Checks:** the orchestrator ran the checks independently after each gate:
+  `pnpm --filter @mplibunao/oxlint-standards typecheck` (clean), the package vitest suite
+  (688 tests pass across 12 files, including 3 engine-backed drift guards), and
+  `pnpm exec vp lint --max-warnings 0` (0 warnings and 0 errors over 66 files).
+- **Behavior change for WI-8 dogfood:** the four vitest hygiene rules were not active in
+  the live root config, so the WI-8 dogfood will surface real violations on test files for
+  `hoisted-apis-on-top`, `no-conditional-tests`, `require-awaited-expect-poll`, and
+  `warn-todo`. This is expected, and decomposed during WI-8 rather than suppressed.
+- **Commits:** `71f5622` for the two fragments, their tests, the drift guards, and the
+  exports, plus this ledger-record commit.
+- **Issues:** none open. The plugin-category-sweep behavior is now a known pattern: any
+  future layer fragment that adds a plugin needs the same suppress-plus-drift-guard
+  treatment. WI-9 covers the new exports in the packed-consumer smoke.
 - **Action items for MP:** none.
