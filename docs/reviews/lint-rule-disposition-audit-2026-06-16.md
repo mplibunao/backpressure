@@ -1,13 +1,17 @@
 # Lint rule disposition audit
 
+> The deep-pass mandate at the end of this audit is resolved in
+> `lint-rule-disposition-resolution-2026-06-16.md`, which carries the final per-rule calls,
+> the corrections an adversarial review caught, and the decisions still reserved for MP.
+
 A full accounting of every rule the consolidation turned **off** or parked in an
 **unbuilt opt-in layer**, plus the opinionated **on** decisions, so MP can decide each
 against his own taste rather than the agents' defaults. Triggered by the finding that the
 import-architecture rules were defaulted off and left unscheduled for the app repos.
 
 Sources: `packages/oxlint-standards/src/configs/base.ts`, `node-runtime.ts`, `vitest.ts`,
-and the deferred layers described in
-`docs/exec-plans/active/lint-standards-consolidation-2026-06-15.md` (WI-18 to WI-21).
+and the deferred opt-in layers described in
+`docs/exec-plans/active/lint-standards-consolidation-2026-06-15.md`.
 
 ## How to decide: base vs layer vs off
 
@@ -147,15 +151,15 @@ glance.
 
 Re-evaluating each parked layer against the test above:
 
-| Layer (plan WI) | Contents | Verdict |
+| Layer | Contents | Verdict |
 | --- | --- | --- |
-| `architectureConfig` (WI-19) | `no-cycle`, `no-relative-parent-imports`, `no-barrel-file` | **collapses into BASE** (section A): general taste, not stack-specific. The layer mostly should not exist |
-| `namedExportsConfig` (WI-19) | `no-default-export` plus config overrides | **collapses into BASE** plus a narrow override. Not a separate opt-in |
-| `jsdocConfig` (WI-18) | contract-JSDoc on public surfaces, types off | **DECIDED: fold into BASE** (MP wants it generally). Open: scope (all public surfaces vs exported only) |
-| `explicitApiConfig` (WI-20) | `explicit-function-return-type` | **DECIDED: on by default in BASE**. Open: the variant/scope. Cracked teams usually scope it to module boundaries (`explicit-module-boundary-types`) or use `allowExpressions` so inline callbacks are exempt, rather than every function. Verify which oxlint supports |
-| `reactConfig` / `jsxA11yConfig` / `reactPerfConfig` (WI-20) | React rules | **STACK**, correct as a layer: only relevant in React repos, keep separate. Also has the `react` naming collision to resolve first |
-| type-aware async (`no-floating-promises` et al.) (WI-21) | needs oxlint type-aware | **DEFER**, correct: blocked on verifying oxlint type-aware works at the pinned version. The only tooling-gated set |
-| `bunConfig` vs `browserConfig` (WI-21) | `import/no-nodejs-modules` split | **RUNTIME**, correct as a layer: runtime-specific |
+| `architectureConfig` | `no-cycle`, `no-relative-parent-imports`, `no-barrel-file` | **collapses into BASE** (section A): general taste, not stack-specific. The layer mostly should not exist |
+| `namedExportsConfig` | `no-default-export` plus config overrides | **collapses into BASE** plus a narrow override. Not a separate opt-in |
+| `jsdocConfig` | contract-JSDoc on public surfaces, types off | **DECIDED: fold into BASE** (MP wants it generally). Open: scope (all public surfaces vs exported only) |
+| `explicitApiConfig` | `explicit-function-return-type` | **DECIDED: on by default in BASE**. Open: the variant/scope. Cracked teams usually scope it to module boundaries (`explicit-module-boundary-types`) or use `allowExpressions` so inline callbacks are exempt, rather than every function. Verify which oxlint supports |
+| `reactConfig` / `jsxA11yConfig` / `reactPerfConfig` | React rules | **STACK**, correct as a layer: only relevant in React repos, keep separate. Also has the `react` naming collision to resolve first |
+| type-aware async (`no-floating-promises` et al.) | needs oxlint type-aware | **DEFER**, correct: blocked on verifying oxlint type-aware works at the pinned version. The only tooling-gated set |
+| `bunConfig` vs `browserConfig` | `import/no-nodejs-modules` split | **RUNTIME**, correct as a layer: runtime-specific |
 
 Conclusion: the truly separate layers are the **stack** ones (React, Effect, already a
 preset), the **runtime** ones (Node, browser), and the **tooling-gated** one (type-aware).
@@ -170,8 +174,8 @@ base); only their exact scope stays open.
 - **`jsdocConfig`:** fold into BASE (contract-JSDoc, types off). Wanted generally.
 - **`explicit-function-return-type`:** on by default in BASE. Open sub-question: the exact
   variant/scope (section E).
-- **Sequencing:** the rule re-evaluation runs as a separate deep pass (mandate below). WI-10
-  (changesets) waits until after it, so the changeset captures the final config rather than a
+- **Sequencing:** the rule re-evaluation runs as a separate deep pass (mandate below). The
+  changeset step waits until after it, so the changeset captures the final config rather than a
   state we are about to change.
 
 ## Mandate for the deep pass
@@ -194,7 +198,7 @@ Take this audit and decide each remaining rule's home, grounded in evidence, not
    `import/order` to land in oxlint.
 5. `no-undef`: confirm keep-off (redundant with the TS compiler) or restore.
 6. Produce the updated base plus layers, re-dogfood backpressure, then pin the changeset
-   (WI-10) against the final state.
+   against the final state.
 
 **Verify autofix claims against the oxc docs.** The plan's "autofixable / not autofixable"
 wording was inherited from ESLint, not checked against oxlint. MP found the oxc rule pages
