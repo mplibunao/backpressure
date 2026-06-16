@@ -78,7 +78,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | WI-6 | Effective-config generation + inventory gate | L | DONE | `fbfa23a` |
 | WI-7 | README + `rules.md` consumption model | M | DONE | `2753fc8` |
 | WI-8 | Dogfood in backpressure root (delete local block, decompose `max-statements`) | L | DONE | `b7fc423` |
-| WI-9 | Packed-consumer smoke covers new exports | M | PENDING | |
+| WI-9 | Packed-consumer smoke covers new exports | M | DONE | `01b01c9` |
 | WI-10 | Changesets for both packages | S | PENDING | |
 | WI-11 | Branch-stack release runway | S | DOCUMENTED (gate) | |
 | WI-12 | Publish from backpressure | S | DEFERRED (manual blocker) | |
@@ -562,3 +562,33 @@ Entries are appended here as each item passes its gates and commits.
   exemption. WI-13 should expect the same custom-rule friction on introspection's own scripts and
   tests, and may need its own `prevent-dynamic-imports` / `no-ts-nocheck` justified disables. The
   `check` pipeline now builds before lint, typecheck, and test.
+
+### WI-9: Packed-consumer smoke covers new exports (DONE)
+
+- **Build:** one `engineer` agent (Codex CLI, gpt-5.5). It extended
+  `scripts/packages/oxlint-standards/smoke-packed-consumer.ts`: `assertMainEntryExports` and
+  `assertMainEntryTypes` now also cover `baseConfig`, `vitestConfig`, `nodeRuntimeConfig`, and
+  `composeLintConfigs` (runtime presence plus the tsc `--noEmit` type contract, asserting populated
+  `rules`, a callable `composeLintConfigs`, and no top-level `extends`). It added three helpers
+  (`writeComposedConfig`, `runComposedConfigFixture`, `runComposedConfigOxlint`) that import the four
+  symbols inside the installed (packed) consumer, serialize `composeLintConfigs(baseConfig,
+  vitestConfig, nodeRuntimeConfig)` to a `.oxlintrc.json`, and lint a fixture
+  (`console.log('x'); await import('node:fs');`) that trips both a custom rule
+  (`prevent-dynamic-imports`) and a native base rule (`no-console`). This proves the config
+  fragments resolve and run from a real consumer install, not just from source.
+- **Review gate:** one `context_builder` review on chat `wi-9-review-66C458`. No must-fix; one
+  suggestion: the native `no-console` check used a raw substring (`assertIncludes(output,
+  'no-console')`), weaker than the custom rule's `assertDiagnostic`, so it could pass on a
+  non-diagnostic line. The orchestrator tightened it to assert the diagnostic token
+  `eslint(no-console)` (oxlint's stable format for eslint-core rules, confirmed against the live
+  output), and re-ran the smoke to prove the native rule fires as a diagnostic, not a stray match.
+- **Refactor gate:** one `context_builder` analysis on chat `wi9-smoke-review-68C950`. Clean pass:
+  the three helpers are cohesive and well named, the consumer-side node-eval to materialize the
+  composed config is justified (the config must be built from the package as installed), and there is
+  no duplication with the existing harness helpers.
+- **Checks:** the orchestrator ran independently: `pnpm smoke:oxlint-packed-consumer` (real pack,
+  install, and lint) passed, `vp lint --max-warnings 0` (0/0), `pnpm typecheck` (clean), and the full
+  suite (767 tests). The change is scoped to the one smoke script.
+- **Commits:** `01b01c9` for the smoke extension.
+- **Issues:** none open.
+- **Action items for MP:** none.
