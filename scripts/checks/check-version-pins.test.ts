@@ -315,7 +315,7 @@ describe('version pin setup-node action validation', () => {
 });
 
 describe('version pin pnpm action validation', () => {
-  it.each([multiDigitMinorPnpmVersion, multiDigitPatchPnpmVersion])(
+  it.for([multiDigitMinorPnpmVersion, multiDigitPatchPnpmVersion])(
     'accepts exact pnpm semver with multi-digit boundaries %s',
     (version) => {
       const workflow = workflowWithSteps([miseStep(), pnpmStep(version), setupNodeStep()]);
@@ -368,7 +368,7 @@ describe('version pin pnpm action validation', () => {
     );
   });
 
-  it.each([
+  it.for([
     { expectedVersion: '11.4', workflowVersion: '"11.4"' },
     { expectedVersion: 'v11.4.0', workflowVersion: 'v11.4.0' },
     { expectedVersion: '11.4.0-beta.1', workflowVersion: '11.4.0-beta.1' },

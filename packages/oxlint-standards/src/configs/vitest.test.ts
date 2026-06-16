@@ -32,7 +32,7 @@ describe('vitest config fragment', () => {
     expect(globalRules['vitest/no-importing-vitest-globals']).toBe('off');
   });
 
-  it('silences require-test-timeout globally (conflicts with vi.setConfig testTimeout pattern)', () => {
+  it('silences require-test-timeout globally as a team-policy opt-in', () => {
     expect(globalRules['vitest/require-test-timeout']).toBe('off');
   });
 
@@ -75,7 +75,7 @@ describe('vitest config fragment', () => {
     ]);
   });
 
-  it('enables exactly these four hygiene rules in the test-file override and no others', () => {
+  it('enables exactly these eight vitest hygiene rules in the test-file override and no others', () => {
     const overrideRules = testFileOverride?.rules ?? {};
     // Sorting makes the assertion order-independent and deterministic across future edits.
     const activeVitestOverrideRules = Object.entries(overrideRules)
@@ -85,9 +85,13 @@ describe('vitest config fragment', () => {
       .toSorted();
 
     expect(activeVitestOverrideRules).toStrictEqual([
+      'vitest/consistent-each-for',
       'vitest/hoisted-apis-on-top',
       'vitest/no-conditional-tests',
+      'vitest/no-import-node-test',
       'vitest/require-awaited-expect-poll',
+      'vitest/require-local-test-context-for-concurrent-snapshots',
+      'vitest/require-mock-type-parameters',
       'vitest/warn-todo',
     ]);
   });

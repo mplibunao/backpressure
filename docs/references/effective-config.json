@@ -22,7 +22,16 @@
       ],
       "@typescript-eslint/dot-notation": "deny",
       "@typescript-eslint/explicit-function-return-type": "allow",
-      "@typescript-eslint/explicit-module-boundary-types": "deny",
+      "@typescript-eslint/explicit-module-boundary-types": [
+        "deny",
+        [
+          {
+            "allowHigherOrderFunctions": true,
+            "allowTypedFunctionExpressions": true,
+            "allowArgumentsExplicitlyTypedAsAny": false
+          }
+        ]
+      ],
       "@typescript-eslint/no-array-delete": "deny",
       "@typescript-eslint/no-base-to-string": "deny",
       "@typescript-eslint/no-confusing-non-null-assertion": "deny",
@@ -453,7 +462,16 @@
       ],
       "@typescript-eslint/dot-notation": "deny",
       "@typescript-eslint/explicit-function-return-type": "allow",
-      "@typescript-eslint/explicit-module-boundary-types": "deny",
+      "@typescript-eslint/explicit-module-boundary-types": [
+        "deny",
+        [
+          {
+            "allowHigherOrderFunctions": true,
+            "allowTypedFunctionExpressions": true,
+            "allowArgumentsExplicitlyTypedAsAny": false
+          }
+        ]
+      ],
       "@typescript-eslint/no-array-delete": "deny",
       "@typescript-eslint/no-base-to-string": "deny",
       "@typescript-eslint/no-confusing-non-null-assertion": "deny",
@@ -847,7 +865,16 @@
       ],
       "@typescript-eslint/dot-notation": "deny",
       "@typescript-eslint/explicit-function-return-type": "allow",
-      "@typescript-eslint/explicit-module-boundary-types": "deny",
+      "@typescript-eslint/explicit-module-boundary-types": [
+        "deny",
+        [
+          {
+            "allowHigherOrderFunctions": true,
+            "allowTypedFunctionExpressions": true,
+            "allowArgumentsExplicitlyTypedAsAny": false
+          }
+        ]
+      ],
       "@typescript-eslint/no-array-delete": "deny",
       "@typescript-eslint/no-base-to-string": "deny",
       "@typescript-eslint/no-confusing-non-null-assertion": "deny",
@@ -1311,7 +1338,16 @@
       ],
       "@typescript-eslint/dot-notation": "deny",
       "@typescript-eslint/explicit-function-return-type": "allow",
-      "@typescript-eslint/explicit-module-boundary-types": "deny",
+      "@typescript-eslint/explicit-module-boundary-types": [
+        "deny",
+        [
+          {
+            "allowHigherOrderFunctions": true,
+            "allowTypedFunctionExpressions": true,
+            "allowArgumentsExplicitlyTypedAsAny": false
+          }
+        ]
+      ],
       "@typescript-eslint/no-array-delete": "deny",
       "@typescript-eslint/no-base-to-string": "deny",
       "@typescript-eslint/no-confusing-non-null-assertion": "deny",
@@ -1691,12 +1727,12 @@
       "unicorn/throw-new-error": "deny",
       "use-isnan": "deny",
       "valid-typeof": "deny",
-      "vitest/consistent-each-for": "allow",
+      "vitest/consistent-each-for": "deny",
       "vitest/consistent-test-filename": "allow",
       "vitest/consistent-vitest-vi": "allow",
       "vitest/hoisted-apis-on-top": "deny",
       "vitest/no-conditional-tests": "deny",
-      "vitest/no-import-node-test": "allow",
+      "vitest/no-import-node-test": "deny",
       "vitest/no-importing-vitest-globals": "allow",
       "vitest/prefer-called-exactly-once-with": "allow",
       "vitest/prefer-called-once": "allow",
@@ -1709,8 +1745,8 @@
       "vitest/prefer-to-be-object": "allow",
       "vitest/prefer-to-be-truthy": "allow",
       "vitest/require-awaited-expect-poll": "deny",
-      "vitest/require-local-test-context-for-concurrent-snapshots": "allow",
-      "vitest/require-mock-type-parameters": "allow",
+      "vitest/require-local-test-context-for-concurrent-snapshots": "deny",
+      "vitest/require-mock-type-parameters": "deny",
       "vitest/require-test-timeout": "allow",
       "vitest/warn-todo": "deny"
     }

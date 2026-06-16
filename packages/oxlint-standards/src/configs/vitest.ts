@@ -37,7 +37,8 @@ export const vitestConfig = {
     'vitest/require-awaited-expect-poll': 'off',
     'vitest/require-local-test-context-for-concurrent-snapshots': 'off',
     'vitest/require-mock-type-parameters': 'off',
-    // Individual test timeouts conflict with the vi.setConfig({ testTimeout }) pattern.
+    // `vi.setConfig({ testTimeout })` satisfies this rule; keep timeout policy opt-in because
+    // mandated per-test timeouts are a restriction-category team policy, not baseline hygiene.
     'vitest/require-test-timeout': 'off',
     'vitest/warn-todo': 'off',
     // Oxlint routes vitest-compatible test hygiene through the jest/* namespace because
@@ -59,10 +60,18 @@ export const vitestConfig = {
     {
       files: ['**/*.test.ts'],
       rules: {
+        // Use .for for array-driven cases so Vitest spreads values instead of passing one array argument.
+        'vitest/consistent-each-for': 'error',
         // The vi.mock / vi.hoisted declarations must be at the top of the file; otherwise hoisting fails silently.
         'vitest/hoisted-apis-on-top': 'error',
+        // Importing node:test is a common autocomplete mistake that bypasses Vitest's runner hooks.
+        'vitest/no-import-node-test': 'error',
         // Conditional tests (if/switch inside test body) hide failures — a skipped branch never fails.
         'vitest/no-conditional-tests': 'error',
+        // Concurrent snapshot tests must use local test context so snapshots stay isolated per case.
+        'vitest/require-local-test-context-for-concurrent-snapshots': 'error',
+        // Mock generics keep vi.fn() call shapes typed instead of silently widening generated mocks.
+        'vitest/require-mock-type-parameters': 'error',
         // The expect.poll() call must be awaited; calling it without await produces a false pass.
         'vitest/require-awaited-expect-poll': 'error',
         // The .todo / .skip markers left in CI silently omit coverage without failing.

@@ -1999,6 +1999,13 @@ export const ruleManifest = [
     note: 'Global explicit return types are too broad; a future scoped API config owns that policy.',
   }),
   baseRule({
+    name: '@typescript-eslint/explicit-module-boundary-types',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Restriction-category public-surface guard: exported module boundaries must carry return types while inline callbacks stay exempt.',
+  }),
+  baseRule({
     name: '@typescript-eslint/no-empty-interface',
     severity: 'error',
     rationaleClass: 'correctness',
@@ -2468,6 +2475,13 @@ export const ruleManifest = [
     note: 'Dropped at error: oxlint has no autofixable import-ordering rule and oxfmt does not sort imports, so enforcing it imposes permanent manual churn. Import order is left to review.',
   }),
   vitestRule({
+    name: 'vitest/consistent-each-for',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'test-file',
+    note: 'Uses .for for array-driven cases so Vitest spreads values instead of passing one array argument.',
+  }),
+  vitestRule({
     name: 'vitest/hoisted-apis-on-top',
     severity: 'error',
     rationaleClass: 'correctness',
@@ -2475,11 +2489,32 @@ export const ruleManifest = [
     note: 'Vitest hoisted APIs must appear before other statements or mocks can behave incorrectly.',
   }),
   vitestRule({
+    name: 'vitest/no-import-node-test',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'test-file',
+    note: 'Prevents agent autocomplete from importing node:test instead of the Vitest runner.',
+  }),
+  vitestRule({
     name: 'vitest/no-conditional-tests',
     severity: 'error',
     rationaleClass: 'safety',
     gating: 'test-file',
     note: 'Conditional tests hide failures when a branch never runs.',
+  }),
+  vitestRule({
+    name: 'vitest/require-local-test-context-for-concurrent-snapshots',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'test-file',
+    note: 'Concurrent snapshot tests need local test context to avoid flaky snapshot cross-talk.',
+  }),
+  vitestRule({
+    name: 'vitest/require-mock-type-parameters',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'test-file',
+    note: 'Forward guard for generated vi.fn() mocks that would otherwise widen call signatures silently.',
   }),
   vitestRule({
     name: 'vitest/require-awaited-expect-poll',

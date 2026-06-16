@@ -30,6 +30,14 @@ const baseCoreConfig = {
     '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
     '@typescript-eslint/dot-notation': 'error',
     '@typescript-eslint/explicit-function-return-type': 'off',
+    '@typescript-eslint/explicit-module-boundary-types': [
+      'error',
+      {
+        allowHigherOrderFunctions: true,
+        allowTypedFunctionExpressions: true,
+        allowArgumentsExplicitlyTypedAsAny: false,
+      },
+    ],
     '@typescript-eslint/no-empty-interface': 'error',
     '@typescript-eslint/no-explicit-any': 'error',
     '@typescript-eslint/no-import-type-side-effects': 'error',

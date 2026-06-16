@@ -68,6 +68,15 @@ describe('base config fragment', () => {
     ]);
     expect(rules['max-statements']).toStrictEqual(['error', { max: 10 }]);
     expect(rules['@typescript-eslint/no-non-null-assertion']).toBe('error');
+    expect(rules['@typescript-eslint/explicit-function-return-type']).toBe('off');
+    expect(rules['@typescript-eslint/explicit-module-boundary-types']).toStrictEqual([
+      'error',
+      {
+        allowHigherOrderFunctions: true,
+        allowTypedFunctionExpressions: true,
+        allowArgumentsExplicitlyTypedAsAny: false,
+      },
+    ]);
     expect(rules['no-shadow']).toBe('error');
     expect(rules['sort-imports']).toBe('off');
     expect(rules).not.toHaveProperty('sort-keys');
@@ -154,6 +163,7 @@ describe('base config fragment', () => {
       expect.arrayContaining([
         '@typescript-eslint/array-type',
         '@typescript-eslint/consistent-type-imports',
+        '@typescript-eslint/explicit-module-boundary-types',
         '@typescript-eslint/no-import-type-side-effects',
         '@typescript-eslint/no-non-null-assertion',
       ]),

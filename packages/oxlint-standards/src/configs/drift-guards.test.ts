@@ -247,7 +247,7 @@ describe('drift guards — engine-backed suppression contracts', () => {
   // ─── vitestConfig ────────────────────────────────────────────────────────────
   // Three guards prove the vitest scoping contract together:
   // 1. Global guard (print-config, full composition): zero active vitest/* and jest/* rules.
-  // 2. Test-scope guard (synthesized flat config): exactly 4 vitest + 11 jest hygiene rules active.
+  // 2. Test-scope guard (synthesized flat config): exactly 8 vitest + 11 jest hygiene rules active.
   // 3. Behavioral guard (fixture lint): warn-todo fires on `.test.ts` but not on `.ts`.
   // Together with the exact-set assertions in vitest.test.ts, this validates the full test-file scoping.
   describe('vitestConfig: test-file override scoping', () => {
@@ -272,7 +272,7 @@ describe('drift guards — engine-backed suppression contracts', () => {
       expect(activeTestHygieneRules).toStrictEqual([]);
     });
 
-    it('test-scope activates exactly the 4 vitest and 11 jest hygiene rules', () => {
+    it('test-scope activates exactly the 8 vitest and 11 jest hygiene rules', () => {
       // --print-config does not activate file-path overrides regardless of target path.
       // Synthesize the test-file scope: merge the test override into global rules and
       // Strip overrides so print-config sees a flat config — the same approach as
@@ -307,9 +307,13 @@ describe('drift guards — engine-backed suppression contracts', () => {
         'jest/valid-describe-callback',
         'jest/valid-expect',
         'jest/valid-title',
+        'vitest/consistent-each-for',
         'vitest/hoisted-apis-on-top',
         'vitest/no-conditional-tests',
+        'vitest/no-import-node-test',
         'vitest/require-awaited-expect-poll',
+        'vitest/require-local-test-context-for-concurrent-snapshots',
+        'vitest/require-mock-type-parameters',
         'vitest/warn-todo',
       ]);
     });

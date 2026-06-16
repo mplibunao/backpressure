@@ -200,9 +200,13 @@ describe('rule manifest schema', () => {
       'jest/valid-describe-callback',
       'jest/valid-expect',
       'jest/valid-title',
+      'vitest/consistent-each-for',
       'vitest/hoisted-apis-on-top',
       'vitest/no-conditional-tests',
+      'vitest/no-import-node-test',
       'vitest/require-awaited-expect-poll',
+      'vitest/require-local-test-context-for-concurrent-snapshots',
+      'vitest/require-mock-type-parameters',
       'vitest/warn-todo',
     ]);
 

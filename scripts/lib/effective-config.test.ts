@@ -23,7 +23,7 @@ describe('isConfiguredRuleKnown — catalog recognition regression', () => {
     isConfiguredRuleKnown(ruleName, catalog, pluginName) ? 'known' : 'unknown';
 
   // Rules the package actively configures: must always pass the gate.
-  it.each([
+  it.for([
     // TypeScript extension rules: eslint-scope in --rules output, accepted under @typescript-eslint/ alias.
     '@typescript-eslint/no-unused-vars',
     '@typescript-eslint/no-useless-constructor',
@@ -37,7 +37,7 @@ describe('isConfiguredRuleKnown — catalog recognition regression', () => {
   });
 
   // Rules that must NEVER pass the gate.
-  it.each([
+  it.for([
     // Valid eslint rule but NOT a TypeScript extension — must not pass under @typescript-eslint/*.
     '@typescript-eslint/no-alert',
     // Typo in rule name.

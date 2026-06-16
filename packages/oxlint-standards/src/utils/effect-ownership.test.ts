@@ -70,7 +70,7 @@ const effects = new Set(['Effect']);
 // ── isFunctionLike ────────────────────────────────────────────────────────────
 
 describe('isFunctionLike()', () => {
-  it.each(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'])(
+  it.for(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'])(
     'returns true for %s',
     (type) => {
       expect(isFunctionLike({ type, range: RANGE })).toBe(true);
