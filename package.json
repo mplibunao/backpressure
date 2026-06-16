@@ -31,7 +31,7 @@
     "smoke:oxlint-packed-consumer": "bun scripts/packages/oxlint-standards/smoke-packed-consumer.ts",
     "test": "vitest run",
     "test:mutation": "stryker run",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b --noEmit",
     "version-packages": "changeset version && pnpm install --lockfile-only",
     "versions:check": "bun scripts/checks/check-version-pins.ts",
     "tsconfig:package:allowlist": "bun scripts/packages/tsconfig/check-package-allowlist.ts",
