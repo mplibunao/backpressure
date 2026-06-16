@@ -47,7 +47,8 @@ layer; **DEFER** = blocked on tooling; **OFF** = correctly disabled, with reason
 | `no-undef` | off | **OFF (your veto)** | redundant on TS: the compiler reports TS2304 with better accuracy and this false-positives on runtime globals; typescript-eslint recommends off for TS. My call in WI-8, not yours | n/a |
 
 The first four are the rules you said you would set by hand. Under the test above they are
-BASE; the cost is repo setup the agents skipped, not a reason to exclude.
+BASE; the cost is repo setup the agents skipped, not a reason to exclude. **MP has decided:
+flip all four to BASE.**
 
 ## B. Base disables that are defensible (transparency)
 
@@ -59,8 +60,8 @@ BASE; the cost is repo setup the agents skipped, not a reason to exclude.
 | `import/consistent-type-specifier-style` | off | intentional part of the type-import quartet |
 | `import/exports-last`, `import/group-exports` | off | low-value ordering; your call if you want them |
 | `no-continue`, `no-ternary` | off | style preference; flag if you want either |
-| `sort-keys` | dropped | data and golden objects read best by meaning, not A to Z; churns |
-| `sort-imports` | off | your decision this session: not autofixable across statements in oxlint |
+| `sort-keys` | dropped | the plan's "not safely autofixable" was wrong: the oxc docs list a partial auto-fix (some violations). The real question is taste, alphabetical vs semantic key order (id/name/related fields, config grouped by concern), which is yours. Re-evaluate in the deep pass |
+| `sort-imports` | off | partially autofixable: oxlint fixes member order within a line (14 of 97 in backpressure) but not cross-statement reordering or Multiple-before-Single (the other 83), leaving ongoing manual friction for a cosmetic-only gain. Re-evaluate in the deep pass |
 | `nursery` category | off | experimental rules; reasonable to keep off |
 | `pedantic` category | off | nitpick tier; worth one scan to see if any belong on |
 | `style` category | off | binary error/off posture (ADR-004): specific style rules pulled to error via the WI-5 allowlist, the rest off. Worth confirming nothing you want is in the off remainder |
@@ -116,8 +117,8 @@ Re-evaluating each parked layer against the test above:
 | --- | --- | --- |
 | `architectureConfig` (WI-19) | `no-cycle`, `no-relative-parent-imports`, `no-barrel-file` | **collapses into BASE** (section A): general taste, not stack-specific. The layer mostly should not exist |
 | `namedExportsConfig` (WI-19) | `no-default-export` plus config overrides | **collapses into BASE** plus a narrow override. Not a separate opt-in |
-| `jsdocConfig` (WI-18) | contract-JSDoc on public surfaces, types off | **your taste call**, not mine to bucket. If you always want enforced contract docs it is BASE; if situational, a layer. Open question |
-| `explicitApiConfig` (WI-20) | scoped `explicit-function-return-type` | **your taste call**: if you want explicit return types on public API by default, BASE; otherwise a layer. Open question |
+| `jsdocConfig` (WI-18) | contract-JSDoc on public surfaces, types off | **DECIDED: fold into BASE** (MP wants it generally). Open: scope (all public surfaces vs exported only) |
+| `explicitApiConfig` (WI-20) | `explicit-function-return-type` | **DECIDED: on by default in BASE**. Open: the variant/scope. Cracked teams usually scope it to module boundaries (`explicit-module-boundary-types`) or use `allowExpressions` so inline callbacks are exempt, rather than every function. Verify which oxlint supports |
 | `reactConfig` / `jsxA11yConfig` / `reactPerfConfig` (WI-20) | React rules | **STACK**, correct as a layer: only relevant in React repos, keep separate. Also has the `react` naming collision to resolve first |
 | type-aware async (`no-floating-promises` et al.) (WI-21) | needs oxlint type-aware | **DEFER**, correct: blocked on verifying oxlint type-aware works at the pinned version. The only tooling-gated set |
 | `bunConfig` vs `browserConfig` (WI-21) | `import/no-nodejs-modules` split | **RUNTIME**, correct as a layer: runtime-specific |
@@ -125,15 +126,44 @@ Re-evaluating each parked layer against the test above:
 Conclusion: the truly separate layers are the **stack** ones (React, Effect, already a
 preset), the **runtime** ones (Node, browser), and the **tooling-gated** one (type-aware).
 The architecture and named-exports layers are not real separation; they are good general
-rules that should default on. `jsdoc` and `explicitApi` are open taste calls for you.
+rules that should default on. `jsdoc` and explicit-return-types are now decided on (fold into
+base); only their exact scope stays open.
 
-## Open decisions for MP
+## Decided by MP
 
-1. Flip the four section-A rules to BASE (and do the repo setup: aliases, named-export
-   conversion, barrel removal, one config-file override). Confirm.
-2. unicorn: approve a pass to enable the general-quality bucket (section C).
-3. vitest: approve the candidate hygiene rules (section D), or leave as is.
-4. `no-undef`: keep off (TS-redundant) or restore. Your veto.
-5. `jsdocConfig` and `explicitApiConfig`: base-on, situational layer, or drop (your taste).
-6. Sequencing: do these change `base.ts` now (re-dogfood backpressure) or land as a tracked
-   Phase-3 amendment after WI-10 closes this run.
+- **Section A:** flip all four import rules to BASE (with the repo setup: path aliases,
+  named-export conversion, barrel removal, one config-file override for mandatory defaults).
+- **`jsdocConfig`:** fold into BASE (contract-JSDoc, types off). Wanted generally.
+- **`explicit-function-return-type`:** on by default in BASE. Open sub-question: the exact
+  variant/scope (section E).
+- **Sequencing:** the rule re-evaluation runs as a separate deep pass (mandate below). WI-10
+  (changesets) waits until after it, so the changeset captures the final config rather than a
+  state we are about to change.
+
+## Mandate for the deep pass
+
+Take this audit and decide each remaining rule's home, grounded in evidence, not vibes:
+
+1. For every rule in the OFF and candidate buckets (section B remainder, section C unicorn,
+   section D vitest) and the deferred layers (section E), apply the test above and place it:
+   fold into BASE, put in a stack or runtime layer, or drop.
+2. Cross-check against what mature, serious TS teams actually enable (research the common
+   strict-but-sane rule sets), and against fit per project type (app vs library vs CLI vs
+   browser), so BASE encodes a defensible default and the layers carry the rest.
+3. Resolve the open scoping calls: `explicit-function-return-type` (all functions vs module
+   boundaries via `explicit-module-boundary-types` vs `allowExpressions` for inline
+   callbacks; verify which oxlint supports), `jsdoc` scope (all public surfaces vs exported
+   only), and the unicorn general-quality set.
+4. Re-evaluate `sort-imports`: partially autofixable (member order within a line),
+   but the cross-statement reordering is not, so it is ongoing manual friction for a
+   cosmetic-only gain. Keep with that friction, drop, or wait for an autofixable
+   `import/order` to land in oxlint.
+5. `no-undef`: confirm keep-off (redundant with the TS compiler) or restore.
+6. Produce the updated base plus layers, re-dogfood backpressure, then pin the changeset
+   (WI-10) against the final state.
+
+**Verify autofix claims against the oxc docs.** The plan's "autofixable / not autofixable"
+wording was inherited from ESLint, not checked against oxlint. MP found the oxc rule pages
+list partial auto-fixes ("for some violations") for both `sort-imports` and `sort-keys`,
+contradicting the plan. Before relying on any autofix claim, read the rule's page at
+`oxc.rs/docs/guide/usage/linter/rules/...` and confirm. Do not carry ESLint assumptions.
