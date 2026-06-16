@@ -74,7 +74,7 @@ config edit.
 
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
-| DP-1 | Base architecture rules + control-flow/promotions (4 import rules with carve-outs and repo setup, `no-continue`, `no-throw-literal`, `no-self-compare`) | L | PENDING | |
+| DP-1 | Base architecture rules + control-flow/promotions (4 import rules with carve-outs and repo setup, `no-continue`, `no-throw-literal`, `no-self-compare`) | L | DONE | `db539d0` |
 | DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | PENDING | |
 | DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | PENDING | |
 | DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | PENDING | |
@@ -83,3 +83,80 @@ config edit.
 ## Per-item detail
 
 Entries are appended here as each item passes its gates and commits.
+
+### DP-1: Base architecture rules + control-flow and promotions (DONE)
+
+- **Build:** one `pair` agent (Codex CLI, gpt-5.5, reasoning high). It measured the blast radius
+  before any sweep and reported per-rule counts, then swept after orchestrator approval.
+  `baseConfig` now enables `import/no-cycle`, `oxc/no-barrel-file`, `import/no-default-export`,
+  `import/no-relative-parent-imports`, `no-continue`, `eslint/no-throw-literal`, and
+  `eslint/no-self-compare`, with two carve-out overrides (`oxc/no-barrel-file` off for
+  `**/src/index.ts`; `import/no-default-export` off for `**/*.config.*`). The `oxc` plugin is newly
+  activated behind an exhaustive silence wall so only `oxc/no-barrel-file` is owned.
+- **Blast radius (measured first):** `import/no-relative-parent-imports` 56, `no-continue` 21,
+  `import/no-default-export` 2, `import/no-cycle` 0, `oxc/no-barrel-file` 0.
+- **Decision 1 (`import/no-relative-parent-imports`, orchestrator call):** the 56 hits span package
+  internals, scripts, and smoke harnesses. backpressure is a published library and tooling monorepo
+  with no natural `@/` source root, and alias rewriting would add build and runtime resolver
+  complexity. Per the rubric's visible per-repo opt-out, the rule stays BASE at error for app
+  consumers while backpressure turns it off in a trailing `composeLintConfigs` fragment in
+  `vite.config.ts` with a reason comment. Accepted gap: no repo dogfoods this rule yet, because the
+  introspection adoption is deferred.
+- **Decision 2 (`import/no-default-export`, oxlint contract):** the two hits are `plugin.ts`
+  (`export default plugin`) and `index.ts` (`plugin as default`). oxlint loads JS plugins via their
+  default export, so these exports are required. They carry justified inline disables with a reason
+  comment rather than a rule weakening.
+- **Decision 3 (`no-continue`, 21 sites):** restructured across 9 source and script files by
+  inverting guards or extracting loop bodies; no suppressions.
+- **Grading refinement (orchestrator):** the resolution graded `import/no-relative-parent-imports`
+  inconsistently. It is graded `agent-failure-mode` here, since agents over-produce deep relative
+  import chains and a style grade would wrongly require the autofixable-style-at-error allowlist. The
+  other DP-1 rules grade safety (`no-cycle`), agent-failure-mode (`no-barrel-file`,
+  `no-default-export`, `no-continue`), and correctness (`no-throw-literal`, `no-self-compare`). All
+  are error-by-kind under TD-CARD-033, so none touch the style allowlist.
+- **Verify-gate catch (orchestrator):** the agent activated the `oxc` plugin with a silence wall but
+  no drift guard. The orchestrator required one before review. An engine-backed oxc drift guard now
+  asserts only `oxc/no-barrel-file` is active, with a sanity check confirming it fails when a stray
+  oxc rule is forced on.
+- **Review gate:** one `context_builder` review on chat `dp1-review-E1349A` plus a follow-up. One
+  must-fix DISPROVEN (orchestrator override): the review claimed `oxc/no-barrel-file` would fail on
+  internal barrels (`src/configs/index.ts`, `src/presets/index.ts`); `vp lint --max-warnings 0` is
+  0/0 with the rule active because its default threshold is roughly 100 re-exports and those files
+  use a few named re-exports, and the narrow `**/src/index.ts` carve-out is intentional (only the
+  public entrypoint is the legitimate barrel). Applied: the suggestion (engine-backed tests that a
+  105-re-export `src/index.ts` is exempt from `oxc/no-barrel-file` and a config-file default export
+  is exempt from `import/no-default-export`) and the nit (split a rewritten boolean in
+  `utils/imports.ts` into named booleans). The follow-up review found no remaining issue.
+- **Refactor gate:** one `context_builder` analysis on chat `dp1-refactor-review-43A980` plus a
+  follow-up, two rounds to convergence. Round one applied three cleanups: an `activeRulesWithPrefix`
+  test helper, flatter inventory-gate replay loops via extracted assertion helpers, and a shared
+  config-derived allowlist helper consumed by both the manifest test and the inventory gate (the
+  manifest test keeps an independent manifest-versus-config check plus a focused check that the
+  helper never allowlists the owned `oxc/no-barrel-file`). Round two renamed that helper to
+  `deriveOmittedNonErrorRuleAllowlist` for clarity and decoupled a drift guard from override
+  ordering (selecting the test override by its `**/*.test.ts` glob, not index 0). Deferred:
+  `deriveOmittedNonErrorRuleAllowlist` sits on the package public root but only the repo gate needs
+  it; the export-surface cleanup is a separate minor follow-up.
+- **Orchestrator independent verification (beyond agent self-report):** an unexplained 50-line
+  deletion appeared in `lint-standards-consolidation-2026-06-15.md` during the run and was reverted,
+  since it is not part of DP-1. The `oxc` silence wall was confirmed bleed-free by reading the
+  effective-config artifact, where only `oxc/no-barrel-file` resolves to `deny` and every other
+  `oxc/*` rule is `allow`. The orchestrator re-ran lint, typecheck, inventory, and the durable-ref
+  check rather than trusting the agent's green report, and confirmed `import/no-default-export` fires
+  only on the two oxlint-contract export sites.
+- **Checks:** the orchestrator ran independently after each gate, green every time:
+  `pnpm exec vp lint --max-warnings 0` (0/0 over 70 files, 171 rules), the package vitest suite (706
+  tests), `pnpm inventory:rules` (50 source rules, parity intact), `pnpm typecheck` (clean),
+  `pnpm durable:refs` (clean after the doc fix below), and the package build.
+- **Durable-ref fix:** `pnpm durable:refs` failed on the deep-pass review docs, which cited plan
+  work-item labels, not on DP-1 code. The orchestrator removed those labels from the audit and
+  resolution docs and the gate passes.
+- **Commits:** `fcb1088` for the planning docs (resolution, audit, ledger, BP-TD-012), `db539d0` for
+  the DP-1 code, plus this ledger-record commit.
+- **Issues:** none open in the DP-1 code. Two are carried forward: the
+  `deriveOmittedNonErrorRuleAllowlist` export-surface cleanup (minor), and the TD-CARD-033 Path B
+  amendment (see canon coordination above), whose sequencing relative to this run is pending MP.
+- **Action items for MP:** confirm whether the TD-CARD-033 amendment folds into this run as a
+  close-out step or stays the separate canon phase. Note that `import/no-relative-parent-imports`
+  ships in BASE with no current dogfood, because backpressure opts out as a library and introspection
+  exercises it only on adoption.
