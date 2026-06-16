@@ -1411,10 +1411,11 @@ const isTypeofBooleanEquality = (node: NodeLike): boolean => {
 // Linear scan of an object's properties; returns the first matching value, or null on no match.
 const findObjectProperty = (properties: unknown[], name: string): unknown => {
   for (const property of properties) {
-    if (!isNodeLike(property) || property.type !== 'Property') {
-      continue;
-    }
-    if (propertyName(getNodeField(property, 'key')) === name) {
+    if (
+      isNodeLike(property) &&
+      property.type === 'Property' &&
+      propertyName(getNodeField(property, 'key')) === name
+    ) {
       return getNodeField(property, 'value');
     }
   }
@@ -1604,10 +1605,9 @@ const parameterNames = (node: NodeLike): Set<string> => {
   }
   const names = new Set<string>();
   for (const param of params) {
-    if (!isNodeLike(param)) {
-      continue;
+    if (isNodeLike(param)) {
+      collectParamName(names, param);
     }
-    collectParamName(names, param);
   }
   return names;
 };
@@ -1796,10 +1796,10 @@ const workspacePackageRoot = (absolutePath: string): string | null => {
   const { length: partsLen } = parts;
   for (let end = partsLen; end > 0; end -= 1) {
     const candidate = parts.slice(0, end).join('/');
-    if (!existsSync(`${candidate}/package.json`)) {
-      continue;
-    }
-    if (parts.slice(0, end - 1).some((part) => workspaceRootMarkers.has(part))) {
+    if (
+      existsSync(`${candidate}/package.json`) &&
+      parts.slice(0, end - 1).some((part) => workspaceRootMarkers.has(part))
+    ) {
       return candidate;
     }
   }
@@ -1812,9 +1812,9 @@ const resolvePackageRelativeImport = (filename: string, source: string): string 
   for (const part of sourceParts) {
     if (part === '..') {
       fileParts.pop();
-      continue;
+    } else {
+      fileParts.push(part);
     }
-    fileParts.push(part);
   }
   return fileParts.join('/');
 };

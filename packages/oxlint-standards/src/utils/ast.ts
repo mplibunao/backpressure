@@ -130,9 +130,8 @@ export const walkDescendants = (node: unknown, visit: (node: NodeLike) => void):
     return;
   }
   for (const [key, value] of Object.entries(node)) {
-    if (ignoredTraversalKeys.has(key)) {
-      continue;
+    if (!ignoredTraversalKeys.has(key)) {
+      walkNodeFieldValue(value, visit, walkDescendants);
     }
-    walkNodeFieldValue(value, visit, walkDescendants);
   }
 };

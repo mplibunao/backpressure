@@ -1,9 +1,11 @@
+// oxlint-disable-next-line import/no-default-export -- oxlint loads JS plugins via default export
 export { plugin, plugin as default, pluginName, rules } from './plugin.js';
 export {
   collectionRuleNames,
   implementedCustomRuleNames,
   lspOwnedChecks,
   linteffectSourceRuleNames,
+  deriveOmittedNonErrorRuleAllowlist,
   ruleManifest,
 } from './rule-manifest.js';
 export type {

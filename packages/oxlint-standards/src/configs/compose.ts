@@ -47,11 +47,10 @@ const addUnique = <Item>(
   }
 
   for (const value of values) {
-    if (seen.has(value)) {
-      continue;
+    if (!seen.has(value)) {
+      seen.add(value);
+      target.push(value);
     }
-    seen.add(value);
-    target.push(value);
   }
 };
 
@@ -67,11 +66,10 @@ const addUniqueByKey = <Item>(
 
   for (const value of values) {
     const key = keyFor(value);
-    if (seen.has(key)) {
-      continue;
+    if (!seen.has(key)) {
+      seen.add(key);
+      target.push(value);
     }
-    seen.add(key);
-    target.push(value);
   }
 };
 

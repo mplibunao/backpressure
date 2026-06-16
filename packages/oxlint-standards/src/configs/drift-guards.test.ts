@@ -1,8 +1,8 @@
 import type { OxlintConfig } from 'oxlint';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,6 +33,26 @@ const parsePrintConfig = (stdout: string): { readonly rules?: Record<string, str
   }
 };
 
+const activeRulesWithPrefix = (
+  rules: Record<string, string> | undefined,
+  prefixes: readonly string[],
+): Array<readonly [string, string]> =>
+  Object.entries(rules ?? {})
+    .filter(([key]) => prefixes.some((prefix) => key.startsWith(prefix)))
+    .filter(([, value]) => value !== 'allow');
+
+const isTestFilePattern = (pattern: string): boolean =>
+  pattern.includes('.test.ts') || pattern.includes('.spec.ts');
+
+const testOverrideRules = (config: OxlintConfig): NonNullable<OxlintConfig['rules']> => {
+  const testOverride = (config.overrides ?? []).find(
+    (override) =>
+      Array.isArray(override.files) &&
+      override.files.some((pattern) => typeof pattern === 'string' && isTestFilePattern(pattern)),
+  );
+  return testOverride?.rules ?? {};
+};
+
 describe('drift guards — engine-backed suppression contracts', () => {
   let tempDir = '';
 
@@ -53,6 +73,7 @@ describe('drift guards — engine-backed suppression contracts', () => {
   ): { readonly configPath: string; readonly filePath: string } => {
     const configPath = join(tempDir, '.oxlintrc.json');
     const filePath = join(tempDir, fileName);
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(configPath, JSON.stringify(composed, null, 2));
     writeFileSync(filePath, source);
     return { configPath, filePath };
@@ -76,11 +97,70 @@ describe('drift guards — engine-backed suppression contracts', () => {
 
       const result = runOxlint(['--config', configPath, '--print-config', filePath]);
       const effectiveConfig = parsePrintConfig(result.stdout);
-      const activeUnicornRules = Object.entries(effectiveConfig.rules ?? {})
-        .filter(([key]) => key.startsWith('unicorn/'))
-        .filter(([, value]) => value !== 'allow');
+      const activeUnicornRules = activeRulesWithPrefix(effectiveConfig.rules, ['unicorn/']);
 
       expect(activeUnicornRules).toStrictEqual([['unicorn/prefer-node-protocol', 'deny']]);
+    });
+  });
+
+  // ─── baseConfig oxc scope ───────────────────────────────────────────────────
+  // Enabling the oxc plugin for oxc/no-barrel-file must not silently activate the
+  // rest of the oxc namespace through baseConfig's correctness/suspicious/restriction categories.
+  // If a future oxlint release adds an oxc rule under an enabled category,
+  // The explicit off-list will miss it and this guard will fail — that is the intended signal.
+  describe('baseConfig: only oxc/no-barrel-file fires globally', () => {
+    it('--print-config on baseConfig shows exactly one active oxc rule', () => {
+      const composed = composeLintConfigs(baseConfig);
+      const { configPath, filePath } = writeOxlintFixture(
+        composed,
+        'subject.ts',
+        'export const x = 1;\n',
+      );
+
+      const result = runOxlint(['--config', configPath, '--print-config', filePath]);
+      const effectiveConfig = parsePrintConfig(result.stdout);
+      const activeOxcRules = activeRulesWithPrefix(effectiveConfig.rules, ['oxc/']);
+
+      expect(activeOxcRules).toStrictEqual([['oxc/no-barrel-file', 'deny']]);
+    });
+  });
+
+  // ─── baseConfig override carve-outs ─────────────────────────────────────────
+  // These fixture-lint guards prove the override globs apply in the live engine,
+  // not merely that baseConfig contains the expected override objects.
+  describe('baseConfig: override carve-outs apply at runtime', () => {
+    it('does not report oxc/no-barrel-file for the package public src/index.ts entrypoint', () => {
+      const composed = composeLintConfigs(baseConfig);
+      const barrelExports = Array.from(
+        { length: 105 },
+        (_, index) => `export { value${index} } from './module-${index}.js';`,
+      ).join('\n');
+      const { configPath, filePath } = writeOxlintFixture(
+        composed,
+        'src/index.ts',
+        `${barrelExports}\n`,
+      );
+
+      const result = runOxlint(['--config', configPath, filePath]);
+      const output = result.stdout + result.stderr;
+
+      expect(result.status).toBe(0);
+      expect(output).not.toContain('oxc(no-barrel-file)');
+    });
+
+    it('does not report import/no-default-export for tool config files', () => {
+      const composed = composeLintConfigs(baseConfig);
+      const { configPath, filePath } = writeOxlintFixture(
+        composed,
+        'vite.config.ts',
+        'export default {};\n',
+      );
+
+      const result = runOxlint(['--config', configPath, filePath]);
+      const output = result.stdout + result.stderr;
+
+      expect(result.status).toBe(0);
+      expect(output).not.toContain('eslint-plugin-import(no-default-export)');
     });
   });
 
@@ -104,9 +184,10 @@ describe('drift guards — engine-backed suppression contracts', () => {
 
       const result = runOxlint(['--config', configPath, '--print-config', filePath]);
       const effectiveConfig = parsePrintConfig(result.stdout);
-      const activeTestHygieneRules = Object.entries(effectiveConfig.rules ?? {})
-        .filter(([key]) => key.startsWith('vitest/') || key.startsWith('jest/'))
-        .filter(([, value]) => value !== 'allow');
+      const activeTestHygieneRules = activeRulesWithPrefix(effectiveConfig.rules, [
+        'vitest/',
+        'jest/',
+      ]);
 
       expect(activeTestHygieneRules).toStrictEqual([]);
     });
@@ -116,10 +197,9 @@ describe('drift guards — engine-backed suppression contracts', () => {
       // Synthesize the test-file scope: merge the test override into global rules and
       // Strip overrides so print-config sees a flat config — the same approach as
       // FlattenTestOverridesIntoGlobal in scripts/lib/effective-config.ts.
-      const testOverrideRules = vitestConfig.overrides?.[0]?.rules ?? {};
       const testScopeVitestConfig = {
         ...vitestConfig,
-        rules: { ...vitestConfig.rules, ...testOverrideRules },
+        rules: { ...vitestConfig.rules, ...testOverrideRules(vitestConfig) },
         overrides: [],
       } as OxlintConfig;
       const composed = composeLintConfigs(baseConfig, testScopeVitestConfig, nodeRuntimeConfig);
@@ -131,9 +211,7 @@ describe('drift guards — engine-backed suppression contracts', () => {
 
       const result = runOxlint(['--config', configPath, '--print-config', filePath]);
       const effectiveConfig = parsePrintConfig(result.stdout);
-      const activeHygieneRules = Object.entries(effectiveConfig.rules ?? {})
-        .filter(([key]) => key.startsWith('vitest/') || key.startsWith('jest/'))
-        .filter(([, value]) => value !== 'allow')
+      const activeHygieneRules = activeRulesWithPrefix(effectiveConfig.rules, ['vitest/', 'jest/'])
         .map(([key]) => key)
         .sort();
 

@@ -20,4 +20,5 @@ export const plugin: PublicOxlintPlugin = {
   rules,
 };
 
+// oxlint-disable-next-line import/no-default-export -- oxlint loads JS plugins via default export
 export default plugin;

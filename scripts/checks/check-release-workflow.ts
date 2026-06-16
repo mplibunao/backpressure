@@ -292,15 +292,13 @@ const assertOnlyReleaseJob = (jobs: Record<string, unknown>): void => {
 
 const assertNoDirectPublishRunSteps = (steps: readonly unknown[]): void => {
   for (const step of steps) {
-    if (!isObjectRecord(step)) {
-      continue;
-    }
-
-    const { run } = step;
-    if (typeof run === 'string' && directPublishCommandPattern.test(run)) {
-      fail(
-        'jobs.release run steps must not publish directly; use changesets/action with pnpm release.',
-      );
+    if (isObjectRecord(step)) {
+      const { run } = step;
+      if (typeof run === 'string' && directPublishCommandPattern.test(run)) {
+        fail(
+          'jobs.release run steps must not publish directly; use changesets/action with pnpm release.',
+        );
+      }
     }
   }
 };

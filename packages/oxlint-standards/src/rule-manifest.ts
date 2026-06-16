@@ -379,6 +379,67 @@ const nodeRuntimeRule = (
 ): RuleManifestEntry =>
   nativeRule({ ...options, collections: nodeRuntimeConfigCollections, domain: 'runtime' });
 
+interface RuleConfigFragmentLike {
+  readonly rules?: Readonly<Record<string, unknown>>;
+}
+
+interface DeriveOmittedNonErrorRuleAllowlistOptions {
+  readonly baseConfig: RuleConfigFragmentLike;
+  readonly nodeRuntimeConfig: RuleConfigFragmentLike;
+  readonly pluginRulePrefix: string;
+  readonly vitestConfig: RuleConfigFragmentLike;
+}
+
+const configuredRuleSettingSeverity = (setting: unknown): unknown =>
+  Array.isArray(setting) ? setting[0] : setting;
+
+const normalizeConfiguredRuleName = (ruleName: string, pluginRulePrefix: string): string =>
+  ruleName.startsWith(pluginRulePrefix) ? ruleName.slice(pluginRulePrefix.length) : ruleName;
+
+const oxcBleedGuardRuleNames = (
+  baseConfig: RuleConfigFragmentLike,
+  pluginRulePrefix: string,
+): readonly string[] =>
+  Object.entries(baseConfig.rules ?? {})
+    .filter(
+      ([ruleName, setting]) =>
+        ruleName.startsWith('oxc/') &&
+        ruleName !== 'oxc/no-barrel-file' &&
+        configuredRuleSettingSeverity(setting) === 'off',
+    )
+    .map(([ruleName]) => normalizeConfiguredRuleName(ruleName, pluginRulePrefix));
+
+const vitestBleedGuardRuleNames = (
+  vitestConfig: RuleConfigFragmentLike,
+  pluginRulePrefix: string,
+): readonly string[] =>
+  Object.keys(vitestConfig.rules ?? {}).map((ruleName) =>
+    normalizeConfiguredRuleName(ruleName, pluginRulePrefix),
+  );
+
+const nodeRuntimeBleedGuardRuleNames = (
+  nodeRuntimeConfig: RuleConfigFragmentLike,
+  pluginRulePrefix: string,
+): readonly string[] =>
+  Object.keys(nodeRuntimeConfig.rules ?? {})
+    .filter((ruleName) => ruleName !== 'unicorn/prefer-node-protocol')
+    .map((ruleName) => normalizeConfiguredRuleName(ruleName, pluginRulePrefix));
+
+export const deriveOmittedNonErrorRuleAllowlist = ({
+  baseConfig,
+  nodeRuntimeConfig,
+  pluginRulePrefix,
+  vitestConfig,
+}: DeriveOmittedNonErrorRuleAllowlistOptions): ReadonlySet<string> =>
+  new Set([
+    '@typescript-eslint/no-unsafe-type-assertion',
+    'no-double-cast',
+    'no-ternary',
+    ...oxcBleedGuardRuleNames(baseConfig, pluginRulePrefix),
+    ...vitestBleedGuardRuleNames(vitestConfig, pluginRulePrefix),
+    ...nodeRuntimeBleedGuardRuleNames(nodeRuntimeConfig, pluginRulePrefix),
+  ]);
+
 export const ruleManifest = [
   sourceRule({
     name: 'no-arrow-ladder',
@@ -1797,17 +1858,17 @@ export const ruleManifest = [
   }),
   baseRule({
     name: 'import/no-cycle',
-    severity: 'off',
+    severity: 'error',
     rationaleClass: 'safety',
     gating: 'stack-neutral',
-    note: 'Cycle policy belongs to a future architecture config, not the base layer.',
+    note: 'Import cycles create initialization-order hazards and hard-to-review module graphs.',
   }),
   baseRule({
     name: 'import/no-default-export',
-    severity: 'off',
+    severity: 'error',
     rationaleClass: 'agent-failure-mode',
     gating: 'stack-neutral',
-    note: 'Named-export policy belongs to a future namedExportsConfig.',
+    note: 'Named exports keep public API surfaces explicit; tool-forced default exports use scoped carve-outs.',
   }),
   baseRule({
     name: 'import/no-duplicates',
@@ -1832,10 +1893,10 @@ export const ruleManifest = [
   }),
   baseRule({
     name: 'import/no-relative-parent-imports',
-    severity: 'off',
-    rationaleClass: 'safety',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     gating: 'stack-neutral',
-    note: 'Parent-import architecture policy belongs to a future architecture config.',
+    note: 'Parent imports are an over-produced agent shortcut; app consumers should use explicit source-root paths instead.',
   }),
   baseRule({
     name: 'import/no-self-import',
@@ -1909,10 +1970,10 @@ export const ruleManifest = [
   }),
   baseRule({
     name: 'no-continue',
-    severity: 'off',
-    rationaleClass: 'style',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     gating: 'stack-neutral',
-    note: 'Continue is allowed when it simplifies loop guard structure.',
+    note: 'Continue-heavy loops are an over-produced agent pattern; extracting loop bodies keeps control flow reviewable.',
   }),
   baseRule({
     name: 'no-debugger',
@@ -1978,6 +2039,13 @@ export const ruleManifest = [
     note: 'Dynamic function construction is a code-injection hazard.',
   }),
   baseRule({
+    name: 'no-self-compare',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Self-comparisons are near-certain logic mistakes or dead conditions.',
+  }),
+  baseRule({
     name: 'no-param-reassign',
     severity: 'error',
     rationaleClass: 'safety',
@@ -2011,6 +2079,13 @@ export const ruleManifest = [
     rationaleClass: 'correctness',
     gating: 'stack-neutral',
     note: 'Template placeholders in plain strings are usually interpolation mistakes.',
+  }),
+  baseRule({
+    name: 'no-throw-literal',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Thrown values must preserve Error semantics instead of throwing strings or arbitrary literals.',
   }),
   baseRule({
     name: 'no-undef',
@@ -2056,10 +2131,10 @@ export const ruleManifest = [
   }),
   baseRule({
     name: 'oxc/no-barrel-file',
-    severity: 'off',
-    rationaleClass: 'safety',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
     gating: 'stack-neutral',
-    note: 'Barrel-file architecture policy belongs to a future architecture config.',
+    note: 'Barrel files are an over-produced agent pattern; package public entrypoints use a scoped carve-out.',
   }),
   baseRule({
     name: 'prefer-const',

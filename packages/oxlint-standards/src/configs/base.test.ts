@@ -22,15 +22,17 @@ const cosmeticStyleRulesIntentionallyDropped = [
   'default-case-last',
   'sort-keys',
 ] as const;
-const deferredImportPolicyRules = [
+const disabledImportPreferenceRules = [
   'import/exports-last',
   'import/group-exports',
-  'import/no-default-export',
   'import/no-named-export',
   'import/no-nodejs-modules',
-  'import/no-relative-parent-imports',
   'import/prefer-default-export',
+] as const;
+const baseArchitectureImportRules = [
   'import/no-cycle',
+  'import/no-default-export',
+  'import/no-relative-parent-imports',
   'oxc/no-barrel-file',
 ] as const;
 
@@ -93,8 +95,12 @@ describe('base config fragment', () => {
     }
   });
 
-  it('keeps deferred import policy out of base', () => {
-    for (const ruleName of deferredImportPolicyRules) {
+  it('enables base architecture import policy while keeping preference rules off', () => {
+    for (const ruleName of baseArchitectureImportRules) {
+      expect(rules[ruleName]).toBe('error');
+    }
+
+    for (const ruleName of disabledImportPreferenceRules) {
       expect(rules[ruleName]).toBe('off');
     }
   });
@@ -113,20 +119,29 @@ describe('base config fragment', () => {
     expect(baseConfig.options).not.toHaveProperty('typeCheck');
   });
 
-  it('carries the shared test-file ceiling relaxation override', () => {
-    expect(baseConfig.overrides).toHaveLength(1);
-    expect(baseConfig.overrides?.[0]).toStrictEqual({
-      files: ['**/*.test.ts'],
-      rules: {
-        '@mplibunao/oxlint-standards/no-double-cast': 'off',
-        '@typescript-eslint/no-unsafe-type-assertion': 'off',
-        'import/max-dependencies': 'off',
-        'max-lines': 'off',
-        'max-lines-per-function': 'off',
-        'max-statements': 'off',
-        'no-magic-numbers': 'off',
+  it('carries scoped overrides for package entrypoints, tool configs, and test files', () => {
+    expect(baseConfig.overrides).toStrictEqual([
+      {
+        files: ['**/src/index.ts'],
+        rules: { 'oxc/no-barrel-file': 'off' },
       },
-    });
+      {
+        files: ['**/*.config.*'],
+        rules: { 'import/no-default-export': 'off' },
+      },
+      {
+        files: ['**/*.test.ts'],
+        rules: {
+          '@mplibunao/oxlint-standards/no-double-cast': 'off',
+          '@typescript-eslint/no-unsafe-type-assertion': 'off',
+          'import/max-dependencies': 'off',
+          'max-lines': 'off',
+          'max-lines-per-function': 'off',
+          'max-statements': 'off',
+          'no-magic-numbers': 'off',
+        },
+      },
+    ]);
   });
 
   it('uses the @typescript-eslint namespace for TypeScript rules', () => {

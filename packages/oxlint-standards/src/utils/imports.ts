@@ -33,14 +33,11 @@ const addNamespaceSpecifiers = (
     if (specifier.type === 'ImportNamespaceSpecifier' && isIdentifierName(specifier.local)) {
       // For the 'effect' barrel, only include a namespace alias when it matches barrelFilterName.
       // Prevents Option/Match/etc. barrel aliases from being added to Effect namespace sets.
-      if (
-        barrelFilterName !== null &&
-        source === 'effect' &&
-        specifier.local.name !== barrelFilterName
-      ) {
-        continue;
+      const isEffectBarrel = source === 'effect';
+      const matchesRequestedAlias = specifier.local.name === barrelFilterName;
+      if (!isEffectBarrel || barrelFilterName === null || matchesRequestedAlias) {
+        namespaceNames.add(specifier.local.name);
       }
-      namespaceNames.add(specifier.local.name);
     }
   }
 };
@@ -109,15 +106,13 @@ export const collectImportNames = (
 ): Set<string> => {
   const names = new Set<string>();
   for (const statement of program.body) {
-    if (statement.type !== 'ImportDeclaration' || statement.importKind === 'type') {
-      continue;
-    }
-    const source = getImportSource(statement);
-    if (source === null || !moduleSpecifiers.includes(source)) {
-      continue;
-    }
-    for (const specifier of statement.specifiers) {
-      collectSpecifierName(names, specifier, source, importedName);
+    if (statement.type === 'ImportDeclaration' && statement.importKind !== 'type') {
+      const source = getImportSource(statement);
+      if (source !== null && moduleSpecifiers.includes(source)) {
+        for (const specifier of statement.specifiers) {
+          collectSpecifierName(names, specifier, source, importedName);
+        }
+      }
     }
   }
   return names;
@@ -131,18 +126,16 @@ export const collectNamespaceImports = (
   const namespaceNames = new Set<string>();
 
   for (const statement of program.body) {
-    if (statement.type !== 'ImportDeclaration') {
-      continue;
-    }
+    if (statement.type === 'ImportDeclaration') {
+      const source = getImportSource(statement);
 
-    const source = getImportSource(statement);
-
-    if (
-      source !== null &&
-      moduleSpecifiers.includes(source) &&
-      isRuntimeImportDeclaration(statement)
-    ) {
-      addNamespaceSpecifiers(namespaceNames, statement, source, barrelFilterName);
+      if (
+        source !== null &&
+        moduleSpecifiers.includes(source) &&
+        isRuntimeImportDeclaration(statement)
+      ) {
+        addNamespaceSpecifiers(namespaceNames, statement, source, barrelFilterName);
+      }
     }
   }
 

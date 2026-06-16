@@ -80,9 +80,17 @@ interface RuleConfigFragment {
   readonly rules?: Record<string, unknown>;
 }
 
+type DeriveOmittedNonErrorRuleAllowlistFn = (options: {
+  readonly baseConfig: RuleConfigFragment;
+  readonly nodeRuntimeConfig: RuleConfigFragment;
+  readonly pluginRulePrefix: string;
+  readonly vitestConfig: RuleConfigFragment;
+}) => ReadonlySet<string>;
+
 interface InventoryPackageEntry {
   readonly configs: Record<string, RuleConfigFragment>;
   readonly manifestEntries: readonly ManifestEntry[];
+  readonly deriveOmittedNonErrorRuleAllowlist: DeriveOmittedNonErrorRuleAllowlistFn;
   readonly pluginName: string;
   readonly rules: Record<string, unknown>;
 }
@@ -94,8 +102,8 @@ const sorted = (values: readonly string[]) => [...values].sort(compareText);
 const sameList = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 const list = (values: readonly string[]) => (values.length === 0 ? 'none' : values.join(', '));
-// Pending WI-17 / ADR-004 policy reconciliation: these are the only style-class rules
-// Currently allowed to stay at error because they are mechanical, autofixable exceptions.
+// Pending severity-policy reconciliation: these are the only style-class rules currently
+// allowed to stay at error because they are mechanical, autofixable exceptions.
 const styleAtErrorExceptions = new Set([
   '@typescript-eslint/array-type',
   '@typescript-eslint/dot-notation',
@@ -153,6 +161,9 @@ type ComposeConfigsFn = (...configs: readonly object[]) => object;
 
 const isComposeConfigsFn = (value: unknown): value is ComposeConfigsFn =>
   typeof value === 'function';
+const isDeriveOmittedNonErrorRuleAllowlistFn = (
+  value: unknown,
+): value is DeriveOmittedNonErrorRuleAllowlistFn => typeof value === 'function';
 
 const extractComposeConfigsFn = (namespace: unknown): ComposeConfigsFn => {
   if (isObjectRecord(namespace)) {
@@ -178,7 +189,8 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
     typeof moduleNamespace['pluginName'] === 'string' &&
     isRuleConfigFragment(moduleNamespace['baseConfig']) &&
     isRuleConfigFragment(moduleNamespace['vitestConfig']) &&
-    isRuleConfigFragment(moduleNamespace['nodeRuntimeConfig'])
+    isRuleConfigFragment(moduleNamespace['nodeRuntimeConfig']) &&
+    isDeriveOmittedNonErrorRuleAllowlistFn(moduleNamespace['deriveOmittedNonErrorRuleAllowlist'])
   ) {
     return {
       configs: {
@@ -186,13 +198,14 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
         nodeRuntimeConfig: moduleNamespace['nodeRuntimeConfig'],
         vitestConfig: moduleNamespace['vitestConfig'],
       },
+      deriveOmittedNonErrorRuleAllowlist: moduleNamespace['deriveOmittedNonErrorRuleAllowlist'],
       manifestEntries: moduleNamespace['ruleManifest'],
       pluginName: moduleNamespace['pluginName'],
       rules: moduleNamespace['rules'],
     };
   }
 
-  return fail('Built package did not export ruleManifest, configs, and runtime rules.');
+  return fail('Built package did not export ruleManifest, configs, helpers, and runtime rules.');
 };
 
 const configuredSeverity = (setting: unknown): unknown =>
@@ -228,13 +241,11 @@ for (const configName of sourceConfigs) {
   const configText = read(join(configDir, `${configName}.jsonc`));
   for (const match of configText.matchAll(/rules\/([\w-]+)\.grit/g)) {
     const [, ruleName] = match;
-    if (typeof ruleName !== 'string') {
-      continue;
+    if (typeof ruleName === 'string') {
+      const currentMembership = configMembership.get(ruleName) ?? [];
+      currentMembership.push(configName);
+      configMembership.set(ruleName, currentMembership);
     }
-
-    const currentMembership = configMembership.get(ruleName) ?? [];
-    currentMembership.push(configName);
-    configMembership.set(ruleName, currentMembership);
   }
 }
 
@@ -261,7 +272,8 @@ const [replayModule, packageEntry]: [unknown, unknown] = await Promise.all([
   import(pathToFileURL(distEntryPath).href),
 ]);
 const replaySuites = readReplaySuites(replayModule);
-const { configs, manifestEntries, pluginName, rules } = readPackageEntry(packageEntry);
+const { configs, deriveOmittedNonErrorRuleAllowlist, manifestEntries, pluginName, rules } =
+  readPackageEntry(packageEntry);
 
 // ─── Effective-config staleness gate ────────────────────────────────────────
 // Bracket notation required because configs is Record<string, RuleConfigFragment>.
@@ -370,21 +382,101 @@ for (const replaySuite of replaySuites) {
     diagnostic: { ruleName },
   } = replaySuite;
   const existingSuite = replaySuiteByRule.get(ruleName);
-  if (typeof existingSuite === 'undefined') {
-    replaySuiteByRule.set(ruleName, replaySuite);
-    continue;
+  replaySuiteByRule.set(
+    ruleName,
+    typeof existingSuite === 'undefined'
+      ? replaySuite
+      : {
+          diagnostic: replaySuite.diagnostic,
+          invalid: [...existingSuite.invalid, ...replaySuite.invalid],
+          requiredBranchIds: uniqueSorted([
+            ...existingSuite.requiredBranchIds,
+            ...replaySuite.requiredBranchIds,
+          ]),
+          valid: [...existingSuite.valid, ...replaySuite.valid],
+        },
+  );
+}
+
+const assertSemanticReplayCaseCounts = (entry: ManifestEntry, replaySuite: ReplaySuite): void => {
+  if (replaySuite.requiredBranchIds.length === 0) {
+    fail(`${entry.name} claims semantic-scenario-replay but has no requiredBranchIds matrix.`);
   }
 
-  replaySuiteByRule.set(ruleName, {
-    diagnostic: replaySuite.diagnostic,
-    invalid: [...existingSuite.invalid, ...replaySuite.invalid],
-    requiredBranchIds: uniqueSorted([
-      ...existingSuite.requiredBranchIds,
-      ...replaySuite.requiredBranchIds,
-    ]),
-    valid: [...existingSuite.valid, ...replaySuite.valid],
-  });
-}
+  if (
+    replaySuite.invalid.length < minimumSemanticInvalidCases ||
+    replaySuite.valid.length < minimumSemanticValidCases
+  ) {
+    fail(
+      `${entry.name} claims semantic-scenario-replay but has only ${replaySuite.invalid.length} invalid and ${replaySuite.valid.length} valid replay case(s).`,
+    );
+  }
+};
+
+const assertEffectImportReplayCoverage = (entry: ManifestEntry, replaySuite: ReplaySuite): void => {
+  if (
+    entry.gating === 'effect-import' &&
+    !replaySuite.valid.some((fixtureCase) => fixtureCase.name.includes('non-Effect file'))
+  ) {
+    fail(
+      `${entry.name} claims effect-import gating but lacks a non-Effect false-positive replay case.`,
+    );
+  }
+};
+
+const assertSemanticBranchMatrixCoverage = (
+  entry: ManifestEntry,
+  replaySuite: ReplaySuite,
+): void => {
+  const coveredBranchIds = new Set(
+    [...replaySuite.invalid, ...replaySuite.valid].flatMap(
+      (fixtureCase) => fixtureCase.branchIds ?? [],
+    ),
+  );
+  const missingBranchIds = replaySuite.requiredBranchIds.filter(
+    (branchId) => !coveredBranchIds.has(branchId),
+  );
+  if (missingBranchIds.length > 0) {
+    fail(`${entry.name} semantic branch matrix is incomplete. Missing: ${list(missingBranchIds)}.`);
+  }
+};
+
+const assertSemanticScenarioReplayCoverage = (
+  entry: ManifestEntry,
+  replaySuite: ReplaySuite | undefined,
+): void => {
+  if (entry.parityStatus === semanticScenarioParity && typeof replaySuite !== 'undefined') {
+    assertSemanticReplayCaseCounts(entry, replaySuite);
+    assertEffectImportReplayCoverage(entry, replaySuite);
+    assertSemanticBranchMatrixCoverage(entry, replaySuite);
+  }
+};
+
+const assertSourceFixtureReplayCoverage = (
+  ruleName: string,
+  fixtureSets: SourceFixtureSet,
+  replaySuite: ReplaySuite | undefined,
+): void => {
+  if (typeof replaySuite === 'undefined') {
+    fail(`${ruleName} has upstream source fixtures but no replay suite.`);
+    return;
+  }
+
+  const replayInvalidNames = new Set(replaySuite.invalid.map((fixtureCase) => fixtureCase.name));
+  const replayValidNames = new Set(replaySuite.valid.map((fixtureCase) => fixtureCase.name));
+  const missingInvalid = fixtureSets.invalid.filter(
+    (file) => !replayInvalidNames.has(`linteffect:${ruleName}/${file}`),
+  );
+  const missingValid = fixtureSets.valid.filter(
+    (file) => !replayValidNames.has(`linteffect:${ruleName}/${file}`),
+  );
+
+  if (missingInvalid.length > 0 || missingValid.length > 0) {
+    fail(
+      `${ruleName} replay suite does not cover all upstream fixtures. Missing invalid: ${list(missingInvalid)}; missing valid: ${list(missingValid)}.`,
+    );
+  }
+};
 
 const missingFromManifest = sourceRuleNames.filter((name) => !linteffectNames.includes(name));
 const extraInManifest = linteffectNames.filter((name) => !sourceRuleNames.includes(name));
@@ -419,22 +511,12 @@ for (const name of sourceConfigAnomalies) {
 const collectionEntries = manifestEntries.filter((entry) => entry.collections.length > 0);
 const collectionEntriesFor = (collection: string): readonly ManifestEntry[] =>
   manifestEntries.filter((entry) => entry.collections.includes(collection));
-const omittedNonErrorRuleAllowlist = new Set([
-  // Test files disable unsafe assertions because fixture-heavy tests need boundary casts.
-  '@typescript-eslint/no-unsafe-type-assertion',
-  // Test files build partial mock AST nodes via forced casts (same concession as above).
-  // The normalized name strips the @mplibunao/oxlint-standards/ plugin prefix.
-  'no-double-cast',
-  // The linteffect no-ternary source row stays collection-less; base explicitly leaves it off.
-  'no-ternary',
-  // Vitest and Unicorn non-owned rules are explicitly silenced to prevent category bleed.
-  ...Object.keys(configs['vitestConfig']?.rules ?? {}).map((ruleName) =>
-    normalizeConfigRuleName(ruleName, pluginRulePrefix),
-  ),
-  ...Object.keys(configs['nodeRuntimeConfig']?.rules ?? {})
-    .filter((ruleName) => ruleName !== 'unicorn/prefer-node-protocol')
-    .map((ruleName) => normalizeConfigRuleName(ruleName, pluginRulePrefix)),
-]);
+const omittedNonErrorRuleNames = deriveOmittedNonErrorRuleAllowlist({
+  baseConfig: baseConfigEntry,
+  nodeRuntimeConfig: nodeRuntimeConfigEntry,
+  pluginRulePrefix,
+  vitestConfig: vitestConfigEntry,
+});
 const enabledWithoutImplementation = collectionEntries.filter(
   (entry) => entry.implementationStatus !== 'implemented',
 );
@@ -516,7 +598,7 @@ for (const [collection, config] of Object.entries(configs)) {
     .map(([ruleName]) => ruleName)
     .filter(
       (ruleName) =>
-        !manifestNamesForCollection.has(ruleName) && !omittedNonErrorRuleAllowlist.has(ruleName),
+        !manifestNamesForCollection.has(ruleName) && !omittedNonErrorRuleNames.has(ruleName),
     );
   if (missingNonErrorRules.length > 0) {
     fail(
@@ -544,48 +626,7 @@ if (implementedWithoutReplay.length > 0) {
 }
 
 for (const entry of implementedCustomEntries) {
-  if (entry.parityStatus !== semanticScenarioParity) {
-    continue;
-  }
-
-  const replaySuite = replaySuiteByRule.get(entry.name);
-  if (typeof replaySuite === 'undefined') {
-    continue;
-  }
-
-  if (replaySuite.requiredBranchIds.length === 0) {
-    fail(`${entry.name} claims semantic-scenario-replay but has no requiredBranchIds matrix.`);
-  }
-
-  if (
-    replaySuite.invalid.length < minimumSemanticInvalidCases ||
-    replaySuite.valid.length < minimumSemanticValidCases
-  ) {
-    fail(
-      `${entry.name} claims semantic-scenario-replay but has only ${replaySuite.invalid.length} invalid and ${replaySuite.valid.length} valid replay case(s).`,
-    );
-  }
-
-  if (
-    entry.gating === 'effect-import' &&
-    !replaySuite.valid.some((fixtureCase) => fixtureCase.name.includes('non-Effect file'))
-  ) {
-    fail(
-      `${entry.name} claims effect-import gating but lacks a non-Effect false-positive replay case.`,
-    );
-  }
-
-  const coveredBranchIds = new Set(
-    [...replaySuite.invalid, ...replaySuite.valid].flatMap(
-      (fixtureCase) => fixtureCase.branchIds ?? [],
-    ),
-  );
-  const missingBranchIds = replaySuite.requiredBranchIds.filter(
-    (branchId) => !coveredBranchIds.has(branchId),
-  );
-  if (missingBranchIds.length > 0) {
-    fail(`${entry.name} semantic branch matrix is incomplete. Missing: ${list(missingBranchIds)}.`);
-  }
+  assertSemanticScenarioReplayCoverage(entry, replaySuiteByRule.get(entry.name));
 }
 
 for (const entry of manifestEntries) {
@@ -621,26 +662,7 @@ for (const entry of manifestEntries) {
 }
 
 for (const [ruleName, fixtureSets] of sourceFixtureFiles.entries()) {
-  const replaySuite = replaySuiteByRule.get(ruleName);
-  if (typeof replaySuite === 'undefined') {
-    fail(`${ruleName} has upstream source fixtures but no replay suite.`);
-    continue;
-  }
-
-  const replayInvalidNames = new Set(replaySuite.invalid.map((fixtureCase) => fixtureCase.name));
-  const replayValidNames = new Set(replaySuite.valid.map((fixtureCase) => fixtureCase.name));
-  const missingInvalid = fixtureSets.invalid.filter(
-    (file) => !replayInvalidNames.has(`linteffect:${ruleName}/${file}`),
-  );
-  const missingValid = fixtureSets.valid.filter(
-    (file) => !replayValidNames.has(`linteffect:${ruleName}/${file}`),
-  );
-
-  if (missingInvalid.length > 0 || missingValid.length > 0) {
-    fail(
-      `${ruleName} replay suite does not cover all upstream fixtures. Missing invalid: ${list(missingInvalid)}; missing valid: ${list(missingValid)}.`,
-    );
-  }
+  assertSourceFixtureReplayCoverage(ruleName, fixtureSets, replaySuiteByRule.get(ruleName));
 }
 
 if (!manifestEntries.some((entry) => entry.name === 'lsp/missingEffectServiceDependency')) {

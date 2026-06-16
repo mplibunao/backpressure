@@ -6,6 +6,7 @@ import { pluginRuleName } from './presets/shared.js';
 import {
   collapseManifestSeverity,
   entriesForCollections,
+  deriveOmittedNonErrorRuleAllowlist,
   presetEntriesForDomains,
   ruleManifest,
   type RuleCollection,
@@ -36,8 +37,8 @@ const configCollectionPairs = [
   { collection: 'nodeRuntimeConfig', config: nodeRuntimeConfig },
 ] as const satisfies readonly ConfigCollectionPair[];
 const missingRuleSeverity = Symbol('missing rule severity');
-// Pending WI-17 / ADR-004 policy reconciliation: these are the only style-class rules
-// Currently allowed to stay at error because they are mechanical, autofixable exceptions.
+// Pending severity-policy reconciliation: these are the only style-class rules currently
+// allowed to stay at error because they are mechanical, autofixable exceptions.
 const styleAtErrorExceptions = new Set([
   '@typescript-eslint/array-type',
   '@typescript-eslint/dot-notation',
@@ -95,21 +96,13 @@ const explicitConfiguredRules = (
   return [...rules, ...overrideRules];
 };
 
-const omittedNonErrorRuleAllowlist = (): ReadonlySet<string> =>
-  new Set([
-    // Test files disable unsafe assertions because fixture-heavy tests need boundary casts.
-    '@typescript-eslint/no-unsafe-type-assertion',
-    // Test files build partial mock AST nodes via forced casts (same concession as above).
-    // The normalized name strips the @mplibunao/oxlint-standards/ plugin prefix.
-    'no-double-cast',
-    // The linteffect no-ternary source row stays collection-less; base explicitly leaves it off.
-    'no-ternary',
-    // Vitest and Unicorn non-owned rules are explicitly silenced to prevent category bleed.
-    ...Object.keys(vitestConfig.rules ?? {}).map(normalizeConfigRuleName),
-    ...Object.keys(nodeRuntimeConfig.rules ?? {})
-      .filter((ruleName) => ruleName !== 'unicorn/prefer-node-protocol')
-      .map(normalizeConfigRuleName),
-  ]);
+const derivedOmittedNonErrorRuleAllowlist = (): ReadonlySet<string> =>
+  deriveOmittedNonErrorRuleAllowlist({
+    baseConfig,
+    nodeRuntimeConfig,
+    pluginRulePrefix: pluginRuleName(''),
+    vitestConfig,
+  });
 
 describe('rule manifest schema', () => {
   it('collapses manifest severities into oxlint config severities', () => {
@@ -252,8 +245,25 @@ describe('rule manifest schema', () => {
     }
   });
 
+  it('derives oxc silence-wall omissions without allowlisting the owned oxc rule', () => {
+    const allowlist = derivedOmittedNonErrorRuleAllowlist();
+    const silencedOxcRules = Object.entries(baseConfig.rules ?? {})
+      .filter(
+        ([ruleName, setting]) =>
+          ruleName.startsWith('oxc/') &&
+          ruleName !== 'oxc/no-barrel-file' &&
+          configuredSeverity(setting) === 'off',
+      )
+      .map(([ruleName]) => normalizeConfigRuleName(ruleName));
+
+    expect([...allowlist].filter((ruleName) => ruleName.startsWith('oxc/')).sort()).toStrictEqual(
+      silencedOxcRules.sort(),
+    );
+    expect(allowlist.has('oxc/no-barrel-file')).toBe(false);
+  });
+
   it('keeps missing non-error manifest rows limited to the scoped off-rule allowlist', () => {
-    const allowlist = omittedNonErrorRuleAllowlist();
+    const allowlist = derivedOmittedNonErrorRuleAllowlist();
 
     for (const { collection, config } of configCollectionPairs) {
       const manifestNames = new Set(entriesForCollection(collection).map((entry) => entry.name));

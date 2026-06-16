@@ -76,14 +76,13 @@ const assertDotSecretReferences = (workflow: string): void => {
 const assertBracketSecretReferences = (workflow: string): void => {
   for (const match of workflow.matchAll(bracketSecretReferencePattern)) {
     const bracketExpression = match[1] ?? '';
-    if (githubTokenBracketExpressionPattern.test(bracketExpression)) {
-      continue;
+    if (!githubTokenBracketExpressionPattern.test(bracketExpression)) {
+      const literalSecretName = literalBracketSecretNamePattern.exec(bracketExpression)?.[1];
+      const rejectedSecret = literalSecretName ?? `[${bracketExpression}]`;
+      fail(
+        `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${rejectedSecret}.`,
+      );
     }
-    const literalSecretName = literalBracketSecretNamePattern.exec(bracketExpression)?.[1];
-    const rejectedSecret = literalSecretName ?? `[${bracketExpression}]`;
-    fail(
-      `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${rejectedSecret}.`,
-    );
   }
 };
 

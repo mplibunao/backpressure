@@ -30,9 +30,21 @@ export default defineConfig({
     singleQuote: true,
     sortPackageJson: true,
   },
-  lint: composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig, {
-    ignorePatterns: toolIgnorePatterns,
-  }),
+  lint: composeLintConfigs(
+    baseConfig,
+    vitestConfig,
+    nodeRuntimeConfig,
+    {
+      ignorePatterns: toolIgnorePatterns,
+    },
+    {
+      rules: {
+        // backpressure is a published library/tooling monorepo with no natural @/ source root.
+        // Alias rewriting would add build/runtime resolver complexity for package and script code.
+        'import/no-relative-parent-imports': 'off',
+      },
+    },
+  ),
   staged: {
     '*.{js,ts,tsx,jsx,json}': 'vp check --fix',
     '*.{md,mdx}': 'pnpm prose',

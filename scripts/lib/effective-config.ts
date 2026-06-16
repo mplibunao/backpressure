@@ -76,10 +76,9 @@ export const buildOxlintRuleCatalog = (oxlintBin: string): ReadonlySet<string> =
     throw new Error('oxlint --rules did not emit a JSON array.');
   }
   for (const item of parsed) {
-    if (!isObjectRecord(item)) {
-      continue;
+    if (isObjectRecord(item)) {
+      addCatalogItem(catalog, item);
     }
-    addCatalogItem(catalog, item);
   }
   return catalog;
 };
@@ -211,10 +210,9 @@ const flattenTestOverridesIntoGlobal = (composed: object): object => {
     : {};
   if (Array.isArray(overrides)) {
     for (const override of overrides) {
-      if (!isObjectRecord(override)) {
-        continue;
+      if (isObjectRecord(override)) {
+        mergeTestOverrideRules(baseRules, override);
       }
-      mergeTestOverrideRules(baseRules, override);
     }
   }
   // Strip overrides so print-config sees a flat config — the test rules are now in global scope.
