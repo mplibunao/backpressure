@@ -59,7 +59,8 @@ flip all four to BASE.**
 | `no-duplicate-imports` | off | replaced by `import/no-duplicates` with `preferInline` (the type-import fix) |
 | `import/consistent-type-specifier-style` | off | intentional part of the type-import quartet |
 | `import/exports-last`, `import/group-exports` | off | low-value ordering; your call if you want them |
-| `no-continue`, `no-ternary` | off | style preference; flag if you want either |
+| `no-continue` | off | carried from the live config. MP does not write `continue` and reads it as an LLM-ism, so this is a candidate to ENABLE graded `agent-failure-mode` (push generated code toward his style). It composes with `max-depth`/`complexity` to force restructuring (filter-first, extract a helper) rather than nesting, closing both escape hatches. Lean enable in the deep pass |
+| `no-ternary` | off | carried from the live config; separate taste call, not yet weighed. Resolve in the deep pass |
 | `sort-keys` | dropped | the plan's "not safely autofixable" was wrong: the oxc docs list a partial auto-fix (some violations). The real question is taste, alphabetical vs semantic key order (id/name/related fields, config grouped by concern), which is yours. Re-evaluate in the deep pass |
 | `sort-imports` | off | partially autofixable: oxlint fixes member order within a line (14 of 97 in backpressure) but not cross-statement reordering or Multiple-before-Single (the other 83), leaving ongoing manual friction for a cosmetic-only gain. Re-evaluate in the deep pass |
 | `nursery` category | off | experimental rules; reasonable to keep off |
