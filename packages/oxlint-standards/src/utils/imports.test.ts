@@ -1,5 +1,3 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
 import type { Context, ESTree } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -69,7 +67,7 @@ const importDecl = (
     range: RANGE,
   }) as unknown as ESTree.ImportDeclaration;
 
-const prog = (...statements: Array<ESTree.ImportDeclaration>): ESTree.Program =>
+const prog = (...statements: ESTree.ImportDeclaration[]): ESTree.Program =>
   ({
     type: 'Program',
     body: statements,
@@ -78,10 +76,10 @@ const prog = (...statements: Array<ESTree.ImportDeclaration>): ESTree.Program =>
   }) as unknown as ESTree.Program;
 
 // Builds a program with arbitrary statement types — needed for non-import statement tests
-const mixedProg = (body: Array<unknown>): ESTree.Program =>
+const mixedProg = (body: unknown[]): ESTree.Program =>
   ({ type: 'Program', body, sourceType: 'module', range: RANGE }) as unknown as ESTree.Program;
 
-const importCtx = (...names: Array<string>): Context => {
+const importCtx = (...names: string[]): Context => {
   const vars = new Map(names.map((varName) => [varName, { defs: [{ type: 'ImportBinding' }] }]));
   return { sourceCode: { getScope: () => ({ set: vars, upper: null }) } } as unknown as Context;
 };

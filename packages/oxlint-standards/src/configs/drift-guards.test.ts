@@ -16,7 +16,7 @@ const repoRoot = resolve(fileURLToPath(import.meta.url), '..', '..', '..', '..',
 const oxlintBin = join(repoRoot, 'node_modules', '.bin', 'oxlint');
 
 const runOxlint = (
-  args: Array<string>,
+  args: string[],
 ): { readonly stdout: string; readonly stderr: string; readonly status: number } => {
   const result = spawnSync(oxlintBin, args, { encoding: 'utf8' });
   return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', status: result.status ?? 1 };

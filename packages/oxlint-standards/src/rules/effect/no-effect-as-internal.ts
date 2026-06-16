@@ -14,6 +14,41 @@ import { noEffectAsMessage } from './no-effect-as-message.js';
 
 const effectValueMappingMemberSet: ReadonlySet<string> = new Set(effectValueMappingMembers);
 
+// Returns true when the call is a matching Effect.<valueMappingMember>() that is not already
+// inside a wrapper-owned expression. The null-check on memberCall is the early-exit guard.
+const isTargetedEffectAsCall = (
+  context: Context,
+  node: ESTree.CallExpression,
+  effectNames: ReadonlySet<string>,
+): boolean => {
+  const memberCall = getStaticMemberCall(node);
+  if (memberCall === null) {
+    return false;
+  }
+  return (
+    isEffectNamespaceImportReference(context, memberCall.object, effectNames) &&
+    effectValueMappingMemberSet.has(memberCall.propertyName) &&
+    !isInAnyWrapperOwnedExpression(context, node, effectNames)
+  );
+};
+
+// Full violation check: guards pass, then the first argument must not produce a side effect.
+const checkAndReportEffectAs = (
+  context: Context,
+  node: ESTree.CallExpression,
+  effectNames: ReadonlySet<string>,
+  atomNames: ReadonlySet<string>,
+): void => {
+  if (!isTargetedEffectAsCall(context, node, effectNames)) {
+    return;
+  }
+  const [firstArgument] = getCallExpressionArguments(node);
+  if (containsSideEffectCall(context, firstArgument, effectNames, atomNames)) {
+    return;
+  }
+  reportByMessageId(context, node, 'avoidEffectAs');
+};
+
 export const noEffectAsRuleImplementation = {
   create(context: Context) {
     let atomNames = new Set<string>();
@@ -25,30 +60,7 @@ export const noEffectAsRuleImplementation = {
         effectNamespaceNames = collectEffectNamespaceImports(node);
       },
       CallExpression(node: ESTree.CallExpression) {
-        const memberCall = getStaticMemberCall(node);
-
-        if (memberCall === null) {
-          return;
-        }
-
-        if (!isEffectNamespaceImportReference(context, memberCall.object, effectNamespaceNames)) {
-          return;
-        }
-
-        if (!effectValueMappingMemberSet.has(memberCall.propertyName)) {
-          return;
-        }
-
-        if (isInAnyWrapperOwnedExpression(context, node, effectNamespaceNames)) {
-          return;
-        }
-
-        const [firstArgument] = getCallExpressionArguments(node);
-        if (containsSideEffectCall(context, firstArgument, effectNamespaceNames, atomNames)) {
-          return;
-        }
-
-        reportByMessageId(context, node, 'avoidEffectAs');
+        checkAndReportEffectAs(context, node, effectNamespaceNames, atomNames);
       },
     };
   },

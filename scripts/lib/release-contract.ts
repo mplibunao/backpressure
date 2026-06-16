@@ -41,7 +41,7 @@ export const releasePackages = [
     packageName: '@mplibunao/tsconfig',
     smokeCommand: 'pnpm smoke:tsconfig-packed-consumer',
   },
-] as const satisfies ReadonlyArray<ReleasePackageContract>;
+] as const satisfies readonly ReleasePackageContract[];
 
 export const releasePreparationCommands = [
   'pnpm build',
@@ -54,17 +54,15 @@ export const releasePreparationCommands = [
 export const expectedReleaseScript = 'pnpm release:prepare && changeset publish';
 export const expectedReleasePrepareScript = releasePreparationCommands.join(' && ');
 
-export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => {
+const assertNoForbiddenToken = (workflow: string): void => {
   for (const tokenName of forbiddenTokenNames) {
     if (workflow.includes(tokenName)) {
       fail(`release workflow must not include ${tokenName}.`);
     }
   }
+};
 
-  if (workflow.toLowerCase().includes(forbiddenAuthTokenSnippet)) {
-    fail('release workflow must not configure npm registry auth tokens.');
-  }
-
+const assertDotSecretReferences = (workflow: string): void => {
   for (const match of workflow.matchAll(dotSecretReferencePattern)) {
     const [, secretName] = match;
     if (secretName !== githubTokenSecretName) {
@@ -73,17 +71,27 @@ export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => 
       );
     }
   }
+};
 
+const assertBracketSecretReferences = (workflow: string): void => {
   for (const match of workflow.matchAll(bracketSecretReferencePattern)) {
     const bracketExpression = match[1] ?? '';
     if (githubTokenBracketExpressionPattern.test(bracketExpression)) {
       continue;
     }
-
     const literalSecretName = literalBracketSecretNamePattern.exec(bracketExpression)?.[1];
     const rejectedSecret = literalSecretName ?? `[${bracketExpression}]`;
     fail(
       `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${rejectedSecret}.`,
     );
   }
+};
+
+export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => {
+  assertNoForbiddenToken(workflow);
+  if (workflow.toLowerCase().includes(forbiddenAuthTokenSnippet)) {
+    fail('release workflow must not configure npm registry auth tokens.');
+  }
+  assertDotSecretReferences(workflow);
+  assertBracketSecretReferences(workflow);
 };

@@ -43,11 +43,11 @@ interface ParsedFieldMatchAssertion extends ParsedFieldLookup {
 
 interface WorkflowStepLookup {
   readonly action: string;
-  readonly steps: ReadonlyArray<unknown>;
+  readonly steps: readonly unknown[];
 }
 
 interface ExactKeySetAssertion {
-  readonly keys: ReadonlyArray<string>;
+  readonly keys: readonly string[];
   readonly label: string;
   readonly record: Record<string, unknown>;
 }
@@ -85,7 +85,7 @@ const recordField = ({ key, label, record }: ParsedFieldLookup): Record<string, 
   return isObjectRecord(value) ? value : fail(`${label} must include ${key}.`);
 };
 
-const arrayField = ({ key, label, record }: ParsedFieldLookup): ReadonlyArray<unknown> => {
+const arrayField = ({ key, label, record }: ParsedFieldLookup): readonly unknown[] => {
   const value = record[key];
   return Array.isArray(value) ? value : fail(`${label} must include ${key}.`);
 };
@@ -135,6 +135,23 @@ const exactActionStep = ({ action, steps }: WorkflowStepLookup): Record<string, 
   return isObjectRecord(step) ? step : fail(`jobs.release must include a step using ${action}.`);
 };
 
+// Validates the workflow_dispatch config — presence, no inputs, and empty body.
+const assertWorkflowDispatchConfig = (triggers: Record<string, unknown>): void => {
+  if (!Object.hasOwn(triggers, 'workflow_dispatch')) {
+    fail('release workflow must expose workflow_dispatch for manual retries.');
+  }
+  const workflowDispatch = triggers['workflow_dispatch'];
+  if (isObjectRecord(workflowDispatch) && Object.hasOwn(workflowDispatch, 'inputs')) {
+    fail('release workflow must not expose manual per-package dispatch inputs.');
+  }
+  if (
+    workflowDispatch !== null &&
+    (!isObjectRecord(workflowDispatch) || Object.keys(workflowDispatch).length > 0)
+  ) {
+    fail('release workflow workflow_dispatch must be empty.');
+  }
+};
+
 const assertReleaseTriggers = (workflow: Record<string, unknown>): void => {
   const triggers = recordField({ key: 'on', label: 'release workflow', record: workflow });
   const push = recordField({ key: 'push', label: 'release workflow on', record: triggers });
@@ -142,22 +159,7 @@ const assertReleaseTriggers = (workflow: Record<string, unknown>): void => {
   if (!Array.isArray(branches) || branches.length !== 1 || branches[0] !== 'main') {
     fail('release workflow must run on pushes to main.');
   }
-
-  if (!Object.hasOwn(triggers, 'workflow_dispatch')) {
-    fail('release workflow must expose workflow_dispatch for manual retries.');
-  }
-
-  const workflowDispatch = triggers['workflow_dispatch'];
-  if (isObjectRecord(workflowDispatch) && Object.hasOwn(workflowDispatch, 'inputs')) {
-    fail('release workflow must not expose manual per-package dispatch inputs.');
-  }
-
-  if (
-    workflowDispatch !== null &&
-    (!isObjectRecord(workflowDispatch) || Object.keys(workflowDispatch).length > 0)
-  ) {
-    fail('release workflow workflow_dispatch must be empty.');
-  }
+  assertWorkflowDispatchConfig(triggers);
 };
 
 const assertReleaseWorkflowBasics = (
@@ -219,7 +221,7 @@ const assertReleaseJobPermissions = (releaseJob: Record<string, unknown>): void 
   });
 };
 
-const assertSetupNodeStep = (steps: ReadonlyArray<unknown>): void => {
+const assertSetupNodeStep = (steps: readonly unknown[]): void => {
   const setupNodeStep = exactActionStep({ action: 'actions/setup-node@v6', steps });
   const setupNodeWith = recordField({
     key: 'with',
@@ -288,7 +290,7 @@ const assertOnlyReleaseJob = (jobs: Record<string, unknown>): void => {
   }
 };
 
-const assertNoDirectPublishRunSteps = (steps: ReadonlyArray<unknown>): void => {
+const assertNoDirectPublishRunSteps = (steps: readonly unknown[]): void => {
   for (const step of steps) {
     if (!isObjectRecord(step)) {
       continue;
@@ -303,6 +305,13 @@ const assertNoDirectPublishRunSteps = (steps: ReadonlyArray<unknown>): void => {
   }
 };
 
+// Validates the changesets/action step presence, with-config, and env-config in one call.
+const assertChangesetsStep = (steps: readonly unknown[]): void => {
+  const changesetsStep = exactActionStep({ action: 'changesets/action@v1', steps });
+  assertChangesetsActionWith(changesetsStep);
+  assertChangesetsActionEnv(changesetsStep);
+};
+
 const assertReleaseJobStructure = (workflow: Record<string, unknown>): void => {
   const jobs = recordField({ key: 'jobs', label: 'release workflow', record: workflow });
   assertOnlyReleaseJob(jobs);
@@ -314,14 +323,10 @@ const assertReleaseJobStructure = (workflow: Record<string, unknown>): void => {
     value: "github.ref == 'refs/heads/main'",
   });
   assertReleaseJobPermissions(releaseJob);
-
   const steps = arrayField({ key: 'steps', label: 'jobs.release', record: releaseJob });
   assertNoDirectPublishRunSteps(steps);
   assertSetupNodeStep(steps);
-
-  const changesetsStep = exactActionStep({ action: 'changesets/action@v1', steps });
-  assertChangesetsActionWith(changesetsStep);
-  assertChangesetsActionEnv(changesetsStep);
+  assertChangesetsStep(steps);
 };
 
 const assertPackageScripts = (scripts: Record<string, string>): void => {

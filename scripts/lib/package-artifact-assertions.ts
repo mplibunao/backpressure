@@ -22,7 +22,7 @@ export const isStringRecord = (value: unknown): value is Record<string, string> 
 
 export const assertExactStringArray = (
   actual: unknown,
-  expected: ReadonlyArray<string>,
+  expected: readonly string[],
   label: string,
 ): void => {
   const actualArray = Array.isArray(actual)
@@ -65,8 +65,8 @@ export const assertExactStringMap = (
 };
 
 export const assertExactPackedFiles = (
-  actual: ReadonlyArray<string>,
-  expected: ReadonlyArray<string>,
+  actual: readonly string[],
+  expected: readonly string[],
   label: string,
 ): void => {
   assertExactStringArray([...actual].sort(), [...expected].sort(), label);

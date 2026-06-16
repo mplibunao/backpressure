@@ -1,5 +1,3 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
 import type { Context } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -39,7 +37,7 @@ const identifierCall = (name: string): NodeLike =>
   }) as unknown as NodeLike;
 
 // Context where the given names are resolved as namespace import bindings
-const importCtx = (...names: Array<string>): Context => {
+const importCtx = (...names: string[]): Context => {
   const vars = new Map(names.map((varName) => [varName, { defs: [{ type: 'ImportBinding' }] }]));
   return {
     sourceCode: { getScope: () => ({ set: vars, upper: null }) },

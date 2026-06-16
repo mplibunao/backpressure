@@ -41,19 +41,19 @@ interface ManifestEntry {
   readonly disposition: string;
   readonly gating: string;
   readonly implementationStatus: string;
-  readonly collections: ReadonlyArray<string>;
+  readonly collections: readonly string[];
   readonly name: string;
   readonly note: string;
   readonly parityStatus: string;
   readonly rationaleClass: string;
   readonly severity: string;
   readonly sourceOwnership: string;
-  readonly sourcePresets: ReadonlyArray<string>;
+  readonly sourcePresets: readonly string[];
   readonly testSource: string;
 }
 
 interface ReplayCase {
-  readonly branchIds?: ReadonlyArray<string>;
+  readonly branchIds?: readonly string[];
   readonly name: string;
 }
 
@@ -61,14 +61,14 @@ interface ReplaySuite {
   readonly diagnostic: {
     readonly ruleName: string;
   };
-  readonly invalid: ReadonlyArray<ReplayCase>;
-  readonly requiredBranchIds: ReadonlyArray<string>;
-  readonly valid: ReadonlyArray<ReplayCase>;
+  readonly invalid: readonly ReplayCase[];
+  readonly requiredBranchIds: readonly string[];
+  readonly valid: readonly ReplayCase[];
 }
 
 interface SourceFixtureSet {
-  readonly invalid: ReadonlyArray<string>;
-  readonly valid: ReadonlyArray<string>;
+  readonly invalid: readonly string[];
+  readonly valid: readonly string[];
 }
 
 interface RuleConfigOverride {
@@ -76,13 +76,13 @@ interface RuleConfigOverride {
 }
 
 interface RuleConfigFragment {
-  readonly overrides?: ReadonlyArray<RuleConfigOverride>;
+  readonly overrides?: readonly RuleConfigOverride[];
   readonly rules?: Record<string, unknown>;
 }
 
 interface InventoryPackageEntry {
   readonly configs: Record<string, RuleConfigFragment>;
-  readonly manifestEntries: ReadonlyArray<ManifestEntry>;
+  readonly manifestEntries: readonly ManifestEntry[];
   readonly pluginName: string;
   readonly rules: Record<string, unknown>;
 }
@@ -90,10 +90,10 @@ interface InventoryPackageEntry {
 const read = (path: string) => readFileSync(path, 'utf8');
 const compareText = (left: string, right: string) => left.localeCompare(right);
 const uniqueSorted = (values: Iterable<string>) => [...new Set(values)].sort(compareText);
-const sorted = (values: ReadonlyArray<string>) => [...values].sort(compareText);
-const sameList = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
+const sorted = (values: readonly string[]) => [...values].sort(compareText);
+const sameList = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
-const list = (values: ReadonlyArray<string>) => (values.length === 0 ? 'none' : values.join(', '));
+const list = (values: readonly string[]) => (values.length === 0 ? 'none' : values.join(', '));
 // Pending WI-17 / ADR-004 policy reconciliation: these are the only style-class rules
 // Currently allowed to stay at error because they are mechanical, autofixable exceptions.
 const styleAtErrorExceptions = new Set([
@@ -102,12 +102,11 @@ const styleAtErrorExceptions = new Set([
   '@typescript-eslint/no-inferrable-types',
   '@typescript-eslint/prefer-function-type',
   'prefer-template',
-  'sort-imports',
 ]);
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
-const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
+const isStringArray = (value: unknown): value is readonly string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string');
 const isManifestEntry = (value: unknown): value is ManifestEntry =>
   isObjectRecord(value) &&
@@ -136,9 +135,9 @@ const isReplaySuite = (value: unknown): value is ReplaySuite =>
   value['invalid'].every(isReplayCase) &&
   Array.isArray(value['valid']) &&
   value['valid'].every(isReplayCase);
-const isReplaySuites = (value: unknown): value is ReadonlyArray<ReplaySuite> =>
+const isReplaySuites = (value: unknown): value is readonly ReplaySuite[] =>
   Array.isArray(value) && value.every(isReplaySuite);
-const isManifestEntries = (value: unknown): value is ReadonlyArray<ManifestEntry> =>
+const isManifestEntries = (value: unknown): value is readonly ManifestEntry[] =>
   Array.isArray(value) && value.every(isManifestEntry);
 const isRuleConfigOverride = (value: unknown): value is RuleConfigOverride =>
   isObjectRecord(value) &&
@@ -150,7 +149,7 @@ const isRuleConfigFragment = (value: unknown): value is RuleConfigFragment =>
     (Array.isArray(value['overrides']) && value['overrides'].every(isRuleConfigOverride)));
 
 // Type alias for the composeLintConfigs factory function exported from the built package.
-type ComposeConfigsFn = (...configs: ReadonlyArray<object>) => object;
+type ComposeConfigsFn = (...configs: readonly object[]) => object;
 
 const isComposeConfigsFn = (value: unknown): value is ComposeConfigsFn =>
   typeof value === 'function';
@@ -164,7 +163,7 @@ const extractComposeConfigsFn = (namespace: unknown): ComposeConfigsFn => {
   }
   return fail('Built package did not export composeLintConfigs.');
 };
-const readReplaySuites = (moduleNamespace: unknown): ReadonlyArray<ReplaySuite> => {
+const readReplaySuites = (moduleNamespace: unknown): readonly ReplaySuite[] => {
   if (isObjectRecord(moduleNamespace) && isReplaySuites(moduleNamespace['replaySuites'])) {
     return moduleNamespace['replaySuites'];
   }
@@ -224,7 +223,7 @@ const sourceRuleNames = uniqueSorted(
     .map((file) => basename(file, '.grit')),
 );
 
-const configMembership = new Map<string, Array<string>>(sourceRuleNames.map((name) => [name, []]));
+const configMembership = new Map<string, string[]>(sourceRuleNames.map((name) => [name, []]));
 for (const configName of sourceConfigs) {
   const configText = read(join(configDir, `${configName}.jsonc`));
   for (const match of configText.matchAll(/rules\/([\w-]+)\.grit/g)) {
@@ -256,7 +255,9 @@ if (existsSync(fixtureRoot)) {
 buildOxlintStandards();
 
 const [replayModule, packageEntry]: [unknown, unknown] = await Promise.all([
+  // oxlint-disable-next-line @mplibunao/oxlint-standards/prevent-dynamic-imports -- loads freshly-built dist at runtime; no static import exists until the build step runs
   import(pathToFileURL(join(repoRoot, 'scripts', 'checks', 'fixture-replay.ts')).href),
+  // oxlint-disable-next-line @mplibunao/oxlint-standards/prevent-dynamic-imports -- loads freshly-built dist at runtime; no static import exists until the build step runs
   import(pathToFileURL(distEntryPath).href),
 ]);
 const replaySuites = readReplaySuites(replayModule);
@@ -287,7 +288,7 @@ if (read(effectiveConfigPath) !== freshArtifact) {
 }
 
 // ─── Unknown-rule gate ───────────────────────────────────────────────────────
-const allConfiguredEntries: ReadonlyArray<RuleEntry> = [
+const allConfiguredEntries: readonly RuleEntry[] = [
   ...configuredRuleEntries(baseConfigEntry),
   ...configuredRuleEntries(vitestConfigEntry),
   ...configuredRuleEntries(nodeRuntimeConfigEntry),
@@ -306,13 +307,13 @@ if (nonCanonicalEntries.length > 0) {
 
 // P1-4b: Collision detection — two different raw names normalizing to the same canonical key
 // With different severities would silently shadow one configuration. Fail instead.
-const entriesByCanonical = new Map<string, Array<RuleEntry>>();
+const entriesByCanonical = new Map<string, RuleEntry[]>();
 for (const entry of allConfiguredEntries) {
   const group = entriesByCanonical.get(entry.canonicalName) ?? [];
   group.push(entry);
   entriesByCanonical.set(entry.canonicalName, group);
 }
-const canonicalCollisions: Array<string> = [];
+const canonicalCollisions: string[] = [];
 for (const [canonicalName, group] of entriesByCanonical) {
   const rawNames = new Set(group.map((ruleEntry) => ruleEntry.rawName));
   const severities = new Set(group.map((ruleEntry) => JSON.stringify(ruleEntry.severity)));
@@ -416,11 +417,14 @@ for (const name of sourceConfigAnomalies) {
 }
 
 const collectionEntries = manifestEntries.filter((entry) => entry.collections.length > 0);
-const collectionEntriesFor = (collection: string): ReadonlyArray<ManifestEntry> =>
+const collectionEntriesFor = (collection: string): readonly ManifestEntry[] =>
   manifestEntries.filter((entry) => entry.collections.includes(collection));
 const omittedNonErrorRuleAllowlist = new Set([
   // Test files disable unsafe assertions because fixture-heavy tests need boundary casts.
   '@typescript-eslint/no-unsafe-type-assertion',
+  // Test files build partial mock AST nodes via forced casts (same concession as above).
+  // The normalized name strips the @mplibunao/oxlint-standards/ plugin prefix.
+  'no-double-cast',
   // The linteffect no-ternary source row stays collection-less; base explicitly leaves it off.
   'no-ternary',
   // Vitest and Unicorn non-owned rules are explicitly silenced to prevent category bleed.

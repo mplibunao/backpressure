@@ -1,5 +1,3 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
 import type { Context } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +23,7 @@ const id = (name: string): NodeLike =>
   ({ type: 'Identifier', name, range: RANGE }) as unknown as NodeLike;
 
 // A NodeLike member call: `obj.prop(...args)`
-const memberCall = (obj: string, prop: string, args: Array<unknown> = []): NodeLike =>
+const memberCall = (obj: string, prop: string, args: unknown[] = []): NodeLike =>
   ({
     type: 'CallExpression',
     callee: {
@@ -40,7 +38,7 @@ const memberCall = (obj: string, prop: string, args: Array<unknown> = []): NodeL
   }) as unknown as NodeLike;
 
 // A NodeLike call: `name(...args)`
-const identCall = (name: string, args: Array<unknown> = []): NodeLike =>
+const identCall = (name: string, args: unknown[] = []): NodeLike =>
   ({
     type: 'CallExpression',
     callee: id(name),
@@ -48,14 +46,14 @@ const identCall = (name: string, args: Array<unknown> = []): NodeLike =>
     range: RANGE,
   }) as unknown as NodeLike;
 
-const blockStmt = (...stmts: Array<unknown>): NodeLike =>
+const blockStmt = (...stmts: unknown[]): NodeLike =>
   ({ type: 'BlockStatement', body: stmts, range: RANGE }) as unknown as NodeLike;
 
 const returnStmt = (argument: unknown): NodeLike =>
   ({ type: 'ReturnStatement', argument, range: RANGE }) as unknown as NodeLike;
 
 // Context where the given names are resolved as namespace import bindings
-const importCtx = (...names: Array<string>): Context => {
+const importCtx = (...names: string[]): Context => {
   const vars = new Map(names.map((varName) => [varName, { defs: [{ type: 'ImportBinding' }] }]));
   return {
     sourceCode: { getScope: () => ({ set: vars, upper: null }) },

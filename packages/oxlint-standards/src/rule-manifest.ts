@@ -55,7 +55,7 @@ export type RuleGating =
 export interface RuleManifestEntry {
   readonly name: string;
   readonly domain: RuleDomain;
-  readonly sourcePresets: ReadonlyArray<string>;
+  readonly sourcePresets: readonly string[];
   readonly severity: RuleManifestSeverity;
   readonly rationaleClass: RuleRationaleClass;
   readonly implementationStatus: 'implemented' | 'not-implemented' | 'delegated';
@@ -66,7 +66,7 @@ export interface RuleManifestEntry {
   readonly sourceOwnership: RuleSourceOwnership;
   readonly testSource: RuleTestSource;
   readonly gating: RuleGating;
-  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly collections: readonly RuleCollection[];
   readonly note: string;
 }
 
@@ -81,7 +81,7 @@ const presetCollectionByDomain: Partial<Record<RuleDomain, RuleCollection>> = {
   general: 'generalPreset',
 };
 
-const defaultCollectionsForDomain = (domain: RuleDomain): ReadonlyArray<RuleCollection> => {
+const defaultCollectionsForDomain = (domain: RuleDomain): readonly RuleCollection[] => {
   const presetCollection = presetCollectionByDomain[domain];
   if (typeof presetCollection === 'undefined') {
     return [];
@@ -90,27 +90,26 @@ const defaultCollectionsForDomain = (domain: RuleDomain): ReadonlyArray<RuleColl
   return domain === 'general' ? [presetCollection, 'baseConfig'] : [presetCollection];
 };
 
+// The agent-failure-mode grade is signalled by either low severity or broad/ladder gating;
+// this predicate captures that disjunction as one named concept.
+const isAgentFailureModeRule = (entry: RuleManifestEntryInput): boolean =>
+  ['info', 'warning'].includes(entry.severity) ||
+  entry.gating === 'ungated-broad' ||
+  entry.name.includes('ladder');
+
 const inferRationaleClass = (entry: RuleManifestEntryInput): RuleRationaleClass => {
   if (entry.disposition === 'LSP-delegated') {
     return 'correctness';
   }
-
   if (entry.gating === 'boundary') {
     return 'safety';
   }
-
-  if (['info', 'warning'].includes(entry.severity)) {
+  if (isAgentFailureModeRule(entry)) {
     return 'agent-failure-mode';
   }
-
   if (entry.severity === 'off') {
     return 'style';
   }
-
-  if (entry.gating === 'ungated-broad' || entry.name.includes('ladder')) {
-    return 'agent-failure-mode';
-  }
-
   return 'correctness';
 };
 
@@ -143,7 +142,7 @@ const lspDelegatedCheck = (name: string): RuleManifestEntry =>
     note: '@effect/language-service owns this semantic/type-aware diagnostic.',
   });
 
-const lspDelegatedChecks = (names: ReadonlyArray<string>): ReadonlyArray<RuleManifestEntry> =>
+const lspDelegatedChecks = (names: readonly string[]): readonly RuleManifestEntry[] =>
   names.map(lspDelegatedCheck);
 
 // --- Authoring helpers ---
@@ -155,11 +154,11 @@ const lspDelegatedChecks = (names: ReadonlyArray<string>): ReadonlyArray<RuleMan
 interface PortedScenarioRuleOptions {
   readonly name: string;
   readonly domain: RuleDomain;
-  readonly sourcePresets: ReadonlyArray<string>;
+  readonly sourcePresets: readonly string[];
   readonly severity: RuleManifestSeverity;
   readonly rationaleClass: RuleRationaleClass;
   readonly gating: RuleGating;
-  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly collections: readonly RuleCollection[];
   readonly note: string;
 }
 
@@ -198,10 +197,10 @@ export const portedScenarioRule = ({
 interface PortedFixtureRuleOptions {
   readonly name: string;
   readonly domain: RuleDomain;
-  readonly sourcePresets: ReadonlyArray<string>;
+  readonly sourcePresets: readonly string[];
   readonly rationaleClass: RuleRationaleClass;
   readonly gating: RuleGating;
-  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly collections: readonly RuleCollection[];
   readonly note: string;
 }
 
@@ -245,7 +244,7 @@ interface ReimplementedScenarioRuleOptions {
   readonly sourceOwnership: RuleSourceOwnership;
   readonly testSource: RuleTestSource;
   readonly gating: RuleGating;
-  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly collections: readonly RuleCollection[];
   readonly note: string;
 }
 
@@ -289,7 +288,7 @@ interface BuiltInRuleOptions {
   readonly severity: RuleManifestSeverity;
   readonly rationaleClass: RuleRationaleClass;
   readonly gating: RuleGating;
-  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly collections: readonly RuleCollection[];
   readonly note: string;
 }
 
@@ -329,7 +328,7 @@ interface NativeRuleOptions {
   readonly domain: RuleDomain;
   readonly severity: RuleManifestSeverity;
   readonly rationaleClass: RuleRationaleClass;
-  readonly collections: ReadonlyArray<RuleCollection>;
+  readonly collections: readonly RuleCollection[];
   readonly gating: RuleGating;
   readonly note: string;
 }
@@ -2015,10 +2014,10 @@ export const ruleManifest = [
   }),
   baseRule({
     name: 'no-undef',
-    severity: 'error',
+    severity: 'off',
     rationaleClass: 'correctness',
     gating: 'stack-neutral',
-    note: 'Undefined references are runtime failures.',
+    note: 'Delegated to the TypeScript compiler (TS2304), which reports undefined identifiers with full type and env awareness in the same check pipeline.',
   }),
   baseRule({
     name: 'no-unneeded-ternary',
@@ -2085,10 +2084,10 @@ export const ruleManifest = [
   }),
   baseRule({
     name: 'sort-imports',
-    severity: 'error',
+    severity: 'off',
     rationaleClass: 'style',
     gating: 'stack-neutral',
-    note: 'Style rule enforced at error because it is autofixable, provides diff-determinism, preserves import-order consistency, and is fixed automatically by `vp check --fix`.',
+    note: 'Dropped at error: oxlint has no autofixable import-ordering rule and oxfmt does not sort imports, so enforcing it imposes permanent manual churn. Import order is left to review.',
   }),
   vitestRule({
     name: 'vitest/hoisted-apis-on-top',
@@ -2219,7 +2218,7 @@ export const ruleManifest = [
     'schemaSyncInEffect',
     'cryptoRandomUUID',
   ]),
-] as const satisfies ReadonlyArray<RuleManifestEntry>;
+] as const satisfies readonly RuleManifestEntry[];
 
 export const implementedCustomRuleNames = ruleManifest
   .filter(
@@ -2259,8 +2258,8 @@ export const oxlintSeverityForManifestEntry = (entry: RuleManifestEntry): RuleCo
   collapseManifestSeverity(entry.severity);
 
 export const entriesForCollections = (
-  collections: ReadonlyArray<RuleCollection>,
-): ReadonlyArray<RuleManifestEntry> =>
+  collections: readonly RuleCollection[],
+): readonly RuleManifestEntry[] =>
   ruleManifest.filter((entry) =>
     entry.collections.some((collection) => collections.includes(collection)),
   );
@@ -2272,9 +2271,9 @@ const presetCollectionOnlyForDomain = (domain: RuleDomain): RuleCollection | und
 // Preset assemblers should call pluginRuleName on each result to build rule config keys.
 // Scripts and tests can use entry.name values directly without any plugin prefix.
 export const presetEntriesForDomains = (
-  domains: ReadonlyArray<RuleDomain>,
+  domains: readonly RuleDomain[],
   { includeBuiltIn = false }: PresetRulesOptions = {},
-): ReadonlyArray<RuleManifestEntry> => {
+): readonly RuleManifestEntry[] => {
   const presetCollections = domains
     .map(presetCollectionOnlyForDomain)
     .filter((collection): collection is RuleCollection => typeof collection !== 'undefined');

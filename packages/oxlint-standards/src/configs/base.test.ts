@@ -67,7 +67,7 @@ describe('base config fragment', () => {
     expect(rules['max-statements']).toStrictEqual(['error', { max: 10 }]);
     expect(rules['@typescript-eslint/no-non-null-assertion']).toBe('error');
     expect(rules['no-shadow']).toBe('error');
-    expect(rules['sort-imports']).toBe('error');
+    expect(rules['sort-imports']).toBe('off');
     expect(rules).not.toHaveProperty('sort-keys');
   });
 
@@ -118,6 +118,7 @@ describe('base config fragment', () => {
     expect(baseConfig.overrides?.[0]).toStrictEqual({
       files: ['**/*.test.ts'],
       rules: {
+        '@mplibunao/oxlint-standards/no-double-cast': 'off',
         '@typescript-eslint/no-unsafe-type-assertion': 'off',
         'import/max-dependencies': 'off',
         'max-lines': 'off',

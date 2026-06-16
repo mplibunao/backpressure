@@ -8,7 +8,7 @@ interface NpmPackFile {
 
 export interface NpmPackEntry {
   readonly filename?: string;
-  readonly files: ReadonlyArray<NpmPackFile>;
+  readonly files: readonly NpmPackFile[];
 }
 
 interface RunNpmPackJsonBaseOptions {
@@ -26,7 +26,7 @@ interface RunNpmPackTarballJsonOptions extends RunNpmPackJsonBaseOptions {
 export interface NpmPackJsonResult {
   readonly entry: NpmPackEntry;
   readonly filename: string;
-  readonly files: ReadonlyArray<string>;
+  readonly files: readonly string[];
   readonly tarballPath?: string;
 }
 
@@ -46,7 +46,7 @@ const isNpmPackEntry = (value: unknown): value is NpmPackEntry =>
   Array.isArray(value['files']) &&
   value['files'].every(isNpmPackFile);
 
-export const parseNpmPackEntries = (stdout: string): ReadonlyArray<NpmPackEntry> => {
+export const parseNpmPackEntries = (stdout: string): readonly NpmPackEntry[] => {
   const entries: unknown = (() => {
     try {
       return JSON.parse(stdout);
@@ -83,7 +83,7 @@ export const requireNpmPackFilename = (packEntry: NpmPackEntry): string => {
 
 const runNpmPackJson = (
   options: RunNpmPackJsonBaseOptions,
-  args: ReadonlyArray<string>,
+  args: readonly string[],
 ): NpmPackJsonResult => {
   const npmArgs = ['pack', '--json', ...args];
 

@@ -1,3 +1,4 @@
+/* oxlint-disable @mplibunao/oxlint-standards/no-ts-nocheck -- string literal, not a real @ts-nocheck directive */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

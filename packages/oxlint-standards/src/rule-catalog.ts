@@ -1,4 +1,5 @@
 /* oxlint-disable max-lines -- The catalog keeps validated rule visitors colocated with their shared AST helpers. */
+// oxlint-disable-next-line @mplibunao/oxlint-standards/no-ts-nocheck -- string literal, not a real @ts-nocheck directive
 import { existsSync } from 'node:fs';
 
 import type { Context, ESTree, Rule } from '@oxlint/plugins';
@@ -119,7 +120,7 @@ const memberPropertyName = (memberExpression: unknown): string | null => {
   return isIdentifierName(property) ? property.name : getStringLiteralValue(property);
 };
 
-const pipeStepArguments = (node: NodeLike): ReadonlyArray<unknown> => {
+const pipeStepArguments = (node: NodeLike): readonly unknown[] => {
   if (node.type !== 'CallExpression') {
     return [];
   }
@@ -138,7 +139,7 @@ const boundProvidePipeStepArguments = (
   context: Context,
   node: NodeLike,
   pipeNames: ReadonlySet<string>,
-): ReadonlyArray<unknown> => {
+): readonly unknown[] => {
   if (node.type !== 'CallExpression') {
     return [];
   }
@@ -462,6 +463,17 @@ const hasMatchOrElseNull = (
   return found;
 };
 
+const isStaticSchemaNode = (node: NodeLike): boolean | null => {
+  if (node.type === 'Identifier') {
+    const first = node.name.at(0) ?? null;
+    return first !== null && first.toUpperCase() === first;
+  }
+  if (node.type === 'MemberExpression') {
+    return true;
+  }
+  return null;
+};
+
 const isStaticSchemaReference = (
   context: Context,
   node: unknown,
@@ -470,21 +482,14 @@ const isStaticSchemaReference = (
   if (!isNodeLike(node)) {
     return false;
   }
-
-  if (node.type === 'Identifier') {
-    const first = node.name.at(0) ?? null;
-    return first !== null && first.toUpperCase() === first;
+  const shortCircuit = isStaticSchemaNode(node);
+  if (shortCircuit !== null) {
+    return shortCircuit;
   }
-
-  if (node.type === 'MemberExpression') {
-    return true;
-  }
-
   const call = getStaticMemberCall(node);
   if (call === null || !isNamespaceImportReference(context, call.object, schemaNames)) {
     return false;
   }
-
   return call.propertyName === 'fromJsonString'
     ? isStaticSchemaReference(context, firstArgument(node), schemaNames)
     : true;
@@ -862,7 +867,7 @@ const pipeSourceExpression = (node: unknown): unknown => {
 };
 
 interface PipeExpressionParts {
-  readonly steps: ReadonlyArray<unknown>;
+  readonly steps: readonly unknown[];
   readonly target: unknown;
 }
 
@@ -1125,7 +1130,7 @@ const isEffectMatchBranch = (node: NodeLike, branchContext: EffectMatchBranchCon
   );
 };
 
-const objectFunctionValues = (node: unknown): ReadonlyArray<unknown> => {
+const objectFunctionValues = (node: unknown): readonly unknown[] => {
   if (!isNodeLike(node) || node.type !== 'ObjectExpression') {
     return [];
   }
@@ -1318,24 +1323,24 @@ const isObjectTypeAlias = (node: NodeLike): boolean => {
   return isNodeLike(typeAnnotation) && typeAnnotation.type === 'TSTypeLiteral';
 };
 
+// Resolves a qualified type name (e.g. Schema.Type → "Schema.Type") from a TSQualifiedName node.
+const qualifiedTypeName = (typeName: NodeLike): string | null => {
+  const left = getNodeField(typeName, 'left');
+  const right = getNodeField(typeName, 'right');
+  return isIdentifierName(left) && isIdentifierName(right) ? `${left.name}.${right.name}` : null;
+};
+
 const typeReferenceName = (node: unknown): string | null => {
   if (!isNodeLike(node) || node.type !== 'TSTypeReference') {
     return null;
   }
-
   const typeName = getNodeField(node, 'typeName');
   if (isIdentifierName(typeName)) {
     return typeName.name;
   }
-
   if (isNodeLike(typeName) && typeName.type === 'TSQualifiedName') {
-    const left = getNodeField(typeName, 'left');
-    const right = getNodeField(typeName, 'right');
-    if (isIdentifierName(left) && isIdentifierName(right)) {
-      return `${left.name}.${right.name}`;
-    }
+    return qualifiedTypeName(typeName);
   }
-
   return null;
 };
 
@@ -1403,27 +1408,28 @@ const isTypeofBooleanEquality = (node: NodeLike): boolean => {
   );
 };
 
-const objectPropertyValue = (node: unknown, name: string): unknown => {
-  if (!isNodeLike(node) || node.type !== 'ObjectExpression') {
-    return null;
-  }
-
-  const properties = getNodeField(node, 'properties');
-  if (!Array.isArray(properties)) {
-    return null;
-  }
-
+// Linear scan of an object's properties; returns the first matching value, or null on no match.
+const findObjectProperty = (properties: unknown[], name: string): unknown => {
   for (const property of properties) {
     if (!isNodeLike(property) || property.type !== 'Property') {
       continue;
     }
-
     if (propertyName(getNodeField(property, 'key')) === name) {
       return getNodeField(property, 'value');
     }
   }
-
   return null;
+};
+
+const objectPropertyValue = (node: unknown, name: string): unknown => {
+  if (!isNodeLike(node) || node.type !== 'ObjectExpression') {
+    return null;
+  }
+  const properties = getNodeField(node, 'properties');
+  if (!Array.isArray(properties)) {
+    return null;
+  }
+  return findObjectProperty(properties, name);
 };
 
 const isIdentifierLiteralTrueComparison = (node: unknown, identifierName: string): boolean => {
@@ -1473,38 +1479,50 @@ const effectDataModuleTags = new Map([
   ['Result', new Set(['Success', 'Failure', 'Left', 'Right'])],
 ]);
 
+// Handles the effect/X submodule case; returns true when tags were added so the
+// caller can skip the barrel-specifier path.
+const addEffectModuleTagsToSet = (tags: Set<string>, source: string): boolean => {
+  const moduleName = source.startsWith('effect/') ? source.slice('effect/'.length) : null;
+  const moduleTags = moduleName === null ? null : (effectDataModuleTags.get(moduleName) ?? null);
+  if (moduleTags === null) {
+    return false;
+  }
+  for (const tag of moduleTags) {
+    tags.add(tag);
+  }
+  return true;
+};
+
+// Handles one specifier from a bare 'effect' import, adding its data-module tags if any.
+const addSpecifierTagsToSet = (
+  tags: Set<string>,
+  specifier: ESTree.ImportDeclaration['specifiers'][number],
+): void => {
+  if (specifier.type !== 'ImportSpecifier' || specifier.importKind === 'type') {
+    return;
+  }
+  const importedTags = effectDataModuleTags.get(importSpecifierName(specifier) ?? '') ?? null;
+  if (importedTags === null) {
+    return;
+  }
+  for (const tag of importedTags) {
+    tags.add(tag);
+  }
+};
+
 const importEffectDataTags = (node: ESTree.ImportDeclaration): Set<string> => {
   const tags = new Set<string>();
   const source = getImportSource(node);
   if (source === null || node.importKind === 'type') {
     return tags;
   }
-
-  const moduleName = source.startsWith('effect/') ? source.slice('effect/'.length) : null;
-  const moduleTags = moduleName === null ? null : (effectDataModuleTags.get(moduleName) ?? null);
-  if (moduleTags !== null) {
-    for (const tag of moduleTags) {
-      tags.add(tag);
-    }
+  // Short-circuit if the module path resolved to data tags, or if it's not the effect barrel.
+  if (addEffectModuleTagsToSet(tags, source) || source !== 'effect') {
     return tags;
   }
-
-  if (source !== 'effect') {
-    return tags;
-  }
-
   for (const specifier of node.specifiers) {
-    if (specifier.type !== 'ImportSpecifier' || specifier.importKind === 'type') {
-      continue;
-    }
-    const importedTags = effectDataModuleTags.get(importSpecifierName(specifier) ?? '') ?? null;
-    if (importedTags !== null) {
-      for (const tag of importedTags) {
-        tags.add(tag);
-      }
-    }
+    addSpecifierTagsToSet(tags, specifier);
   }
-
   return tags;
 };
 
@@ -1561,57 +1579,65 @@ const taggedErrorName = (node: unknown): string | null => {
     : null;
 };
 
+// Port executor reference: also accept AssignmentPattern (default values) and
+// RestElement (...rest) as forwardable parameter names alongside plain identifiers.
+const collectParamName = (names: Set<string>, param: NodeLike): void => {
+  if (isIdentifierName(param)) {
+    names.add(param.name);
+  } else if (param.type === 'AssignmentPattern') {
+    const left = getNodeField(param, 'left');
+    if (isIdentifierName(left)) {
+      names.add(left.name);
+    }
+  } else if (param.type === 'RestElement') {
+    const argument = getNodeField(param, 'argument');
+    if (isIdentifierName(argument)) {
+      names.add(argument.name);
+    }
+  }
+};
+
 const parameterNames = (node: NodeLike): Set<string> => {
   const params = getNodeField(node, 'params');
   if (!Array.isArray(params)) {
     return new Set();
   }
-  // Port executor reference: also accept AssignmentPattern (default values) and
-  // RestElement (...rest) as forwardable parameter names alongside plain identifiers.
   const names = new Set<string>();
   for (const param of params) {
     if (!isNodeLike(param)) {
       continue;
     }
-    if (isIdentifierName(param)) {
-      names.add(param.name);
-    } else if (param.type === 'AssignmentPattern') {
-      const left = getNodeField(param, 'left');
-      if (isIdentifierName(left)) {
-        names.add(left.name);
-      }
-    } else if (param.type === 'RestElement') {
-      const argument = getNodeField(param, 'argument');
-      if (isIdentifierName(argument)) {
-        names.add(argument.name);
-      }
-    }
+    collectParamName(names, param);
   }
   return names;
+};
+
+// Returns null when the node type is complex enough to require the ObjectExpression spread check.
+const isSimpleForwardedArg = (node: NodeLike, params: ReadonlySet<string>): boolean | null => {
+  if (node.type === 'Literal') {
+    return true;
+  }
+  if (isIdentifierName(node)) {
+    return params.has(node.name);
+  }
+  if (node.type === 'MemberExpression') {
+    const object = getNodeField(node, 'object');
+    return isIdentifierName(object) && params.has(object.name);
+  }
+  return null;
 };
 
 const isForwardedArgument = (node: unknown, params: ReadonlySet<string>): boolean => {
   if (!isNodeLike(node)) {
     return false;
   }
-
-  if (node.type === 'Literal') {
-    return true;
+  const shortCircuit = isSimpleForwardedArg(node, params);
+  if (shortCircuit !== null) {
+    return shortCircuit;
   }
-
-  if (isIdentifierName(node)) {
-    return params.has(node.name);
-  }
-
-  if (node.type === 'MemberExpression') {
-    const object = getNodeField(node, 'object');
-    return isIdentifierName(object) && params.has(object.name);
-  }
-
   if (node.type !== 'ObjectExpression') {
     return false;
   }
-
   const properties = getNodeField(node, 'properties');
   return (
     Array.isArray(properties) &&
@@ -1690,34 +1716,44 @@ const isNamedWrapperDeclaration = (node: NodeLike): boolean => {
   return getNodeField(parent, 'init') === node && isIdentifierName(getNodeField(parent, 'id'));
 };
 
-const isNullishPredicate = (node: NodeLike): boolean => {
-  if (!isFunctionLike(node)) {
-    return false;
-  }
-
+// Returns the single identifier parameter name, or null if the function signature doesn't match.
+const singleIdentifierParamName = (node: NodeLike): string | null => {
   const params = getNodeField(node, 'params');
-  if (!Array.isArray(params) || params.length !== 1 || !isIdentifierName(params[0])) {
-    return false;
+  if (!Array.isArray(params) || params.length !== 1) {
+    return null;
   }
+  const param = params[0];
+  return isIdentifierName(param) ? param.name : null;
+};
 
-  const body = getNodeField(node, 'body');
-  const predicateExpression =
-    isNodeLike(body) && body.type === 'BlockStatement' ? functionReturnNode(node) : body;
-  if (!isNodeLike(predicateExpression) || predicateExpression.type !== 'BinaryExpression') {
-    return false;
-  }
-
+// Checks that the binary expression is a nullish comparison against the named parameter.
+const isNullishBinaryExpression = (predicateExpression: NodeLike, paramName: string): boolean => {
   const operator = getNodeField(predicateExpression, 'operator');
   const left = getNodeField(predicateExpression, 'left');
   const right = getNodeField(predicateExpression, 'right');
-  const paramName = params[0].name;
-
   return (
     typeof operator === 'string' &&
     nullishOperators.has(operator) &&
     ((isIdentifierName(left) && left.name === paramName && isNullishLiteral(right)) ||
       (isIdentifierName(right) && right.name === paramName && isNullishLiteral(left)))
   );
+};
+
+const isNullishPredicate = (node: NodeLike): boolean => {
+  if (!isFunctionLike(node)) {
+    return false;
+  }
+  const paramName = singleIdentifierParamName(node);
+  if (paramName === null) {
+    return false;
+  }
+  const body = getNodeField(node, 'body');
+  const predicateExpression =
+    isNodeLike(body) && body.type === 'BlockStatement' ? functionReturnNode(node) : body;
+  if (!isNodeLike(predicateExpression) || predicateExpression.type !== 'BinaryExpression') {
+    return false;
+  }
+  return isNullishBinaryExpression(predicateExpression, paramName);
 };
 
 const createNoBarrelImportRule = (): Rule => ({
@@ -1823,6 +1859,55 @@ const hasConcurrencyOne = (node: unknown): boolean => {
         isLiteralValue(getNodeField(descendant, 'value'), singleItemCount));
   });
   return found;
+};
+
+// All three patterns bypass Effect state management by operating on a plain object reference
+// rather than a proper reactive primitive — stringify, spread-transition, and rebuild-in-transition.
+const checkNakedObjectStateUpdate = (
+  context: Context,
+  node: NodeLike,
+  refNames: ReadonlySet<string>,
+): void => {
+  if (isStaticCall(node, 'JSON', 'stringify')) {
+    context.report({ message: message('no-naked-object-state-update'), node });
+    return;
+  }
+  if (isRefTransitionCall(context, node, refNames)) {
+    const [, updater] = getCallExpressionArguments(node);
+    if (returnsSpreadObject(updater)) {
+      context.report({ message: message('no-naked-object-state-update'), node });
+    }
+  }
+  const isObjectRebuild =
+    isObjectEntriesFromEntriesCall(node) || isEmptyTargetObjectAssignCall(node);
+  if (
+    isObjectRebuild &&
+    hasAncestor(node, (ancestor) => isRefTransitionCall(context, ancestor, refNames))
+  ) {
+    context.report({ message: message('no-naked-object-state-update'), node });
+  }
+};
+
+// Handles both the direct Promise.reject() form and any reject-parameter aliases
+// bound inside the Promise constructor's executor function.
+const checkPromiseReject = (context: Context, node: NodeLike): void => {
+  const callee = getNodeField(node, 'callee');
+  if (isStaticCall(node, 'Promise', 'reject')) {
+    context.report({ message: message('no-promise-reject'), node });
+    return;
+  }
+  if (!isIdentifierName(callee)) {
+    return;
+  }
+  const executor = enclosingPromiseExecutor(node);
+  const rejectName = isNodeLike(executor) ? promiseRejectParameterName(executor) : null;
+  if (
+    executor !== null &&
+    rejectName !== null &&
+    promiseRejectAliases(executor, rejectName).has(callee.name)
+  ) {
+    context.report({ message: message('no-promise-reject'), node });
+  }
 };
 
 const catalogRules: Record<string, Rule> = {
@@ -3063,27 +3148,7 @@ const catalogRules: Record<string, Rule> = {
           if (!simpleProgramGate(context, program)) {
             return;
           }
-
-          if (isStaticCall(node, 'JSON', 'stringify')) {
-            context.report({ message: message('no-naked-object-state-update'), node });
-            return;
-          }
-
-          if (isRefTransitionCall(context, node, refNames)) {
-            const [, updater] = getCallExpressionArguments(node);
-            if (returnsSpreadObject(updater)) {
-              context.report({ message: message('no-naked-object-state-update'), node });
-            }
-          }
-
-          const isObjectRebuild =
-            isObjectEntriesFromEntriesCall(node) || isEmptyTargetObjectAssignCall(node);
-          if (
-            isObjectRebuild &&
-            hasAncestor(node, (ancestor) => isRefTransitionCall(context, ancestor, refNames))
-          ) {
-            context.report({ message: message('no-naked-object-state-update'), node });
-          }
+          checkNakedObjectStateUpdate(context, node, refNames);
         },
       };
     },
@@ -3216,7 +3281,7 @@ const catalogRules: Record<string, Rule> = {
     create(context) {
       let schemaNames = new Set<string>();
       const schemaBases = new Set<string>();
-      const candidates: Array<NodeLike> = [];
+      const candidates: NodeLike[] = [];
       const candidateNames = new Map<NodeLike, string>();
       return {
         Program(node: ESTree.Program) {
@@ -3302,25 +3367,7 @@ const catalogRules: Record<string, Rule> = {
           if (!hasEffectImport) {
             return;
           }
-          const callee = getNodeField(node, 'callee');
-          if (isStaticCall(node, 'Promise', 'reject')) {
-            context.report({ message: message('no-promise-reject'), node });
-            return;
-          }
-
-          if (!isIdentifierName(callee)) {
-            return;
-          }
-
-          const executor = enclosingPromiseExecutor(node);
-          const rejectName = isNodeLike(executor) ? promiseRejectParameterName(executor) : null;
-          if (
-            executor !== null &&
-            rejectName !== null &&
-            promiseRejectAliases(executor, rejectName).has(callee.name)
-          ) {
-            context.report({ message: message('no-promise-reject'), node });
-          }
+          checkPromiseReject(context, node);
         },
       };
     },
@@ -3666,6 +3713,6 @@ const catalogRules: Record<string, Rule> = {
 export const catalogRuleDefinitions = Object.entries(catalogRules).map(([name, rule]) => ({
   name,
   rule,
-})) satisfies ReadonlyArray<CatalogRuleDefinition>;
+})) satisfies readonly CatalogRuleDefinition[];
 
 export { catalogRules };

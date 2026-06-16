@@ -22,7 +22,7 @@ interface WriteOxlintConfigOptions {
 
 interface RunOxlintOnSourceOptions extends WriteOxlintConfigOptions {
   readonly command?: string;
-  readonly commandPrefixArgs?: ReadonlyArray<string>;
+  readonly commandPrefixArgs?: readonly string[];
   readonly cwd: string;
   readonly source: string;
   readonly sourceFileName?: string;

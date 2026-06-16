@@ -34,7 +34,7 @@ describe('config composition', () => {
 
   it('treats JS plugin identity as the entry variant plus object name and specifier', () => {
     const scenarios: ReadonlyArray<{
-      readonly configs: ReadonlyArray<OxlintConfig>;
+      readonly configs: readonly OxlintConfig[];
       readonly expected: NonNullable<OxlintConfig['jsPlugins']>;
     }> = [
       {

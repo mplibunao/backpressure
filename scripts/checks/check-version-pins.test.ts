@@ -57,7 +57,7 @@ const packageJsonWithPnpmVersion = (version: string): string =>
     packageManager: `pnpm@${version}`,
   });
 
-const step = (lines: ReadonlyArray<string>): string => lines.join('\n');
+const step = (lines: readonly string[]): string => lines.join('\n');
 
 const miseStep = (): string =>
   step([
@@ -109,7 +109,7 @@ const setupNodeStepWithoutWith = (): string => '      - uses: actions/setup-node
 const setupNodeStepWithoutNodeVersion = (): string =>
   step(['      - uses: actions/setup-node@v6', '        with:', '          cache: pnpm']);
 
-const workflowWithSteps = (steps: ReadonlyArray<string>): string => `jobs:
+const workflowWithSteps = (steps: readonly string[]): string => `jobs:
   check:
     steps:
 ${steps.join('\n')}

@@ -1,3 +1,9 @@
+import {
+  baseConfig,
+  composeLintConfigs,
+  nodeRuntimeConfig,
+  vitestConfig,
+} from '@mplibunao/oxlint-standards';
 import { defineConfig } from 'vite-plus';
 
 const toolIgnorePatterns = [
@@ -24,73 +30,9 @@ export default defineConfig({
     singleQuote: true,
     sortPackageJson: true,
   },
-  lint: {
-    categories: {
-      correctness: 'error',
-      nursery: 'off',
-      pedantic: 'off',
-      restriction: 'error',
-      style: 'error',
-      suspicious: 'error',
-    },
+  lint: composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig, {
     ignorePatterns: toolIgnorePatterns,
-    options: {
-      reportUnusedDisableDirectives: 'error',
-      typeAware: true,
-      typeCheck: true,
-    },
-    plugins: ['typescript', 'import', 'vitest'],
-    rules: {
-      '@typescript-eslint/array-type': ['error', { default: 'generic' }],
-      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-import-type-side-effects': 'error',
-      '@typescript-eslint/explicit-function-return-type': 'off',
-      complexity: ['error', 20],
-      'import/consistent-type-specifier-style': 'off',
-      'import/exports-last': 'off',
-      'import/group-exports': 'off',
-      'import/max-dependencies': ['error', { max: 15 }],
-      'import/no-default-export': 'off',
-      'import/no-named-export': 'off',
-      'import/no-nodejs-modules': 'off',
-      'import/no-relative-parent-imports': 'off',
-      'import/prefer-default-export': 'off',
-      'jest/require-hook': 'off',
-      'max-depth': ['error', 4],
-      'max-lines': ['error', 500],
-      'max-lines-per-function': ['error', 75],
-      'max-params': ['error', 4],
-      'max-statements': 'off',
-      'no-console': 'error',
-      'no-else-return': 'error',
-      'no-magic-numbers': ['error', { ignore: [0, 1, 4, 15, 20, 75, 500] }],
-      'no-continue': 'off',
-      'no-nested-ternary': 'error',
-      'no-param-reassign': 'error',
-      'no-ternary': 'off',
-      'no-unneeded-ternary': 'error',
-      'sort-imports': 'off',
-      'sort-keys': 'off',
-      'vitest/no-importing-vitest-globals': 'off',
-    },
-    overrides: [
-      {
-        // Structural size/complexity ceilings are meaningless for test files; tests are intentionally large and fixture-heavy.
-        // Exception: max-depth and max-params stay strict — they flag real structural smells even in tests.
-        // The max-statements rule is included for cross-repo parity with introspection; currently off globally so this override is a harmless no-op today.
-        files: ['**/*.test.ts'],
-        rules: {
-          'max-lines': 'off',
-          'max-lines-per-function': 'off',
-          'max-statements': 'off',
-          'import/max-dependencies': 'off',
-          'no-magic-numbers': 'off',
-          '@typescript-eslint/no-unsafe-type-assertion': 'off',
-        },
-      },
-    ],
-  },
+  }),
   staged: {
     '*.{js,ts,tsx,jsx,json}': 'vp check --fix',
     '*.{md,mdx}': 'pnpm prose',

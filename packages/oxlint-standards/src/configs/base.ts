@@ -90,7 +90,11 @@ export const baseConfig = {
     'no-shadow': 'error',
     'no-template-curly-in-string': 'error',
     'no-ternary': 'off',
-    'no-undef': 'error',
+    // TypeScript compiler already reports undefined identifiers (TS2304) with full env/type
+    // awareness in the same check pipeline. no-undef adds nothing it catches and false-positives
+    // on runtime globals (process, Bun) without per-consumer env declarations;
+    // typescript-eslint recommends keeping it off for TS.
+    'no-undef': 'off',
     'no-unneeded-ternary': 'error',
     'no-unsafe-optional-chaining': 'error',
     'no-unused-private-class-members': 'error',
@@ -100,7 +104,10 @@ export const baseConfig = {
     'prefer-const': 'error',
     'prefer-promise-reject-errors': 'error',
     'prefer-template': 'error',
-    'sort-imports': 'error',
+    // oxlint has no autofixable import-ordering rule (no import/order) and oxfmt does not sort
+    // imports, so sort-imports is not autofixable across statements and imposes permanent manual
+    // churn on every consumer; MP decided to drop it; import order is left to review.
+    'sort-imports': 'off',
   },
   overrides: [
     {
@@ -108,6 +115,11 @@ export const baseConfig = {
       files: ['**/*.test.ts'],
       rules: {
         '@typescript-eslint/no-unsafe-type-assertion': 'off',
+        // Test files build partial mock AST nodes via forced casts; this is the same
+        // test-mock concession already granted to no-unsafe-type-assertion, and it
+        // benefits every consumer's test suite. The plugin prefix is required because
+        // no-double-cast is a custom JS-plugin rule, not a native oxlint rule.
+        '@mplibunao/oxlint-standards/no-double-cast': 'off',
         'import/max-dependencies': 'off',
         'max-lines': 'off',
         'max-lines-per-function': 'off',

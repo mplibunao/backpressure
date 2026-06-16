@@ -29,12 +29,12 @@ const allCollections = [
   'baseConfig',
   'vitestConfig',
   'nodeRuntimeConfig',
-] as const satisfies ReadonlyArray<RuleCollection>;
+] as const satisfies readonly RuleCollection[];
 const configCollectionPairs = [
   { collection: 'baseConfig', config: baseConfig },
   { collection: 'vitestConfig', config: vitestConfig },
   { collection: 'nodeRuntimeConfig', config: nodeRuntimeConfig },
-] as const satisfies ReadonlyArray<ConfigCollectionPair>;
+] as const satisfies readonly ConfigCollectionPair[];
 const missingRuleSeverity = Symbol('missing rule severity');
 // Pending WI-17 / ADR-004 policy reconciliation: these are the only style-class rules
 // Currently allowed to stay at error because they are mechanical, autofixable exceptions.
@@ -44,7 +44,6 @@ const styleAtErrorExceptions = new Set([
   '@typescript-eslint/no-inferrable-types',
   '@typescript-eslint/prefer-function-type',
   'prefer-template',
-  'sort-imports',
 ]);
 
 const configuredSeverity = (setting: RuleSetting | undefined): unknown =>
@@ -76,7 +75,7 @@ const overrideSeverity = (config: OxlintConfig, entry: RuleManifestEntry): unkno
   return missingRuleSeverity;
 };
 
-const entriesForCollection = (collection: RuleCollection): ReadonlyArray<RuleManifestEntry> =>
+const entriesForCollection = (collection: RuleCollection): readonly RuleManifestEntry[] =>
   entriesForCollections([collection]);
 
 const explicitConfiguredRules = (
@@ -100,6 +99,9 @@ const omittedNonErrorRuleAllowlist = (): ReadonlySet<string> =>
   new Set([
     // Test files disable unsafe assertions because fixture-heavy tests need boundary casts.
     '@typescript-eslint/no-unsafe-type-assertion',
+    // Test files build partial mock AST nodes via forced casts (same concession as above).
+    // The normalized name strips the @mplibunao/oxlint-standards/ plugin prefix.
+    'no-double-cast',
     // The linteffect no-ternary source row stays collection-less; base explicitly leaves it off.
     'no-ternary',
     // Vitest and Unicorn non-owned rules are explicitly silenced to prevent category bleed.
@@ -183,9 +185,12 @@ describe('rule manifest schema', () => {
 
   it('round-trips baseConfig collection membership into the base config rules', () => {
     for (const entry of entriesForCollection('baseConfig')) {
-      expect(topLevelSeverity(baseConfig, entry), entry.name).toBe(
-        collapseManifestSeverity(entry.severity),
-      );
+      // Wrap in a labeled object so the entry name appears in failure diffs
+      // (jest/valid-expect disallows the Vitest-only second argument to expect()).
+      expect({ name: entry.name, severity: topLevelSeverity(baseConfig, entry) }).toEqual({
+        name: entry.name,
+        severity: collapseManifestSeverity(entry.severity),
+      });
     }
   });
 
@@ -212,9 +217,10 @@ describe('rule manifest schema', () => {
     ]);
 
     for (const entry of vitestEntries) {
-      expect(overrideSeverity(vitestConfig, entry), entry.name).toBe(
-        collapseManifestSeverity(entry.severity),
-      );
+      expect({ name: entry.name, severity: overrideSeverity(vitestConfig, entry) }).toEqual({
+        name: entry.name,
+        severity: collapseManifestSeverity(entry.severity),
+      });
     }
   });
 
@@ -226,9 +232,10 @@ describe('rule manifest schema', () => {
     ]);
 
     for (const entry of nodeRuntimeEntries) {
-      expect(topLevelSeverity(nodeRuntimeConfig, entry), entry.name).toBe(
-        collapseManifestSeverity(entry.severity),
-      );
+      expect({ name: entry.name, severity: topLevelSeverity(nodeRuntimeConfig, entry) }).toEqual({
+        name: entry.name,
+        severity: collapseManifestSeverity(entry.severity),
+      });
     }
   });
 

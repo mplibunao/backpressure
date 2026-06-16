@@ -53,6 +53,6 @@ export const assertTsconfigPackageJsonAllowlist = (): void => {
   assertExactStringMap(packageJson['exports'], expectedPackageExports, 'tsconfig package exports');
 };
 
-export const assertTsconfigPackedArtifact = (packedFiles: ReadonlyArray<string>): void => {
+export const assertTsconfigPackedArtifact = (packedFiles: readonly string[]): void => {
   assertExactPackedFiles(packedFiles, expectedPackedTarballFiles, 'tsconfig packed files');
 };

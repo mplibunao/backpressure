@@ -38,9 +38,9 @@ const jsPluginKey = (entry: ExternalPluginEntry): string => {
 };
 
 const addUnique = <Item>(
-  target: Array<Item>,
+  target: Item[],
   seen: Set<Item>,
-  values: ReadonlyArray<Item> | undefined,
+  values: readonly Item[] | undefined,
 ): void => {
   if (typeof values === 'undefined') {
     return;
@@ -56,9 +56,9 @@ const addUnique = <Item>(
 };
 
 const addUniqueByKey = <Item>(
-  target: Array<Item>,
+  target: Item[],
   seen: Set<string>,
-  values: ReadonlyArray<Item> | undefined | null,
+  values: readonly Item[] | undefined | null,
   keyFor: (value: Item) => string,
 ): void => {
   if (typeof values === 'undefined' || values === null) {
@@ -75,65 +75,73 @@ const addUniqueByKey = <Item>(
   }
 };
 
-export const composeLintConfigs = (...configs: Array<OxlintConfig>): OxlintConfig => {
-  const categories: NonNullable<OxlintConfig['categories']> = {};
-  const env: NonNullable<OxlintConfig['env']> = {};
-  const globals: NonNullable<OxlintConfig['globals']> = {};
-  const ignorePatterns: NonNullable<OxlintConfig['ignorePatterns']> = [];
-  const ignorePatternKeys = new Set<string>();
-  const jsPlugins: NonNullable<OxlintConfig['jsPlugins']> = [];
-  const jsPluginKeys = new Set<string>();
-  const options: NonNullable<OxlintConfig['options']> = {};
-  const overrides: NonNullable<OxlintConfig['overrides']> = [];
-  const plugins: NonNullable<OxlintConfig['plugins']> = [];
-  const pluginKeys = new Set<NonNullable<OxlintConfig['plugins']>[number]>();
-  const rules: NonNullable<OxlintConfig['rules']> = {};
-  const settings: NonNullable<OxlintConfig['settings']> = {};
+// Mutable accumulators for a single composition pass.
+interface CompositionAccumulators {
+  categories: NonNullable<OxlintConfig['categories']>;
+  env: NonNullable<OxlintConfig['env']>;
+  globals: NonNullable<OxlintConfig['globals']>;
+  ignorePatterns: NonNullable<OxlintConfig['ignorePatterns']>;
+  ignorePatternKeys: Set<string>;
+  jsPlugins: NonNullable<OxlintConfig['jsPlugins']>;
+  jsPluginKeys: Set<string>;
+  options: NonNullable<OxlintConfig['options']>;
+  overrides: NonNullable<OxlintConfig['overrides']>;
+  plugins: NonNullable<OxlintConfig['plugins']>;
+  pluginKeys: Set<NonNullable<OxlintConfig['plugins']>[number]>;
+  rules: NonNullable<OxlintConfig['rules']>;
+  settings: NonNullable<OxlintConfig['settings']>;
+}
 
+const createCompositionAccumulators = (): CompositionAccumulators => ({
+  categories: {},
+  env: {},
+  globals: {},
+  ignorePatterns: [],
+  ignorePatternKeys: new Set<string>(),
+  jsPlugins: [],
+  jsPluginKeys: new Set<string>(),
+  options: {},
+  overrides: [],
+  plugins: [],
+  pluginKeys: new Set(),
+  rules: {},
+  settings: {},
+});
+
+const mergeConfigIntoAccumulators = (acc: CompositionAccumulators, config: OxlintConfig): void => {
+  Object.assign(acc.categories, config.categories);
+  Object.assign(acc.env, config.env);
+  Object.assign(acc.globals, config.globals);
+  addUnique(acc.ignorePatterns, acc.ignorePatternKeys, config.ignorePatterns);
+  addUniqueByKey(acc.jsPlugins, acc.jsPluginKeys, config.jsPlugins, jsPluginKey);
+  Object.assign(acc.options, config.options);
+  acc.overrides.push(...(config.overrides ?? []));
+  addUnique(acc.plugins, acc.pluginKeys, config.plugins);
+  Object.assign(acc.rules, config.rules);
+  Object.assign(acc.settings, config.settings);
+};
+
+// Each helper returns only the fields that have content; spreading both gives the complete result.
+const buildRecordFields = (acc: CompositionAccumulators): OxlintConfig => ({
+  ...(isNonEmptyRecord(acc.categories) ? { categories: acc.categories } : {}),
+  ...(isNonEmptyRecord(acc.env) ? { env: acc.env } : {}),
+  ...(isNonEmptyRecord(acc.globals) ? { globals: acc.globals } : {}),
+  ...(isNonEmptyRecord(acc.options) ? { options: acc.options } : {}),
+  ...(isNonEmptyRecord(acc.rules) ? { rules: acc.rules } : {}),
+  ...(isNonEmptyRecord(acc.settings) ? { settings: acc.settings } : {}),
+});
+
+const buildArrayFields = (acc: CompositionAccumulators): OxlintConfig => ({
+  ...(acc.ignorePatterns.length > 0 ? { ignorePatterns: acc.ignorePatterns } : {}),
+  ...(acc.jsPlugins.length > 0 ? { jsPlugins: acc.jsPlugins } : {}),
+  ...(acc.overrides.length > 0 ? { overrides: acc.overrides } : {}),
+  ...(acc.plugins.length > 0 ? { plugins: acc.plugins } : {}),
+});
+
+export const composeLintConfigs = (...configs: OxlintConfig[]): OxlintConfig => {
+  const acc = createCompositionAccumulators();
   for (const config of configs) {
-    Object.assign(categories, config.categories);
-    Object.assign(env, config.env);
-    Object.assign(globals, config.globals);
-    addUnique(ignorePatterns, ignorePatternKeys, config.ignorePatterns);
-    addUniqueByKey(jsPlugins, jsPluginKeys, config.jsPlugins, jsPluginKey);
-    Object.assign(options, config.options);
-    overrides.push(...(config.overrides ?? []));
-    addUnique(plugins, pluginKeys, config.plugins);
-    Object.assign(rules, config.rules);
-    Object.assign(settings, config.settings);
+    mergeConfigIntoAccumulators(acc, config);
   }
-
-  const result: OxlintConfig = {};
-  if (isNonEmptyRecord(categories)) {
-    result.categories = categories;
-  }
-  if (isNonEmptyRecord(env)) {
-    result.env = env;
-  }
-  if (isNonEmptyRecord(globals)) {
-    result.globals = globals;
-  }
-  if (ignorePatterns.length > 0) {
-    result.ignorePatterns = ignorePatterns;
-  }
-  if (jsPlugins.length > 0) {
-    result.jsPlugins = jsPlugins;
-  }
-  if (isNonEmptyRecord(options)) {
-    result.options = options;
-  }
-  if (overrides.length > 0) {
-    result.overrides = overrides;
-  }
-  if (plugins.length > 0) {
-    result.plugins = plugins;
-  }
-  if (isNonEmptyRecord(rules)) {
-    result.rules = rules;
-  }
-  if (isNonEmptyRecord(settings)) {
-    result.settings = settings;
-  }
-
-  return result;
+  return { ...buildRecordFields(acc), ...buildArrayFields(acc) };
 };

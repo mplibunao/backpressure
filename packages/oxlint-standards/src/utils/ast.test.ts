@@ -1,5 +1,3 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -234,7 +232,7 @@ describe('walkDescendants()', () => {
   it('visits direct NodeLike children in array properties', () => {
     const child = mkNode('Identifier');
     const root = mkNode('Program', { body: [child] });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).toContain(child);
   });
@@ -242,7 +240,7 @@ describe('walkDescendants()', () => {
   it('skips non-NodeLike items in arrays', () => {
     const nodeChild = mkNode('Identifier');
     const root = mkNode('Program', { body: ['skip-me', nodeChild] });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).toStrictEqual([nodeChild]);
   });
@@ -251,14 +249,14 @@ describe('walkDescendants()', () => {
     const grandchild = mkNode('Identifier');
     const child = mkNode('ExpressionStatement', { expression: grandchild });
     const root = mkNode('Program', { body: [child] });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).toContain(child);
     expect(visited).toContain(grandchild);
   });
 
   it('returns immediately for a non-NodeLike input', () => {
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(null, (node) => visited.push(node));
     expect(visited).toHaveLength(0);
   });
@@ -266,7 +264,7 @@ describe('walkDescendants()', () => {
   it('skips the loc key', () => {
     const locChild = mkNode('Identifier');
     const root = mkNode('Program', { loc: locChild });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).not.toContain(locChild);
     expect(visited).toHaveLength(0);
@@ -275,7 +273,7 @@ describe('walkDescendants()', () => {
   it('skips the parent key — parent back-links are not traversed', () => {
     const parentNode = mkNode('Program');
     const child = mkNode('ExpressionStatement', { parent: parentNode });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(child, (node) => visited.push(node));
     expect(visited).not.toContain(parentNode);
   });

@@ -76,51 +76,56 @@ export const importSpecifierName = (specifier: ESTree.ImportSpecifier): string |
   return getStringLiteralValue(imported);
 };
 
+// Processes one import specifier and adds the matching local name to the set.
+// For namespace imports from the 'effect' barrel, only the alias that matches importedName
+// is accepted, keeping Option/Match/etc. aliases out of Effect name sets.
+const collectSpecifierName = (
+  names: Set<string>,
+  specifier: ESTree.ImportDeclaration['specifiers'][number],
+  source: string,
+  importedName: string | null,
+): void => {
+  if (specifier.type === 'ImportNamespaceSpecifier' && isIdentifierName(specifier.local)) {
+    const isEffectBarrel = source === 'effect';
+    if (!isEffectBarrel || importedName === null || specifier.local.name === importedName) {
+      names.add(specifier.local.name);
+    }
+  }
+  if (
+    specifier.type === 'ImportSpecifier' &&
+    specifier.importKind !== 'type' &&
+    importedName !== null &&
+    isIdentifierName(specifier.local) &&
+    importSpecifierName(specifier) === importedName
+  ) {
+    names.add(specifier.local.name);
+  }
+};
+
 export const collectImportNames = (
   program: ESTree.Program,
-  moduleSpecifiers: ReadonlyArray<string>,
+  moduleSpecifiers: readonly string[],
   importedName: string | null = null,
 ): Set<string> => {
   const names = new Set<string>();
-
   for (const statement of program.body) {
     if (statement.type !== 'ImportDeclaration' || statement.importKind === 'type') {
       continue;
     }
-
     const source = getImportSource(statement);
     if (source === null || !moduleSpecifiers.includes(source)) {
       continue;
     }
-
     for (const specifier of statement.specifiers) {
-      if (specifier.type === 'ImportNamespaceSpecifier' && isIdentifierName(specifier.local)) {
-        // For the 'effect' barrel, a namespace import only belongs to the requested module
-        // When its alias matches that module name; this keeps Option aliases out of Effect sets.
-        const isEffectBarrel = source === 'effect';
-        if (!isEffectBarrel || importedName === null || specifier.local.name === importedName) {
-          names.add(specifier.local.name);
-        }
-      }
-
-      if (
-        specifier.type === 'ImportSpecifier' &&
-        specifier.importKind !== 'type' &&
-        importedName !== null &&
-        isIdentifierName(specifier.local) &&
-        importSpecifierName(specifier) === importedName
-      ) {
-        names.add(specifier.local.name);
-      }
+      collectSpecifierName(names, specifier, source, importedName);
     }
   }
-
   return names;
 };
 
 export const collectNamespaceImports = (
   program: ESTree.Program,
-  moduleSpecifiers: ReadonlyArray<string>,
+  moduleSpecifiers: readonly string[],
   barrelFilterName: string | null = null,
 ): Set<string> => {
   const namespaceNames = new Set<string>();
@@ -151,7 +156,7 @@ export const collectEffectNamespaceImports = (program: ESTree.Program): Set<stri
 
 export const hasImportFrom = (
   program: ESTree.Program,
-  moduleSpecifiers: ReadonlyArray<string>,
+  moduleSpecifiers: readonly string[],
 ): boolean =>
   program.body.some((statement) => {
     if (statement.type !== 'ImportDeclaration') {

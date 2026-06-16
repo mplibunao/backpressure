@@ -12,7 +12,7 @@ import {
 import { fail, isObjectRecord, printLine, repoRoot } from '../lib/script-runtime.ts';
 
 // Function type alias for the composed-config factory exported from the built package.
-type ComposeConfigsFn = (...configs: ReadonlyArray<object>) => object;
+type ComposeConfigsFn = (...configs: readonly object[]) => object;
 
 interface GeneratorPackage {
   readonly baseConfig: object;
@@ -40,6 +40,7 @@ const loadGeneratorPackage = (namespace: unknown): GeneratorPackage =>
 
 buildOxlintStandards();
 
+// oxlint-disable-next-line @mplibunao/oxlint-standards/prevent-dynamic-imports -- loads freshly-built dist at runtime; no static import exists until the build step runs
 const packageNamespace: unknown = await import(pathToFileURL(distPluginPath).href);
 const pkg = loadGeneratorPackage(packageNamespace);
 

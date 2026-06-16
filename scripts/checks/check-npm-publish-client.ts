@@ -4,7 +4,7 @@ import { ensureSuccess, fail, printLine, runCommand } from '../lib/script-runtim
 const minimumNpmVersionText = '11.5.1';
 const semverCorePartCount = 'major.minor.patch'.split('.').length;
 
-const parseVersion = (value: string): ReadonlyArray<number> => {
+const parseVersion = (value: string): readonly number[] => {
   const version = value.trim().split('.').map(Number);
 
   if (version.length !== semverCorePartCount || version.some(Number.isNaN)) {
@@ -16,7 +16,7 @@ const parseVersion = (value: string): ReadonlyArray<number> => {
 
 const minimumNpmVersion = parseVersion(minimumNpmVersionText);
 
-const isAtLeastMinimum = (actual: ReadonlyArray<number>): boolean => {
+const isAtLeastMinimum = (actual: readonly number[]): boolean => {
   for (const [index, minimumPart] of minimumNpmVersion.entries()) {
     const actualPart = actual[index];
 

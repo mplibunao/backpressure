@@ -11,7 +11,7 @@ import {
 
 interface PackageJson {
   readonly name?: string;
-  readonly files?: ReadonlyArray<string>;
+  readonly files?: readonly string[];
   readonly dependencies?: Record<string, string>;
   readonly devDependencies?: Record<string, string>;
   readonly peerDependencies?: Record<string, string>;
@@ -112,7 +112,7 @@ export const assertOxlintPackageJsonAllowlist = (): void => {
   }
 };
 
-export const assertOxlintPackedArtifact = (files: ReadonlyArray<string>): void => {
+export const assertOxlintPackedArtifact = (files: readonly string[]): void => {
   const unexpectedFiles = files.filter((file) => !isAllowedPackedFile(file));
   if (unexpectedFiles.length > 0) {
     fail(`Unexpected packed file(s): ${unexpectedFiles.join(', ')}.`);

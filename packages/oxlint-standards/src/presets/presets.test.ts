@@ -31,7 +31,7 @@ const ruleTester = new RuleTester({
 const optionInternalTagSource =
   "import * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);";
 
-const enabledRuleNames = (rules: Record<string, unknown>): Array<string> =>
+const enabledRuleNames = (rules: Record<string, unknown>): string[] =>
   Object.entries(rules)
     .filter(([, value]) => value !== 'off')
     .map(([name]) => name);

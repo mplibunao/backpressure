@@ -80,7 +80,7 @@ export const getNodeField = (node: unknown, key: string): unknown => {
   return Object.getOwnPropertyDescriptor(node, key)?.value;
 };
 
-export const getCallExpressionArguments = (node: NodeLike): ReadonlyArray<unknown> => {
+export const getCallExpressionArguments = (node: NodeLike): readonly unknown[] => {
   const maybeArguments = getNodeField(node, 'arguments');
   return Array.isArray(maybeArguments) ? maybeArguments : [];
 };
@@ -102,29 +102,37 @@ export const hasAncestor = (
   return false;
 };
 
+// Handles one field value during AST traversal: visits and recurses into array items or single nodes.
+// Takes `recurse` as a parameter (rather than referencing walkDescendants directly) so that
+// the two helpers stay ordered without triggering no-use-before-define on a shared const binding.
+const walkNodeFieldValue = (
+  value: unknown,
+  visit: (node: NodeLike) => void,
+  recurse: (node: unknown, visit: (node: NodeLike) => void) => void,
+): void => {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (isNodeLike(item)) {
+        visit(item);
+      }
+      recurse(item, visit);
+    }
+    return;
+  }
+  if (isNodeLike(value)) {
+    visit(value);
+    recurse(value, visit);
+  }
+};
+
 export const walkDescendants = (node: unknown, visit: (node: NodeLike) => void): void => {
   if (!isNodeLike(node)) {
     return;
   }
-
   for (const [key, value] of Object.entries(node)) {
     if (ignoredTraversalKeys.has(key)) {
       continue;
     }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (isNodeLike(item)) {
-          visit(item);
-        }
-        walkDescendants(item, visit);
-      }
-      continue;
-    }
-
-    if (isNodeLike(value)) {
-      visit(value);
-      walkDescendants(value, visit);
-    }
+    walkNodeFieldValue(value, visit, walkDescendants);
   }
 };

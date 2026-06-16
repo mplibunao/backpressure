@@ -6,7 +6,7 @@ import {
 } from '../rule-manifest-selection.js';
 
 export type RuleSeverity = 'off' | 'warn' | 'error';
-export type RuleConfig = RuleSeverity | readonly [RuleSeverity, ...ReadonlyArray<unknown>];
+export type RuleConfig = RuleSeverity | readonly [RuleSeverity, ...(readonly unknown[])];
 
 export interface PresetConfig {
   readonly jsPlugins: readonly [typeof pluginName];

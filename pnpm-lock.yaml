@@ -54,6 +54,9 @@ importers:
       '@mplibunao/introspection':
         specifier: file:../introspection
         version: file:../introspection
+      '@mplibunao/oxlint-standards':
+        specifier: workspace:*
+        version: link:packages/oxlint-standards
       '@oxlint/plugins':
         specifier: 'catalog:'
         version: 1.58.0

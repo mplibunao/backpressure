@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 /* oxlint-disable max-lines -- The replay matrix is intentionally data-dense proof material. */
+// oxlint-disable-next-line @mplibunao/oxlint-standards/no-ts-nocheck -- string literal, not a real @ts-nocheck directive
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -22,6 +23,7 @@ import {
 } from '../lib/script-runtime.ts';
 import { buildOxlintStandards, distPluginPath } from '../packages/oxlint-standards/package.ts';
 import {
+  type CommandResult,
   type RuleConfig,
   assertDiagnostic,
   assertDiagnosticCount,
@@ -60,7 +62,7 @@ const typeOnlyEffectFalsePositiveControls = new Map(
 const linteffectFixtureRoot = join(repoRoot, 'test-fixtures', 'linteffect', 'tests', 'fixtures');
 
 interface ReplayCaseOptions {
-  readonly branchIds?: ReadonlyArray<string>;
+  readonly branchIds?: readonly string[];
   readonly expectedDiagnostics?: number;
   readonly expectedLine?: number;
   readonly sourceFileName?: string;
@@ -75,18 +77,18 @@ interface ReplayCase extends ReplayCaseOptions {
 
 interface ReplaySuite {
   readonly diagnostic: { readonly message: string; readonly ruleName: string };
-  readonly invalid: ReadonlyArray<ReplayCase>;
-  readonly requiredBranchIds: ReadonlyArray<string>;
+  readonly invalid: readonly ReplayCase[];
+  readonly requiredBranchIds: readonly string[];
   readonly rules: RuleConfig;
-  readonly valid: ReadonlyArray<ReplayCase>;
+  readonly valid: readonly ReplayCase[];
 }
 
 interface SuiteOptions {
-  readonly invalid: ReadonlyArray<ReplayCase>;
+  readonly invalid: readonly ReplayCase[];
   readonly message?: string;
-  readonly requiredBranchIds?: ReadonlyArray<string>;
+  readonly requiredBranchIds?: readonly string[];
   readonly ruleName: string;
-  readonly valid: ReadonlyArray<ReplayCase>;
+  readonly valid: readonly ReplayCase[];
 }
 
 const sourceFixture = (ruleName: string, fileName: string) =>
@@ -2682,13 +2684,30 @@ export const replaySuites = [
   ),
 ];
 
+// Asserts all expected-failure diagnostics for one invalid fixture case.
+const assertExpectedFailure = (
+  result: CommandResult,
+  replaySuite: ReplaySuite,
+  fixtureCase: ReplayCase,
+): void => {
+  ensureFailure(result, fixtureCase.name);
+  assertDiagnostic(result, { ...replaySuite.diagnostic, label: fixtureCase.name });
+  assertDiagnosticCount(result, {
+    count: fixtureCase.expectedDiagnostics ?? 1,
+    label: fixtureCase.name,
+    ruleName: replaySuite.diagnostic.ruleName,
+  });
+  if (typeof fixtureCase.expectedLine === 'number') {
+    assertDiagnosticLine(result, { label: fixtureCase.name, line: fixtureCase.expectedLine });
+  }
+};
+
 const runReplayCase = (
   replaySuite: ReplaySuite,
   fixtureCase: ReplayCase,
   expectedFailure: boolean,
 ) => {
   const tempDir = createTempDir('backpressure-fixture-replay-');
-
   try {
     fixtureCase.setupTempDir?.(tempDir);
     const result = runOxlintOnSource({
@@ -2700,21 +2719,10 @@ const runReplayCase = (
         ? { sourceFileName: fixtureCase.sourceFileName }
         : {}),
     });
-
     if (expectedFailure) {
-      ensureFailure(result, fixtureCase.name);
-      assertDiagnostic(result, { ...replaySuite.diagnostic, label: fixtureCase.name });
-      assertDiagnosticCount(result, {
-        count: fixtureCase.expectedDiagnostics ?? 1,
-        label: fixtureCase.name,
-        ruleName: replaySuite.diagnostic.ruleName,
-      });
-      if (typeof fixtureCase.expectedLine === 'number') {
-        assertDiagnosticLine(result, { label: fixtureCase.name, line: fixtureCase.expectedLine });
-      }
+      assertExpectedFailure(result, replaySuite, fixtureCase);
       return;
     }
-
     ensureSuccess(result, `${fixtureCase.name}\n${commandOutput(result)}`);
   } finally {
     removeTempDir(tempDir);
@@ -2723,7 +2731,7 @@ const runReplayCase = (
 
 // Converts presetEntriesForDomains entries to the RuleConfig format expected by the fixture runner.
 // Rule names (entry.name) are used directly without plugin prefixes; the runner resolves plugin context.
-const presetRuleConfigForDomains = (domains: ReadonlyArray<RuleDomain>): RuleConfig =>
+const presetRuleConfigForDomains = (domains: readonly RuleDomain[]): RuleConfig =>
   Object.fromEntries(
     presetEntriesForDomains(domains).map((entry) => [
       entry.name,
@@ -2738,57 +2746,43 @@ const effectReactPresetRuleConfig = (): RuleConfig => presetRuleConfigForDomains
 const effectAndEffectReactPresetRuleConfig = (): RuleConfig =>
   presetRuleConfigForDomains(['effect', 'effect-react']);
 
+const assertShallowNestedEffectOwnership = (tempDir: string, rules: RuleConfig): void => {
+  const result = runOxlintOnSource({
+    cwd: tempDir,
+    pluginSpecifier: distPluginPath,
+    rules,
+    source: "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.sync(task), f);\n",
+    sourceFileName: 'shallow.ts',
+  });
+  const label = 'preset duplicate-intent ownership: shallow nested Effect call';
+  ensureFailure(result, label);
+  assertDiagnosticCount(result, { count: 1, label, ruleName: 'no-effect-call-in-effect-arg' });
+  assertDiagnosticCount(result, { count: 0, label, ruleName: 'no-call-tower' });
+  assertDiagnosticCount(result, { count: 0, label, ruleName: 'no-effect-ladder' });
+};
+
+const assertDeepNestedEffectOwnership = (tempDir: string, rules: RuleConfig): void => {
+  const result = runOxlintOnSource({
+    cwd: tempDir,
+    pluginSpecifier: distPluginPath,
+    rules,
+    source:
+      "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.map(Effect.sync(task), f), g);\n",
+    sourceFileName: 'deep.ts',
+  });
+  const label = 'preset duplicate-intent ownership: deep nested Effect call';
+  ensureFailure(result, label);
+  assertDiagnosticCount(result, { count: 1, label, ruleName: 'no-effect-ladder' });
+  assertDiagnosticCount(result, { count: 0, label, ruleName: 'no-effect-call-in-effect-arg' });
+  assertDiagnosticCount(result, { count: 0, label, ruleName: 'no-nested-effect-call' });
+};
+
 const runPresetNestedDuplicateIntentReplay = (): void => {
   const rules = effectPresetRuleConfig();
   const tempDir = createTempDir('backpressure-preset-nested-intent-');
-
   try {
-    const shallowResult = runOxlintOnSource({
-      cwd: tempDir,
-      pluginSpecifier: distPluginPath,
-      rules,
-      source: "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.sync(task), f);\n",
-      sourceFileName: 'shallow.ts',
-    });
-    const shallowLabel = 'preset duplicate-intent ownership: shallow nested Effect call';
-    ensureFailure(shallowResult, shallowLabel);
-    assertDiagnosticCount(shallowResult, {
-      count: 1,
-      label: shallowLabel,
-      ruleName: 'no-effect-call-in-effect-arg',
-    });
-    assertDiagnosticCount(shallowResult, {
-      count: 0,
-      label: shallowLabel,
-      ruleName: 'no-call-tower',
-    });
-    assertDiagnosticCount(shallowResult, {
-      count: 0,
-      label: shallowLabel,
-      ruleName: 'no-effect-ladder',
-    });
-
-    const deepResult = runOxlintOnSource({
-      cwd: tempDir,
-      pluginSpecifier: distPluginPath,
-      rules,
-      source:
-        "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.map(Effect.sync(task), f), g);\n",
-      sourceFileName: 'deep.ts',
-    });
-    const deepLabel = 'preset duplicate-intent ownership: deep nested Effect call';
-    ensureFailure(deepResult, deepLabel);
-    assertDiagnosticCount(deepResult, { count: 1, label: deepLabel, ruleName: 'no-effect-ladder' });
-    assertDiagnosticCount(deepResult, {
-      count: 0,
-      label: deepLabel,
-      ruleName: 'no-effect-call-in-effect-arg',
-    });
-    assertDiagnosticCount(deepResult, {
-      count: 0,
-      label: deepLabel,
-      ruleName: 'no-nested-effect-call',
-    });
+    assertShallowNestedEffectOwnership(tempDir, rules);
+    assertDeepNestedEffectOwnership(tempDir, rules);
   } finally {
     removeTempDir(tempDir);
   }
@@ -2796,7 +2790,7 @@ const runPresetNestedDuplicateIntentReplay = (): void => {
 
 interface PresetOwnershipCase {
   readonly label: string;
-  readonly nonOwners: ReadonlyArray<string>;
+  readonly nonOwners: readonly string[];
   readonly owner: string;
   readonly source: string;
   readonly sourceFileName: string;
@@ -2824,7 +2818,7 @@ const assertPresetOwnership = (
   }
 };
 
-const overlapBaseOwnershipCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapBaseOwnershipCases = (): readonly PresetOwnershipCase[] => [
   {
     label: 'preset duplicate-intent ownership: arrow ladder',
     nonOwners: ['no-iife-wrapper'],
@@ -2888,7 +2882,7 @@ const overlapBaseOwnershipCases = (): ReadonlyArray<PresetOwnershipCase> => [
   },
 ];
 
-const overlapLadderOwnershipCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapLadderOwnershipCases = (): readonly PresetOwnershipCase[] => [
   {
     label: 'preset duplicate-intent ownership: side-effect wrapper alias',
     nonOwners: ['no-effect-side-effect-wrapper', 'no-effect-call-in-effect-arg'],
@@ -2947,7 +2941,7 @@ const overlapLadderOwnershipCases = (): ReadonlyArray<PresetOwnershipCase> => [
   },
 ];
 
-const overlapSideEffectOwnershipCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapSideEffectOwnershipCases = (): readonly PresetOwnershipCase[] => [
   {
     label: 'preset duplicate-intent ownership: Effect.as side-effect wrapper',
     nonOwners: ['no-effect-as'],
@@ -2995,7 +2989,7 @@ const overlapSideEffectOwnershipCases = (): ReadonlyArray<PresetOwnershipCase> =
   },
 ];
 
-const overlapWrapperAliasNestedCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapWrapperAliasNestedCases = (): readonly PresetOwnershipCase[] => [
   // Ownership regression: single-callee rules own deep-arg const forms; no-effect-ladder must not double-report.
   {
     label: 'preset duplicate-intent ownership: Effect.as deep arg const',
@@ -3066,7 +3060,7 @@ const overlapWrapperAliasNestedCases = (): ReadonlyArray<PresetOwnershipCase> =>
   },
 ];
 
-const overlapPipeAliasNestedCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapPipeAliasNestedCases = (): readonly PresetOwnershipCase[] => [
   // Ownership regression: broader inner-rule suppression inside pipe wrapper alias.
   {
     label: 'preset duplicate-intent ownership: pipe-alias Effect.bind source',
@@ -3127,7 +3121,7 @@ const overlapPipeAliasNestedCases = (): ReadonlyArray<PresetOwnershipCase> => [
   },
 ];
 
-const overlapConstFormCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapConstFormCases = (): readonly PresetOwnershipCase[] => [
   // Ownership regression: specific ladder and side-effect-wrapper rules own const forms; no-effect-ladder must not double-report.
   {
     label: 'preset duplicate-intent ownership: const orElse-ladder',
@@ -3173,7 +3167,7 @@ const overlapConstFormCases = (): ReadonlyArray<PresetOwnershipCase> => [
   },
 ];
 
-const overlapGenWrapperCases = (): ReadonlyArray<PresetOwnershipCase> => [
+const overlapGenWrapperCases = (): readonly PresetOwnershipCase[] => [
   // Ownership split: direct Effect.gen wrapper functions are owned by prefer-effect-fn, not no-effect-wrapper-alias.
   {
     label: 'preset duplicate-intent ownership: const arrow Effect.gen wrapper',
@@ -3213,7 +3207,7 @@ const overlapGenWrapperCases = (): ReadonlyArray<PresetOwnershipCase> => [
 const runPresetOverlapDuplicateIntentReplay = (): void => {
   const rules = effectPresetRuleConfig();
   const tempDir = createTempDir('backpressure-preset-overlap-intent-');
-  const cases: ReadonlyArray<PresetOwnershipCase> = [
+  const cases: readonly PresetOwnershipCase[] = [
     ...overlapBaseOwnershipCases(),
     ...overlapLadderOwnershipCases(),
     ...overlapSideEffectOwnershipCases(),
@@ -3292,38 +3286,39 @@ const runPresetDuplicateIntentReplay = (): void => {
   }
 };
 
+// Runs one effect-no-multiple-provide regression case and asserts exactly one diagnostic.
+const assertMultipleProvideCount = (
+  tempDir: string,
+  source: string,
+  sourceFileName: string,
+  label: string,
+): void => {
+  const result = runOxlintOnSource({
+    cwd: tempDir,
+    pluginSpecifier: distPluginPath,
+    rules: { 'effect-no-multiple-provide': 'error' },
+    source,
+    sourceFileName,
+  });
+  ensureFailure(result, label);
+  assertDiagnosticCount(result, { count: 1, label, ruleName: 'effect-no-multiple-provide' });
+};
+
 const runMultipleProvideCountReplay = (): void => {
   const tempDir = createTempDir('backpressure-multiple-provide-count-');
-
   try {
-    const result = runOxlintOnSource({
-      cwd: tempDir,
-      pluginSpecifier: distPluginPath,
-      rules: { 'effect-no-multiple-provide': 'error' },
-      source:
-        "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B)).pipe(Effect.provide(C));\n",
-      sourceFileName: 'three-provides-chain.ts',
-    });
-    const label = 'Behavior regression: three provides in inner+outer chain report exactly once';
-    ensureFailure(result, label);
-    assertDiagnosticCount(result, { count: 1, label, ruleName: 'effect-no-multiple-provide' });
-
-    const nestedResult = runOxlintOnSource({
-      cwd: tempDir,
-      pluginSpecifier: distPluginPath,
-      rules: { 'effect-no-multiple-provide': 'error' },
-      source:
-        "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A)), Effect.provide(B));\n",
-      sourceFileName: 'nested-standalone-pipe.ts',
-    });
-    const nestedLabel =
-      'Behavior regression: nested standalone pipe(pipe(...)) reports exactly once';
-    ensureFailure(nestedResult, nestedLabel);
-    assertDiagnosticCount(nestedResult, {
-      count: 1,
-      label: nestedLabel,
-      ruleName: 'effect-no-multiple-provide',
-    });
+    assertMultipleProvideCount(
+      tempDir,
+      "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B)).pipe(Effect.provide(C));\n",
+      'three-provides-chain.ts',
+      'Behavior regression: three provides in inner+outer chain report exactly once',
+    );
+    assertMultipleProvideCount(
+      tempDir,
+      "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A)), Effect.provide(B));\n",
+      'nested-standalone-pipe.ts',
+      'Behavior regression: nested standalone pipe(pipe(...)) reports exactly once',
+    );
   } finally {
     removeTempDir(tempDir);
   }
@@ -3349,29 +3344,35 @@ const runTypeAliasChannelDuplicateIntentReplay = (): void => {
   }
 };
 
-export const runFixtureReplay = (): void => {
-  buildOxlintStandards();
-
-  let replayCaseCount = 0;
+const runAllPresetReplays = (): void => {
   runPresetDuplicateIntentReplay();
   runPresetNestedDuplicateIntentReplay();
   runPresetOverlapDuplicateIntentReplay();
   runComposedPresetDuplicateIntentReplay();
   runMultipleProvideCountReplay();
   runTypeAliasChannelDuplicateIntentReplay();
+};
 
+// Runs all suite cases and returns the total case count.
+const runSuitesCases = (): number => {
+  let count = 0;
   for (const replaySuite of replaySuites) {
     for (const fixtureCase of replaySuite.valid) {
-      replayCaseCount += 1;
+      count += 1;
       runReplayCase(replaySuite, fixtureCase, false);
     }
-
     for (const fixtureCase of replaySuite.invalid) {
-      replayCaseCount += 1;
+      count += 1;
       runReplayCase(replaySuite, fixtureCase, true);
     }
   }
+  return count;
+};
 
+export const runFixtureReplay = (): void => {
+  buildOxlintStandards();
+  runAllPresetReplays();
+  const replayCaseCount = runSuitesCases();
   printLine(`fixture replay passed: ${replaySuites.length} suites, ${replayCaseCount} cases`);
 };
 

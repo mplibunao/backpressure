@@ -11,7 +11,7 @@ const outputPreviewLength = 4_000;
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 
 export interface CommandResult {
-  readonly args: ReadonlyArray<string>;
+  readonly args: readonly string[];
   readonly command: string;
   readonly error: Error | undefined;
   readonly status: number;
@@ -56,7 +56,7 @@ export const assertIncludes = (text: string, expected: string, label: string): v
 
 export const runCommand = (
   command: string,
-  args: ReadonlyArray<string>,
+  args: readonly string[],
   options: SpawnSyncOptions = {},
 ): CommandResult => {
   const result = spawnSync(command, args, {
