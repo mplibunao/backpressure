@@ -58,7 +58,7 @@ describe('vitest config fragment', () => {
       .filter(([key]) => key.startsWith('jest/'))
       .filter(([, value]) => value !== 'off')
       .map(([key]) => key)
-      .sort();
+      .toSorted();
 
     expect(activeJestOverrideRules).toStrictEqual([
       'jest/expect-expect',
@@ -82,7 +82,7 @@ describe('vitest config fragment', () => {
       .filter(([key]) => key.startsWith('vitest/'))
       .filter(([, value]) => value !== 'off')
       .map(([key]) => key)
-      .sort();
+      .toSorted();
 
     expect(activeVitestOverrideRules).toStrictEqual([
       'vitest/hoisted-apis-on-top',

@@ -48,7 +48,7 @@ const findVariable = (scope: Scope | null, name: string): Variable | null => {
   while (currentScope !== null) {
     const variable = currentScope.set.get(name);
 
-    if (typeof variable !== 'undefined') {
+    if (variable !== globalThis.undefined) {
       return variable;
     }
 

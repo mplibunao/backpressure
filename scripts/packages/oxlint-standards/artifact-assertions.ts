@@ -66,13 +66,14 @@ export interface LeakedInternalModuleSpecifier {
 
 const isPackageJson = (value: unknown): value is PackageJson =>
   isObjectRecord(value) &&
-  (typeof value['name'] === 'undefined' || typeof value['name'] === 'string') &&
-  (typeof value['files'] === 'undefined' ||
+  (value['name'] === globalThis.undefined || typeof value['name'] === 'string') &&
+  (value['files'] === globalThis.undefined ||
     (Array.isArray(value['files']) && value['files'].every((item) => typeof item === 'string'))) &&
-  (typeof value['dependencies'] === 'undefined' || isStringRecord(value['dependencies'])) &&
-  (typeof value['devDependencies'] === 'undefined' || isStringRecord(value['devDependencies'])) &&
-  (typeof value['peerDependencies'] === 'undefined' || isStringRecord(value['peerDependencies'])) &&
-  (typeof value['optionalDependencies'] === 'undefined' ||
+  (value['dependencies'] === globalThis.undefined || isStringRecord(value['dependencies'])) &&
+  (value['devDependencies'] === globalThis.undefined || isStringRecord(value['devDependencies'])) &&
+  (value['peerDependencies'] === globalThis.undefined ||
+    isStringRecord(value['peerDependencies'])) &&
+  (value['optionalDependencies'] === globalThis.undefined ||
     isStringRecord(value['optionalDependencies']));
 
 const readPackageJson = (): PackageJson => {
@@ -124,7 +125,7 @@ const importDeclarationSpecifierForNode = (node: ts.Node): ModuleSpecifierForNod
 const exportDeclarationSpecifierForNode = (node: ts.Node): ModuleSpecifierForNode | null => {
   if (
     ts.isExportDeclaration(node) &&
-    typeof node.moduleSpecifier !== 'undefined' &&
+    node.moduleSpecifier !== globalThis.undefined &&
     ts.isStringLiteral(node.moduleSpecifier)
   ) {
     return {
@@ -140,7 +141,7 @@ const exportDeclarationSpecifierForNode = (node: ts.Node): ModuleSpecifierForNod
 const importTypeSpecifierForNode = (node: ts.Node): ModuleSpecifierForNode | null => {
   if (
     ts.isImportTypeNode(node) &&
-    typeof node.argument !== 'undefined' &&
+    node.argument !== globalThis.undefined &&
     ts.isLiteralTypeNode(node.argument) &&
     ts.isStringLiteral(node.argument.literal)
   ) {
@@ -157,7 +158,7 @@ const importTypeSpecifierForNode = (node: ts.Node): ModuleSpecifierForNode | nul
 const dynamicImportSpecifierForNode = (node: ts.Node): ModuleSpecifierForNode | null => {
   if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
     const [specifier] = node.arguments;
-    if (typeof specifier !== 'undefined' && ts.isStringLiteral(specifier)) {
+    if (specifier !== globalThis.undefined && ts.isStringLiteral(specifier)) {
       return {
         kind: 'dynamic import',
         node: specifier,
@@ -291,7 +292,7 @@ export const assertOxlintDistArtifact = (): void => {
       throw new Error('plugin meta.name did not equal package name');
     }
 
-    if (typeof entry.default?.rules?.['no-effect-as'] === 'undefined') {
+    if (entry.default?.rules?.['no-effect-as'] === globalThis.undefined) {
       throw new Error('plugin rules did not include no-effect-as');
     }
   `;

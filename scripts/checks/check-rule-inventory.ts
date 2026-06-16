@@ -84,34 +84,29 @@ type DeriveOmittedNonErrorRuleAllowlistFn = (options: {
   readonly baseConfig: RuleConfigFragment;
   readonly nodeRuntimeConfig: RuleConfigFragment;
   readonly pluginRulePrefix: string;
+  readonly unicornConfig: RuleConfigFragment;
   readonly vitestConfig: RuleConfigFragment;
 }) => ReadonlySet<string>;
+
+type ManifestCollectionsForConfiguredFragmentFn = (collection: string) => readonly string[];
 
 interface InventoryPackageEntry {
   readonly configs: Record<string, RuleConfigFragment>;
   readonly manifestEntries: readonly ManifestEntry[];
   readonly deriveOmittedNonErrorRuleAllowlist: DeriveOmittedNonErrorRuleAllowlistFn;
+  readonly manifestCollectionsForConfiguredFragment: ManifestCollectionsForConfiguredFragmentFn;
   readonly pluginName: string;
   readonly rules: Record<string, unknown>;
+  readonly styleAtErrorExceptions: readonly string[];
 }
 
 const read = (path: string) => readFileSync(path, 'utf8');
 const compareText = (left: string, right: string) => left.localeCompare(right);
-const uniqueSorted = (values: Iterable<string>) => [...new Set(values)].sort(compareText);
-const sorted = (values: readonly string[]) => [...values].sort(compareText);
+const uniqueSorted = (values: Iterable<string>) => [...new Set(values)].toSorted(compareText);
+const sorted = (values: readonly string[]) => [...values].toSorted(compareText);
 const sameList = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 const list = (values: readonly string[]) => (values.length === 0 ? 'none' : values.join(', '));
-// Pending severity-policy reconciliation: these are the only style-class rules currently
-// allowed to stay at error because they are mechanical, autofixable exceptions.
-const styleAtErrorExceptions = new Set([
-  '@typescript-eslint/array-type',
-  '@typescript-eslint/dot-notation',
-  '@typescript-eslint/no-inferrable-types',
-  '@typescript-eslint/prefer-function-type',
-  'prefer-template',
-]);
-
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 const isStringArray = (value: unknown): value is readonly string[] =>
@@ -133,7 +128,7 @@ const isManifestEntry = (value: unknown): value is ManifestEntry =>
 const isReplayCase = (value: unknown): value is ReplayCase =>
   isObjectRecord(value) &&
   typeof value['name'] === 'string' &&
-  (typeof value['branchIds'] === 'undefined' || isStringArray(value['branchIds']));
+  (value['branchIds'] === globalThis.undefined || isStringArray(value['branchIds']));
 const isReplaySuite = (value: unknown): value is ReplaySuite =>
   isObjectRecord(value) &&
   isObjectRecord(value['diagnostic']) &&
@@ -149,11 +144,11 @@ const isManifestEntries = (value: unknown): value is readonly ManifestEntry[] =>
   Array.isArray(value) && value.every(isManifestEntry);
 const isRuleConfigOverride = (value: unknown): value is RuleConfigOverride =>
   isObjectRecord(value) &&
-  (typeof value['rules'] === 'undefined' || isObjectRecord(value['rules']));
+  (value['rules'] === globalThis.undefined || isObjectRecord(value['rules']));
 const isRuleConfigFragment = (value: unknown): value is RuleConfigFragment =>
   isObjectRecord(value) &&
-  (typeof value['rules'] === 'undefined' || isObjectRecord(value['rules'])) &&
-  (typeof value['overrides'] === 'undefined' ||
+  (value['rules'] === globalThis.undefined || isObjectRecord(value['rules'])) &&
+  (value['overrides'] === globalThis.undefined ||
     (Array.isArray(value['overrides']) && value['overrides'].every(isRuleConfigOverride)));
 
 // Type alias for the composeLintConfigs factory function exported from the built package.
@@ -164,6 +159,9 @@ const isComposeConfigsFn = (value: unknown): value is ComposeConfigsFn =>
 const isDeriveOmittedNonErrorRuleAllowlistFn = (
   value: unknown,
 ): value is DeriveOmittedNonErrorRuleAllowlistFn => typeof value === 'function';
+const isManifestCollectionsForConfiguredFragmentFn = (
+  value: unknown,
+): value is ManifestCollectionsForConfiguredFragmentFn => typeof value === 'function';
 
 const extractComposeConfigsFn = (namespace: unknown): ComposeConfigsFn => {
   if (isObjectRecord(namespace)) {
@@ -190,22 +188,33 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
     isRuleConfigFragment(moduleNamespace['baseConfig']) &&
     isRuleConfigFragment(moduleNamespace['vitestConfig']) &&
     isRuleConfigFragment(moduleNamespace['nodeRuntimeConfig']) &&
-    isDeriveOmittedNonErrorRuleAllowlistFn(moduleNamespace['deriveOmittedNonErrorRuleAllowlist'])
+    isRuleConfigFragment(moduleNamespace['unicornConfig']) &&
+    isDeriveOmittedNonErrorRuleAllowlistFn(moduleNamespace['deriveOmittedNonErrorRuleAllowlist']) &&
+    isManifestCollectionsForConfiguredFragmentFn(
+      moduleNamespace['manifestCollectionsForConfiguredFragment'],
+    ) &&
+    isStringArray(moduleNamespace['styleAtErrorExceptions'])
   ) {
     return {
       configs: {
         baseConfig: moduleNamespace['baseConfig'],
         nodeRuntimeConfig: moduleNamespace['nodeRuntimeConfig'],
+        unicornConfig: moduleNamespace['unicornConfig'],
         vitestConfig: moduleNamespace['vitestConfig'],
       },
       deriveOmittedNonErrorRuleAllowlist: moduleNamespace['deriveOmittedNonErrorRuleAllowlist'],
       manifestEntries: moduleNamespace['ruleManifest'],
+      manifestCollectionsForConfiguredFragment:
+        moduleNamespace['manifestCollectionsForConfiguredFragment'],
       pluginName: moduleNamespace['pluginName'],
       rules: moduleNamespace['rules'],
+      styleAtErrorExceptions: moduleNamespace['styleAtErrorExceptions'],
     };
   }
 
-  return fail('Built package did not export ruleManifest, configs, helpers, and runtime rules.');
+  return fail(
+    'Built package did not export ruleManifest, configs, policy helpers, runtime rules, and unicornConfig.',
+  );
 };
 
 const configuredSeverity = (setting: unknown): unknown =>
@@ -255,7 +264,7 @@ if (existsSync(fixtureRoot)) {
     const ruleFixtureDir = join(fixtureRoot, ruleName);
     const files = readdirSync(ruleFixtureDir)
       .filter((file) => file.endsWith('.ts'))
-      .sort(compareText);
+      .toSorted(compareText);
     sourceFixtureFiles.set(ruleName, {
       invalid: files.filter((file) => file.startsWith('invalid-')),
       valid: files.filter((file) => file.startsWith('valid-')),
@@ -272,8 +281,15 @@ const [replayModule, packageEntry]: [unknown, unknown] = await Promise.all([
   import(pathToFileURL(distEntryPath).href),
 ]);
 const replaySuites = readReplaySuites(replayModule);
-const { configs, deriveOmittedNonErrorRuleAllowlist, manifestEntries, pluginName, rules } =
-  readPackageEntry(packageEntry);
+const {
+  configs,
+  deriveOmittedNonErrorRuleAllowlist,
+  manifestCollectionsForConfiguredFragment,
+  manifestEntries,
+  pluginName,
+  rules,
+  styleAtErrorExceptions,
+} = readPackageEntry(packageEntry);
 
 // ─── Effective-config staleness gate ────────────────────────────────────────
 // Bracket notation required because configs is Record<string, RuleConfigFragment>.
@@ -384,7 +400,7 @@ for (const replaySuite of replaySuites) {
   const existingSuite = replaySuiteByRule.get(ruleName);
   replaySuiteByRule.set(
     ruleName,
-    typeof existingSuite === 'undefined'
+    existingSuite === globalThis.undefined
       ? replaySuite
       : {
           diagnostic: replaySuite.diagnostic,
@@ -445,7 +461,7 @@ const assertSemanticScenarioReplayCoverage = (
   entry: ManifestEntry,
   replaySuite: ReplaySuite | undefined,
 ): void => {
-  if (entry.parityStatus === semanticScenarioParity && typeof replaySuite !== 'undefined') {
+  if (entry.parityStatus === semanticScenarioParity && replaySuite !== globalThis.undefined) {
     assertSemanticReplayCaseCounts(entry, replaySuite);
     assertEffectImportReplayCoverage(entry, replaySuite);
     assertSemanticBranchMatrixCoverage(entry, replaySuite);
@@ -457,7 +473,7 @@ const assertSourceFixtureReplayCoverage = (
   fixtureSets: SourceFixtureSet,
   replaySuite: ReplaySuite | undefined,
 ): void => {
-  if (typeof replaySuite === 'undefined') {
+  if (replaySuite === globalThis.undefined) {
     fail(`${ruleName} has upstream source fixtures but no replay suite.`);
     return;
   }
@@ -515,6 +531,7 @@ const omittedNonErrorRuleNames = deriveOmittedNonErrorRuleAllowlist({
   baseConfig: baseConfigEntry,
   nodeRuntimeConfig: nodeRuntimeConfigEntry,
   pluginRulePrefix,
+  unicornConfig: configs['unicornConfig'] ?? fail('Built package missing unicornConfig.'),
   vitestConfig: vitestConfigEntry,
 });
 const enabledWithoutImplementation = collectionEntries.filter(
@@ -572,17 +589,21 @@ if (!sameList(styleErrorNames, styleErrorExceptionNames)) {
 }
 
 const styleErrorsWithoutAutofixEvidence = styleErrorEntries.filter(
-  (entry) => !entry.note.includes('autofixable') || !entry.note.includes('vp check --fix'),
+  (entry) =>
+    !entry.note.includes('Autofix evidence:') &&
+    (!entry.note.includes('autofixable') || !entry.note.includes('vp check --fix')),
 );
 if (styleErrorsWithoutAutofixEvidence.length > 0) {
   fail(
-    `Style-class error exceptions must evidence autofixable + vp check --fix: ${list(styleErrorsWithoutAutofixEvidence.map((entry) => entry.name))}.`,
+    `Style-class error exceptions must document autofix evidence: ${list(styleErrorsWithoutAutofixEvidence.map((entry) => entry.name))}.`,
   );
 }
 
 for (const [collection, config] of Object.entries(configs)) {
   const manifestNamesForCollection = new Set(
-    collectionEntriesFor(collection).map((entry) => entry.name),
+    manifestCollectionsForConfiguredFragment(collection).flatMap((manifestCollection) =>
+      collectionEntriesFor(manifestCollection).map((entry) => entry.name),
+    ),
   );
   const configuredRules = explicitConfiguredRules(config, pluginRulePrefix);
   const missingErrorRules = configuredRules

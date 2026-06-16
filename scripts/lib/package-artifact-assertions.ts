@@ -69,5 +69,5 @@ export const assertExactPackedFiles = (
   expected: readonly string[],
   label: string,
 ): void => {
-  assertExactStringArray([...actual].sort(), [...expected].sort(), label);
+  assertExactStringArray([...actual].toSorted(), [...expected].toSorted(), label);
 };

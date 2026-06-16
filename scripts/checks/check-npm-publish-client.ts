@@ -20,7 +20,7 @@ const isAtLeastMinimum = (actual: readonly number[]): boolean => {
   for (const [index, minimumPart] of minimumNpmVersion.entries()) {
     const actualPart = actual[index];
 
-    if (typeof actualPart === 'undefined') {
+    if (actualPart === globalThis.undefined) {
       return false;
     }
 

@@ -42,7 +42,7 @@ const addUnique = <Item>(
   seen: Set<Item>,
   values: readonly Item[] | undefined,
 ): void => {
-  if (typeof values === 'undefined') {
+  if (values === globalThis.undefined) {
     return;
   }
 
@@ -60,7 +60,7 @@ const addUniqueByKey = <Item>(
   values: readonly Item[] | undefined | null,
   keyFor: (value: Item) => string,
 ): void => {
-  if (typeof values === 'undefined' || values === null) {
+  if (values === globalThis.undefined || values === null) {
     return;
   }
 

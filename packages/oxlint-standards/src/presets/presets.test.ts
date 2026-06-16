@@ -18,7 +18,7 @@ RuleTester.it = it;
 // The typeof guard is required because Record<string, Rule> returns Rule | undefined under noUncheckedIndexedAccess.
 const requireCatalogRule = (name: keyof typeof catalogRules) => {
   const rule = catalogRules[name];
-  if (typeof rule === 'undefined') {
+  if (rule === globalThis.undefined) {
     throw new Error(`Catalog rule missing: ${name}`);
   }
   return rule;

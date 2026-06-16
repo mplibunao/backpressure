@@ -79,16 +79,71 @@ describe('drift guards — engine-backed suppression contracts', () => {
     return { configPath, filePath };
   };
 
-  // ─── nodeRuntimeConfig ──────────────────────────────────────────────────────
-  // The static off-list in node-runtime.ts is exhaustive by design.
-  // But a hand-maintained list cannot prove itself at runtime.
-  // This guard materializes the composed config and asks the live oxlint engine
-  // Whether any unicorn rules beyond prefer-node-protocol are active.
-  // If a future oxlint release adds a unicorn rule under an enabled category,
-  // The off-list will miss it and this guard will fail — that is the intended signal.
-  describe('nodeRuntime: only unicorn/prefer-node-protocol fires globally', () => {
-    it('--print-config on baseConfig + nodeRuntimeConfig shows exactly one active unicorn rule', () => {
-      const composed = composeLintConfigs(baseConfig, nodeRuntimeConfig);
+  // ─── unicornConfig + nodeRuntimeConfig ─────────────────────────────────────
+  // unicornConfig owns the stack-neutral general-quality surface. nodeRuntimeConfig owns
+  // only the Node/Bun `node:` protocol rule. These guards prove that split against the
+  // live oxlint engine, including category-swept rules that are not explicit config keys.
+  describe('unicornConfig: DP-2 general-quality surface', () => {
+    const expectedBaseUnicornRules = [
+      ['unicorn/error-message', 'deny'],
+      ['unicorn/new-for-builtins', 'deny'],
+      ['unicorn/no-array-reverse', 'deny'],
+      ['unicorn/no-array-sort', 'deny'],
+      ['unicorn/no-await-in-promise-methods', 'deny'],
+      ['unicorn/no-empty-file', 'deny'],
+      ['unicorn/no-single-promise-in-promise-methods', 'deny'],
+      ['unicorn/no-static-only-class', 'deny'],
+      ['unicorn/no-thenable', 'deny'],
+      ['unicorn/no-typeof-undefined', 'deny'],
+      ['unicorn/no-unnecessary-await', 'deny'],
+      ['unicorn/no-useless-fallback-in-spread', 'deny'],
+      ['unicorn/no-useless-length-check', 'deny'],
+      ['unicorn/no-useless-promise-resolve-reject', 'deny'],
+      ['unicorn/no-useless-spread', 'deny'],
+      ['unicorn/no-useless-switch-case', 'deny'],
+      ['unicorn/no-useless-undefined', 'deny'],
+      ['unicorn/prefer-array-find', 'deny'],
+      ['unicorn/prefer-array-flat-map', 'deny'],
+      ['unicorn/prefer-array-some', 'deny'],
+      ['unicorn/prefer-date-now', 'deny'],
+      ['unicorn/prefer-includes', 'deny'],
+      ['unicorn/prefer-math-min-max', 'deny'],
+      ['unicorn/prefer-math-trunc', 'deny'],
+      ['unicorn/prefer-modern-math-apis', 'deny'],
+      ['unicorn/prefer-native-coercion-functions', 'deny'],
+      ['unicorn/prefer-number-properties', 'deny'],
+      ['unicorn/prefer-optional-catch-binding', 'deny'],
+      ['unicorn/prefer-regexp-test', 'deny'],
+      ['unicorn/prefer-set-has', 'warn'],
+      ['unicorn/prefer-set-size', 'deny'],
+      ['unicorn/prefer-string-slice', 'deny'],
+      ['unicorn/prefer-string-starts-ends-with', 'deny'],
+      ['unicorn/prefer-structured-clone', 'deny'],
+      ['unicorn/throw-new-error', 'deny'],
+    ] as const;
+    const expectedRuntimeOnlyRules = [['unicorn/prefer-node-protocol', 'deny']] as const;
+    const intentionallyInactiveRules = [
+      'unicorn/consistent-function-scoping',
+      'unicorn/custom-error-definition',
+      'unicorn/filename-case',
+      'unicorn/no-instanceof-builtins',
+      'unicorn/no-invalid-fetch-options',
+      'unicorn/no-invalid-remove-event-listener',
+      'unicorn/no-null',
+      'unicorn/number-literal-case',
+      'unicorn/numeric-separators-style',
+      'unicorn/prefer-dom-node-append',
+      'unicorn/prefer-dom-node-dataset',
+      'unicorn/prefer-dom-node-remove',
+      'unicorn/prefer-dom-node-text-content',
+      'unicorn/prefer-logical-operator-over-ternary',
+      'unicorn/prefer-modern-dom-apis',
+      'unicorn/prefer-query-selector',
+      'unicorn/prefer-ternary',
+      'unicorn/switch-case-braces',
+    ] as const;
+
+    const printUnicornRules = (composed: OxlintConfig): Record<string, string> | undefined => {
       const { configPath, filePath } = writeOxlintFixture(
         composed,
         'subject.ts',
@@ -96,13 +151,38 @@ describe('drift guards — engine-backed suppression contracts', () => {
       );
 
       const result = runOxlint(['--config', configPath, '--print-config', filePath]);
-      const effectiveConfig = parsePrintConfig(result.stdout);
-      const activeUnicornRules = activeRulesWithPrefix(effectiveConfig.rules, ['unicorn/']);
+      return parsePrintConfig(result.stdout).rules;
+    };
 
-      expect(activeUnicornRules).toStrictEqual([['unicorn/prefer-node-protocol', 'deny']]);
+    it('--print-config on baseConfig shows exactly the DP-2 stack-neutral unicorn rules', () => {
+      const activeUnicornRules = activeRulesWithPrefix(printUnicornRules(baseConfig), ['unicorn/']);
+
+      expect(activeUnicornRules).toStrictEqual(expectedBaseUnicornRules);
+    });
+
+    it('--print-config on baseConfig + nodeRuntimeConfig adds only prefer-node-protocol', () => {
+      const composed = composeLintConfigs(baseConfig, nodeRuntimeConfig);
+      const activeUnicornRules = activeRulesWithPrefix(printUnicornRules(composed), ['unicorn/']);
+
+      const expectedFullUnicornRules = [
+        ...expectedBaseUnicornRules,
+        ...expectedRuntimeOnlyRules,
+      ].toSorted(([leftRule], [rightRule]) => leftRule.localeCompare(rightRule));
+
+      expect(activeUnicornRules).toStrictEqual(expectedFullUnicornRules);
+    });
+
+    it('keeps held, deferred, browser-family, and idiom-conflict unicorn rules inactive', () => {
+      const rules = printUnicornRules(baseConfig) ?? {};
+
+      for (const ruleName of intentionallyInactiveRules) {
+        expect({ ruleName, severity: rules[ruleName] }).toStrictEqual({
+          ruleName,
+          severity: 'allow',
+        });
+      }
     });
   });
-
   // ─── baseConfig oxc scope ───────────────────────────────────────────────────
   // Enabling the oxc plugin for oxc/no-barrel-file must not silently activate the
   // rest of the oxc namespace through baseConfig's correctness/suspicious/restriction categories.
@@ -213,7 +293,7 @@ describe('drift guards — engine-backed suppression contracts', () => {
       const effectiveConfig = parsePrintConfig(result.stdout);
       const activeHygieneRules = activeRulesWithPrefix(effectiveConfig.rules, ['vitest/', 'jest/'])
         .map(([key]) => key)
-        .sort();
+        .toSorted();
 
       expect(activeHygieneRules).toStrictEqual([
         'jest/expect-expect',

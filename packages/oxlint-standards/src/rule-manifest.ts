@@ -16,7 +16,45 @@ export type RuleCollection =
   | 'boundariesPreset'
   | 'baseConfig'
   | 'vitestConfig'
+  | 'unicornConfig'
   | 'nodeRuntimeConfig';
+// Config fragments can physically compose other fragments. This helper states which
+// manifest collections are allowed to explain one configured fragment's explicit rules.
+export const manifestCollectionsForConfiguredFragment = (
+  collection: RuleCollection,
+): readonly RuleCollection[] =>
+  collection === 'baseConfig' ? ['baseConfig', 'unicornConfig'] : [collection];
+
+// Independent policy allowlist: tests and inventory compare the manifest's style-at-error rows
+// against this hardcoded list, then require each listed row to carry autofix evidence.
+export const styleAtErrorExceptions = [
+  '@typescript-eslint/array-type',
+  '@typescript-eslint/dot-notation',
+  '@typescript-eslint/no-inferrable-types',
+  '@typescript-eslint/prefer-function-type',
+  'prefer-template',
+  'unicorn/error-message',
+  'unicorn/new-for-builtins',
+  'unicorn/no-static-only-class',
+  'unicorn/no-typeof-undefined',
+  'unicorn/no-useless-promise-resolve-reject',
+  'unicorn/no-useless-switch-case',
+  'unicorn/no-useless-undefined',
+  'unicorn/prefer-array-find',
+  'unicorn/prefer-array-flat-map',
+  'unicorn/prefer-array-some',
+  'unicorn/prefer-date-now',
+  'unicorn/prefer-includes',
+  'unicorn/prefer-math-min-max',
+  'unicorn/prefer-math-trunc',
+  'unicorn/prefer-native-coercion-functions',
+  'unicorn/prefer-optional-catch-binding',
+  'unicorn/prefer-regexp-test',
+  'unicorn/prefer-string-slice',
+  'unicorn/prefer-structured-clone',
+  'unicorn/throw-new-error',
+] as const satisfies readonly string[];
+
 export type RuleRationaleClass = 'correctness' | 'safety' | 'agent-failure-mode' | 'style';
 export type RuleManifestSeverity = 'off' | 'info' | 'warning' | 'error';
 export type RuleConfigSeverity = 'off' | 'warn' | 'error';
@@ -83,7 +121,7 @@ const presetCollectionByDomain: Partial<Record<RuleDomain, RuleCollection>> = {
 
 const defaultCollectionsForDomain = (domain: RuleDomain): readonly RuleCollection[] => {
   const presetCollection = presetCollectionByDomain[domain];
-  if (typeof presetCollection === 'undefined') {
+  if (presetCollection === globalThis.undefined) {
     return [];
   }
 
@@ -114,7 +152,7 @@ const inferRationaleClass = (entry: RuleManifestEntryInput): RuleRationaleClass 
 };
 
 const sourceRule = (entry: RuleManifestEntryInput): RuleManifestEntry => {
-  if (entry.collections.length > 0 && typeof entry.rationaleClass === 'undefined') {
+  if (entry.collections.length > 0 && entry.rationaleClass === globalThis.undefined) {
     throw new Error(`Collection-backed rule ${entry.name} requires an explicit rationaleClass.`);
   }
 
@@ -366,6 +404,7 @@ export const nativeRule = ({
 
 const baseConfigCollections = ['baseConfig'] as const;
 const vitestConfigCollections = ['vitestConfig'] as const;
+const unicornConfigCollections = ['unicornConfig'] as const;
 const nodeRuntimeConfigCollections = ['nodeRuntimeConfig'] as const;
 
 const baseRule = (options: Omit<NativeRuleOptions, 'collections' | 'domain'>): RuleManifestEntry =>
@@ -374,6 +413,10 @@ const vitestRule = (
   options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
 ): RuleManifestEntry =>
   nativeRule({ ...options, collections: vitestConfigCollections, domain: 'test' });
+const unicornRule = (
+  options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
+): RuleManifestEntry =>
+  nativeRule({ ...options, collections: unicornConfigCollections, domain: 'base' });
 const nodeRuntimeRule = (
   options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
 ): RuleManifestEntry =>
@@ -387,6 +430,7 @@ interface DeriveOmittedNonErrorRuleAllowlistOptions {
   readonly baseConfig: RuleConfigFragmentLike;
   readonly nodeRuntimeConfig: RuleConfigFragmentLike;
   readonly pluginRulePrefix: string;
+  readonly unicornConfig: RuleConfigFragmentLike;
   readonly vitestConfig: RuleConfigFragmentLike;
 }
 
@@ -425,10 +469,19 @@ const nodeRuntimeBleedGuardRuleNames = (
     .filter((ruleName) => ruleName !== 'unicorn/prefer-node-protocol')
     .map((ruleName) => normalizeConfiguredRuleName(ruleName, pluginRulePrefix));
 
+const unicornBleedGuardRuleNames = (
+  unicornConfig: RuleConfigFragmentLike,
+  pluginRulePrefix: string,
+): readonly string[] =>
+  Object.entries(unicornConfig.rules ?? {})
+    .filter(([, setting]) => configuredRuleSettingSeverity(setting) === 'off')
+    .map(([ruleName]) => normalizeConfiguredRuleName(ruleName, pluginRulePrefix));
+
 export const deriveOmittedNonErrorRuleAllowlist = ({
   baseConfig,
   nodeRuntimeConfig,
   pluginRulePrefix,
+  unicornConfig,
   vitestConfig,
 }: DeriveOmittedNonErrorRuleAllowlistOptions): ReadonlySet<string> =>
   new Set([
@@ -438,9 +491,259 @@ export const deriveOmittedNonErrorRuleAllowlist = ({
     ...oxcBleedGuardRuleNames(baseConfig, pluginRulePrefix),
     ...vitestBleedGuardRuleNames(vitestConfig, pluginRulePrefix),
     ...nodeRuntimeBleedGuardRuleNames(nodeRuntimeConfig, pluginRulePrefix),
+    ...unicornBleedGuardRuleNames(unicornConfig, pluginRulePrefix),
   ]);
 
+const unicornManifestEntries = [
+  unicornRule({
+    name: 'unicorn/no-thenable',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Disallows awaitable-looking objects that are not real promises.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-await-in-promise-methods',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Avoids awaiting inside Promise combinator arrays where the await defeats concurrency.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-single-promise-in-promise-methods',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Catches redundant Promise combinators around one promise.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-unnecessary-await',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Removes awaits that do not change async behavior.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-useless-fallback-in-spread',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Prevents fallback spreads that cannot affect the result.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-useless-length-check',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Catches redundant length checks before array/string operations.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-useless-spread',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Catches spreads that add no value. Autofix safety: oxlint auto-applies only safe removals such as literal spread collapse; behavior-changing clone spreads remain suggestion-only and are not applied by `vp check --fix` (verified).',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-set-size',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Uses Set.size instead of equivalent slower or noisier patterns.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-empty-file',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Flags empty files that usually indicate forgotten implementation or stale exports.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-string-starts-ends-with',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Uses startsWith/endsWith instead of error-prone index checks.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-array-sort',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Suspicious in-place sort guard; autofixable to toSorted(), but --fix remains CI-gated because mutation semantics can matter.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-array-reverse',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Suspicious in-place reverse guard; autofixable to toReversed(), but --fix remains CI-gated because mutation semantics can matter.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-modern-math-apis',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Restricts legacy math idioms in favor of clearer modern Math APIs.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-number-properties',
+    severity: 'error',
+    rationaleClass: 'safety',
+    gating: 'stack-neutral',
+    note: 'Restricts global number helpers in favor of Number properties. Autofix safety: oxlint auto-applies safe replacements such as parseInt to Number.parseInt; behavior-changing isNaN/isFinite replacements remain suggestion-only and are not applied by `vp check --fix` (verified).',
+  }),
+  unicornRule({
+    name: 'unicorn/no-typeof-undefined',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable safe fix or suggestion; `vp check --fix` may apply the safe form.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-useless-switch-case',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: not autofixable yet; `vp check --fix` will not change it, so violations require manual cleanup.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-static-only-class',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: dangerous autofix; `vp check --fix` must stay CI-gated and should not be run unattended for this rule.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-useless-undefined',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can remove redundant undefined values.',
+  }),
+  unicornRule({
+    name: 'unicorn/no-useless-promise-resolve-reject',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can simplify redundant Promise wrappers.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-date-now',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can replace new Date().getTime() idioms.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-regexp-test',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can replace match/search idioms with test().',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-string-slice',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: conditional autofix; `vp check --fix` applies only when oxlint can preserve behavior.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-includes',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: suggestion-level fix; `vp check --fix` may not apply every case automatically.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-array-find',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: not autofixable yet; `vp check --fix` will not change it, so violations require manual cleanup.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-array-some',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can replace boolean find/filter idioms.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-array-flat-map',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can combine map().flat() idioms.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-optional-catch-binding',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can remove unused catch bindings.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-native-coercion-functions',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: not autofixable yet; `vp check --fix` will not change it, so violations require manual cleanup.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-math-min-max',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can replace manual bound helpers.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-math-trunc',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: suggestion-level fix; `vp check --fix` may not apply every case automatically.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-structured-clone',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: suggestion-level fix; `vp check --fix` may not apply every case automatically.',
+  }),
+  unicornRule({
+    name: 'unicorn/new-for-builtins',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: not autofixable yet; `vp check --fix` will not change it, so violations require manual cleanup.',
+  }),
+  unicornRule({
+    name: 'unicorn/throw-new-error',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: autofixable by oxlint; `vp check --fix` can add the explicit new Error construction.',
+  }),
+  unicornRule({
+    name: 'unicorn/error-message',
+    severity: 'error',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Autofix evidence: not autofixable; `vp check --fix` will not invent message text, so violations require manual wording.',
+  }),
+  unicornRule({
+    name: 'unicorn/prefer-set-has',
+    severity: 'warning',
+    rationaleClass: 'style',
+    gating: 'stack-neutral',
+    note: 'Advisory perf hint for hot membership checks; warning severity prevents blanket all-error posture. Autofix safety: oxlint does not auto-apply behavior-changing array-to-Set conversions through `vp check --fix`; those remain suggestion-only (verified).',
+  }),
+] as const;
+
 export const ruleManifest = [
+  ...unicornManifestEntries,
   sourceRule({
     name: 'no-arrow-ladder',
     domain: 'effect',
@@ -2349,13 +2652,15 @@ export const presetEntriesForDomains = (
   domains: readonly RuleDomain[],
   { includeBuiltIn = false }: PresetRulesOptions = {},
 ): readonly RuleManifestEntry[] => {
-  const presetCollections = domains
-    .map(presetCollectionOnlyForDomain)
-    .filter((collection): collection is RuleCollection => typeof collection !== 'undefined');
+  const presetCollections = new Set(
+    domains
+      .map(presetCollectionOnlyForDomain)
+      .filter((collection): collection is RuleCollection => collection !== globalThis.undefined),
+  );
 
   return ruleManifest.filter(
     (entry) =>
-      entry.collections.some((collection) => presetCollections.includes(collection)) &&
+      entry.collections.some((collection) => presetCollections.has(collection)) &&
       (includeBuiltIn || entry.disposition !== 'built-in'),
   );
 };

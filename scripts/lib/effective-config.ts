@@ -32,7 +32,7 @@ const spawnOxlintRules = (oxlintBin: string): string => {
     cwd: repoRoot,
     encoding: 'utf8',
   });
-  if (typeof result.error !== 'undefined') {
+  if (result.error !== globalThis.undefined) {
     throw new Error(`oxlint --rules failed to start: ${result.error.message}`);
   }
   if (result.status !== 0) {
@@ -118,7 +118,7 @@ const spawnOxlintPrintConfig = (
     cwd: repoRoot,
     encoding: 'utf8',
   });
-  if (typeof result.error !== 'undefined') {
+  if (result.error !== globalThis.undefined) {
     throw new Error(`oxlint failed to start: ${result.error.message}`);
   }
   const stderrText = typeof result.stderr === 'string' ? result.stderr : '';
@@ -174,7 +174,7 @@ export interface EffectiveConfigArtifact {
 
 const sortedRecord = (record: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(
-    Object.entries(record).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)),
+    Object.entries(record).toSorted(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)),
   );
 
 // Oxlint --print-config does not activate file-path overrides regardless of the target file path.

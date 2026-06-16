@@ -6,7 +6,9 @@ export {
   lspOwnedChecks,
   linteffectSourceRuleNames,
   deriveOmittedNonErrorRuleAllowlist,
+  manifestCollectionsForConfiguredFragment,
   ruleManifest,
+  styleAtErrorExceptions,
 } from './rule-manifest.js';
 export type {
   RuleCollection,
@@ -25,6 +27,7 @@ export {
   baseConfig,
   composeLintConfigs,
   nodeRuntimeConfig,
+  unicornConfig,
   vitestConfig,
 } from './configs/index.js';
 export {

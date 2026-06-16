@@ -1,14 +1,16 @@
 import type { OxlintConfig } from 'oxlint';
 import { describe, expect, it, vi } from 'vitest';
 
-import { baseConfig, nodeRuntimeConfig, vitestConfig } from './configs/index.js';
+import { baseConfig, nodeRuntimeConfig, unicornConfig, vitestConfig } from './configs/index.js';
 import { pluginRuleName } from './presets/shared.js';
 import {
   collapseManifestSeverity,
   entriesForCollections,
   deriveOmittedNonErrorRuleAllowlist,
+  manifestCollectionsForConfiguredFragment,
   presetEntriesForDomains,
   ruleManifest,
+  styleAtErrorExceptions,
   type RuleCollection,
   type RuleManifestEntry,
 } from './rule-manifest.js';
@@ -29,24 +31,16 @@ const allCollections = [
   'boundariesPreset',
   'baseConfig',
   'vitestConfig',
+  'unicornConfig',
   'nodeRuntimeConfig',
 ] as const satisfies readonly RuleCollection[];
 const configCollectionPairs = [
   { collection: 'baseConfig', config: baseConfig },
   { collection: 'vitestConfig', config: vitestConfig },
+  { collection: 'unicornConfig', config: unicornConfig },
   { collection: 'nodeRuntimeConfig', config: nodeRuntimeConfig },
 ] as const satisfies readonly ConfigCollectionPair[];
 const missingRuleSeverity = Symbol('missing rule severity');
-// Pending severity-policy reconciliation: these are the only style-class rules currently
-// allowed to stay at error because they are mechanical, autofixable exceptions.
-const styleAtErrorExceptions = new Set([
-  '@typescript-eslint/array-type',
-  '@typescript-eslint/dot-notation',
-  '@typescript-eslint/no-inferrable-types',
-  '@typescript-eslint/prefer-function-type',
-  'prefer-template',
-]);
-
 const configuredSeverity = (setting: RuleSetting | undefined): unknown =>
   Array.isArray(setting) ? setting[0] : setting;
 
@@ -68,7 +62,7 @@ const overrideSeverity = (config: OxlintConfig, entry: RuleManifestEntry): unkno
 
   for (const override of config.overrides ?? []) {
     const severity = configuredSeverity(override.rules?.[key]);
-    if (typeof severity !== 'undefined') {
+    if (severity !== globalThis.undefined) {
       return severity;
     }
   }
@@ -101,6 +95,7 @@ const derivedOmittedNonErrorRuleAllowlist = (): ReadonlySet<string> =>
     baseConfig,
     nodeRuntimeConfig,
     pluginRulePrefix: pluginRuleName(''),
+    unicornConfig,
     vitestConfig,
   });
 
@@ -151,13 +146,15 @@ describe('rule manifest schema', () => {
       (entry) => entry.rationaleClass === 'style' && entry.severity === 'error',
     );
 
-    expect(styleErrorEntries.map((entry) => entry.name).sort()).toStrictEqual(
-      [...styleAtErrorExceptions].sort(),
+    expect(styleErrorEntries.map((entry) => entry.name).toSorted()).toStrictEqual(
+      styleAtErrorExceptions.toSorted(),
     );
     expect(
       styleErrorEntries
         .filter(
-          (entry) => !entry.note.includes('autofixable') || !entry.note.includes('vp check --fix'),
+          (entry) =>
+            !entry.note.includes('Autofix evidence:') &&
+            (!entry.note.includes('autofixable') || !entry.note.includes('vp check --fix')),
         )
         .map((entry) => entry.name),
     ).toStrictEqual([]);
@@ -166,10 +163,10 @@ describe('rule manifest schema', () => {
   it('keeps generalPreset membership stable while adding baseConfig membership to the same rules', () => {
     const generalPresetEntries = entriesForCollection('generalPreset');
 
-    expect(generalPresetEntries.map((entry) => entry.name).sort()).toStrictEqual(
+    expect(generalPresetEntries.map((entry) => entry.name).toSorted()).toStrictEqual(
       presetEntriesForDomains(['general'], { includeBuiltIn: true })
         .map((entry) => entry.name)
-        .sort(),
+        .toSorted(),
     );
     expect(
       generalPresetEntries.filter((entry) => entry.collections.includes('baseConfig')),
@@ -190,7 +187,7 @@ describe('rule manifest schema', () => {
   it('round-trips vitestConfig collection membership through the test override', () => {
     const vitestEntries = entriesForCollection('vitestConfig');
 
-    expect(vitestEntries.map((entry) => entry.name).sort()).toStrictEqual([
+    expect(vitestEntries.map((entry) => entry.name).toSorted()).toStrictEqual([
       // Jest-namespace rules exposed by oxlint's vitest plugin (vitest implements the jest API).
       'jest/expect-expect',
       'jest/no-commented-out-tests',
@@ -217,6 +214,48 @@ describe('rule manifest schema', () => {
     }
   });
 
+  it('records the DP-2 unicorn manifest surface exactly once', () => {
+    const unicornEntries = entriesForCollection('unicornConfig');
+
+    expect(unicornEntries.map((entry) => entry.name).toSorted()).toStrictEqual([
+      'unicorn/error-message',
+      'unicorn/new-for-builtins',
+      'unicorn/no-array-reverse',
+      'unicorn/no-array-sort',
+      'unicorn/no-await-in-promise-methods',
+      'unicorn/no-empty-file',
+      'unicorn/no-single-promise-in-promise-methods',
+      'unicorn/no-static-only-class',
+      'unicorn/no-thenable',
+      'unicorn/no-typeof-undefined',
+      'unicorn/no-unnecessary-await',
+      'unicorn/no-useless-fallback-in-spread',
+      'unicorn/no-useless-length-check',
+      'unicorn/no-useless-promise-resolve-reject',
+      'unicorn/no-useless-spread',
+      'unicorn/no-useless-switch-case',
+      'unicorn/no-useless-undefined',
+      'unicorn/prefer-array-find',
+      'unicorn/prefer-array-flat-map',
+      'unicorn/prefer-array-some',
+      'unicorn/prefer-date-now',
+      'unicorn/prefer-includes',
+      'unicorn/prefer-math-min-max',
+      'unicorn/prefer-math-trunc',
+      'unicorn/prefer-modern-math-apis',
+      'unicorn/prefer-native-coercion-functions',
+      'unicorn/prefer-number-properties',
+      'unicorn/prefer-optional-catch-binding',
+      'unicorn/prefer-regexp-test',
+      'unicorn/prefer-set-has',
+      'unicorn/prefer-set-size',
+      'unicorn/prefer-string-slice',
+      'unicorn/prefer-string-starts-ends-with',
+      'unicorn/prefer-structured-clone',
+      'unicorn/throw-new-error',
+    ]);
+  });
+
   it('round-trips nodeRuntimeConfig membership without manifesting silenced unicorn bleed guards', () => {
     const nodeRuntimeEntries = entriesForCollection('nodeRuntimeConfig');
 
@@ -234,7 +273,11 @@ describe('rule manifest schema', () => {
 
   it('requires every explicit config error to have a manifest row in that collection', () => {
     for (const { collection, config } of configCollectionPairs) {
-      const manifestNames = new Set(entriesForCollection(collection).map((entry) => entry.name));
+      const manifestNames = new Set(
+        entriesForCollections(manifestCollectionsForConfiguredFragment(collection)).map(
+          (entry) => entry.name,
+        ),
+      );
       const configuredErrorNames = explicitConfiguredRules(config)
         .filter(([, severity]) => severity === 'error')
         .map(([ruleName]) => ruleName);
@@ -256,9 +299,9 @@ describe('rule manifest schema', () => {
       )
       .map(([ruleName]) => normalizeConfigRuleName(ruleName));
 
-    expect([...allowlist].filter((ruleName) => ruleName.startsWith('oxc/')).sort()).toStrictEqual(
-      silencedOxcRules.sort(),
-    );
+    expect(
+      [...allowlist].filter((ruleName) => ruleName.startsWith('oxc/')).toSorted(),
+    ).toStrictEqual(silencedOxcRules.toSorted());
     expect(allowlist.has('oxc/no-barrel-file')).toBe(false);
   });
 
@@ -266,7 +309,11 @@ describe('rule manifest schema', () => {
     const allowlist = derivedOmittedNonErrorRuleAllowlist();
 
     for (const { collection, config } of configCollectionPairs) {
-      const manifestNames = new Set(entriesForCollection(collection).map((entry) => entry.name));
+      const manifestNames = new Set(
+        entriesForCollections(manifestCollectionsForConfiguredFragment(collection)).map(
+          (entry) => entry.name,
+        ),
+      );
       const missingNonErrorNames = explicitConfiguredRules(config)
         .filter(([, severity]) => severity !== 'error')
         .map(([ruleName]) => ruleName)

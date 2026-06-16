@@ -1,6 +1,8 @@
 import type { OxlintConfig } from 'oxlint';
 import { describe, expect, it, vi } from 'vitest';
 
+import { baseConfig } from './base.js';
+import { composeLintConfigs } from './compose.js';
 import { nodeRuntimeConfig } from './node-runtime.js';
 
 vi.setConfig({ testTimeout: 1000 });
@@ -10,25 +12,22 @@ const config = nodeRuntimeConfig as OxlintConfig;
 const rules = config.rules ?? {};
 
 describe('nodeRuntime config fragment', () => {
-  it('declares the unicorn plugin', () => {
-    expect(config.plugins).toContain('unicorn');
+  it('declares the unicorn plugin so the fragment resolves standalone', () => {
+    expect(config.plugins).toStrictEqual(['unicorn']);
   });
 
   it('enforces the node: protocol prefix', () => {
     expect(rules['unicorn/prefer-node-protocol']).toBe('error');
   });
 
-  it('silences all other unicorn rules to prevent category bleed', () => {
-    // Every unicorn rule except prefer-node-protocol must be explicitly off.
-    // Category-activation bleed (e.g. restriction/correctness: 'error' from baseConfig)
-    // Would otherwise enable opinionated or browser-specific unicorn rules.
-    const otherUnicornRules = Object.entries(rules).filter(
-      ([key]) => key.startsWith('unicorn/') && key !== 'unicorn/prefer-node-protocol',
-    );
-    const activeOtherRules = otherUnicornRules.filter(([, value]) => value !== 'off');
+  it('wins after baseConfig in the intended composition order', () => {
+    const composed = composeLintConfigs(baseConfig, nodeRuntimeConfig);
 
-    expect(activeOtherRules).toStrictEqual([]);
-    expect(otherUnicornRules.length).toBeGreaterThan(0);
+    expect(composed.rules?.['unicorn/prefer-node-protocol']).toBe('error');
+  });
+
+  it('contains no unicorn silence wall entries', () => {
+    expect(Object.keys(rules)).toStrictEqual(['unicorn/prefer-node-protocol']);
   });
 
   it('applies globally with no overrides (runtime hygiene is not test-scoped)', () => {

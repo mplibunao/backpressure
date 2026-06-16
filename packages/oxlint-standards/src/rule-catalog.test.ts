@@ -40,7 +40,7 @@ const run = (
 ): void => {
   const rule = catalogRules[name];
   // Name is constrained to keyof catalogRules, so this guard is a type-narrowing invariant — never fires at runtime.
-  if (typeof rule === 'undefined') {
+  if (rule === globalThis.undefined) {
     throw new Error(`Catalog rule missing: ${name}`);
   }
   ruleTester.run(name, rule, {

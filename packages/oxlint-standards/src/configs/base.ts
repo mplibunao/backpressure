@@ -1,10 +1,14 @@
 import type { OxlintConfig } from 'oxlint';
 
 import { generalPreset } from '#oxlint-standards/presets/index.js';
+import { composeLintConfigs } from './compose.js';
+import { unicornConfig } from './unicorn.js';
+
+type ConfigWithRules = OxlintConfig & { readonly rules: NonNullable<OxlintConfig['rules']> };
 
 const maxStatementsPerFunction = 10;
 
-export const baseConfig = {
+const baseCoreConfig = {
   categories: {
     correctness: 'error',
     nursery: 'off',
@@ -170,3 +174,5 @@ export const baseConfig = {
     },
   ],
 } satisfies OxlintConfig;
+
+export const baseConfig = composeLintConfigs(baseCoreConfig, unicornConfig) as ConfigWithRules;

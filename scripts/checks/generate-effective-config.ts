@@ -18,6 +18,7 @@ interface GeneratorPackage {
   readonly baseConfig: object;
   readonly composeLintConfigs: ComposeConfigsFn;
   readonly nodeRuntimeConfig: object;
+  readonly unicornConfig: object;
   readonly vitestConfig: object;
 }
 
@@ -29,13 +30,14 @@ const isGeneratorPackage = (namespace: unknown): namespace is GeneratorPackage =
   isObjectRecord(namespace['baseConfig']) &&
   isObjectRecord(namespace['vitestConfig']) &&
   isObjectRecord(namespace['nodeRuntimeConfig']) &&
+  isObjectRecord(namespace['unicornConfig']) &&
   isComposeConfigsFn(namespace['composeLintConfigs']);
 
 const loadGeneratorPackage = (namespace: unknown): GeneratorPackage =>
   isGeneratorPackage(namespace)
     ? namespace
     : fail(
-        'Built package missing expected exports: baseConfig, vitestConfig, nodeRuntimeConfig, composeLintConfigs.',
+        'Built package missing expected exports: baseConfig, unicornConfig, vitestConfig, nodeRuntimeConfig, composeLintConfigs.',
       );
 
 buildOxlintStandards();
