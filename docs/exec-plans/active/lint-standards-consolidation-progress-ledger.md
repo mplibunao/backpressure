@@ -77,7 +77,7 @@ Commit SHAs are in the backpressure repo unless a prefix marks another repo
 | WI-5 | Extend `rule-manifest.ts` (collections + rationale class + severity collapse) | L | DONE | `45d3845` |
 | WI-6 | Effective-config generation + inventory gate | L | DONE | `fbfa23a` |
 | WI-7 | README + `rules.md` consumption model | M | DONE | `2753fc8` |
-| WI-8 | Dogfood in backpressure root (delete local block, decompose `max-statements`) | L | PENDING | |
+| WI-8 | Dogfood in backpressure root (delete local block, decompose `max-statements`) | L | DONE | `b7fc423` |
 | WI-9 | Packed-consumer smoke covers new exports | M | PENDING | |
 | WI-10 | Changesets for both packages | S | PENDING | |
 | WI-11 | Branch-stack release runway | S | DOCUMENTED (gate) | |
@@ -486,3 +486,79 @@ Entries are appended here as each item passes its gates and commits.
   copy (the warn-tier language), not only ADR-004 and TD-CARD-033.
 - **Action items for MP:** none new. The WI-17 style-at-error decision (from WI-5) now also covers
   updating or removing the README warn-tier copy when the posture is ratified.
+
+### WI-8: Dogfood in backpressure root (DONE)
+
+- **Build:** one `engineer` agent (Claude Code, sonnet:high) across two dispatches. It rewired the
+  root `vite.config.ts` to `composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig, {
+  ignorePatterns })`, deleted the duplicated local lint block, added `@mplibunao/oxlint-standards`
+  as a `workspace:*` root devDependency, ran the `array-simple` autofix (127 sites), decomposed 22
+  functions over the `max-statements` ceiling into cohesive helpers, and handled the residual
+  violations.
+- **Orchestrator scoping (before dispatch):** the orchestrator measured the blast radius by
+  temporarily applying the composed config, running `vp lint`, then reverting. This surfaced the
+  deltas from the live root config plus two issues the plan did not anticipate. The first
+  measurement grep under-counted because it filtered to known rule namespaces and missed the
+  custom-plugin violations; the agent caught that gap on its own diligence pass and stopped to
+  report rather than suppressing.
+- **Decision 1 (`no-undef`, orchestrator defect-fix):** baseConfig (WI-3) had added
+  `no-undef: error`, which the live root config never enforced (oxlint keeps it off by default for
+  TS). It produced 26 false positives on `process`. Set to off in baseConfig: the TypeScript
+  compiler reports undefined identifiers (TS2304) in the same check pipeline, and typescript-eslint
+  recommends keeping it off for TS. This restores live-config parity.
+- **Decision 2 (`sort-imports`, MP decision):** the plan chose `sort-imports: error` as
+  "autofixable, low-churn," but the dogfood proved it is not autofixable across import statements
+  (83 manual reorders after `vp lint --fix`), oxlint has no `import/order`, and oxfmt does not sort
+  imports. The live config had it off. MP decided to drop it (off in baseConfig). Surfaced through a
+  question because it overrides an explicit plan decision.
+- **Decision 3 (custom rules at root, MP decision):** the dogfood revealed baseConfig bundles
+  `generalPreset`'s custom linteffect rules (via `...generalPreset.rules` plus jsPlugins), which the
+  old root config never loaded. They fired on this rule-authoring and tooling repo: `no-double-cast`
+  24 (test mocks), `prevent-dynamic-imports` 3 (build scripts loading the freshly built dist),
+  `no-ts-nocheck` 3 (string literals, including the rule's own matcher string). The orchestrator
+  first framed this as "the rules do not fit backpressure"; MP pushed back that a large violation
+  count is not proof of misfit. On honest rule-by-rule review only 6 of 56 were real mismatches.
+  DECISION: keep all custom rules on (full dogfood), resolve on the merits:
+  - `no-double-cast` to off in baseConfig's test-file override (consistent with the existing
+    `no-unsafe-type-assertion` test concession; benefits every consumer's tests; added to the
+    inventory `omittedNonErrorRuleAllowlist`).
+  - 6 justified inline disables with reason comments for the rule-inapplicable cases (3
+    `prevent-dynamic-imports`, 3 `no-ts-nocheck`).
+  - 26 `max-statements` decomposed, never suppressed.
+- **Review gate:** one `context_builder` review on chat `wi-8-review-F41597`. One must-fix P1: the
+  dogfood made root `pnpm lint` and `pnpm typecheck` depend on the built package, but the `check`
+  script ran lint before build, so a clean checkout would fail. The orchestrator fixed it by moving
+  `pnpm build` ahead of lint in the `check` script, and verified from a removed-`dist` state that
+  build-then-lint passes. The P2 (untracked `prompt-exports/`) is MP scratch, never staged; the
+  comment-indent nit is normalized by the commit formatter.
+- **Orchestrator independent verification (beyond agent self-report):** the agent's summary claimed
+  "zero new disable directives," which contradicted the 6 it was authorized to add; the orchestrator
+  confirmed exactly 6 justified disables plus 4 pre-existing `max-lines` data-file disables, and no
+  unauthorized rule-off or override (read the full `vite.config.ts` and `base.ts` diffs). It
+  spot-checked the `composeLintConfigs` 46-to-4 split as a real accumulator decomposition (not
+  counter-gaming), and re-ran lint (0/0), typecheck, `inventory:rules`, and the suite (767 pass)
+  itself. It also traced a `pnpm run lint` eslint-fallback to a pre-existing local-environment quirk
+  (reproduced at HEAD by stashing WI-8), not a WI-8 defect, and used `pnpm exec vp lint` as the
+  authoritative local lint.
+- **Refactor gate:** one `context_builder` analysis on chat `refactor-gate-149C29`; no must-fix, the
+  decompositions at a good optimum. Applied polish (delegated back): renamed two shape-named helpers
+  to domain names (`isStaticSchemaNode`, `isSimpleForwardedArg`), reworded the extraction comments
+  that narrated the statement count into domain rationale (per the repo comment policy), and named
+  an intermediate in `materializeEffectiveRules`. Deferred two as not worth the churn or risk: the
+  `walkDescendants` recurse-injection (tested, at a good optimum) and parameterizing two parallel
+  fixture-replay asserts. The orchestrator caught one extra statement-count comment the agent missed
+  and had misreported as pre-existing, and fixed it directly.
+- **Checks:** the orchestrator ran independently after each gate: `vp lint --max-warnings 0` (0/0
+  over 70 files, 165 rules), `pnpm typecheck` (clean), `pnpm inventory:rules` (passed), and the full
+  suite (767 tests across 17 files). The effective-config artifact was regenerated and its staleness
+  gate passes.
+- **Commits:** `b7fc423` for the dogfood: config rewire, baseConfig corrections, 22 decompositions,
+  6 disables, manifest and inventory ripples, regenerated artifact, the workspace devDependency, and
+  the `check`-script build-before-lint reorder.
+- **Issues:** none open. The `pnpm run lint` local eslint-fallback is pre-existing and out of scope
+  (CI runs `pnpm check` in a clean environment where lint resolves).
+- **Action items for MP:** none blocking. Two decisions are now baked into baseConfig and inherited
+  by introspection at WI-13: `no-undef` and `sort-imports` off, and the `no-double-cast` test
+  exemption. WI-13 should expect the same custom-rule friction on introspection's own scripts and
+  tests, and may need its own `prevent-dynamic-imports` / `no-ts-nocheck` justified disables. The
+  `check` pipeline now builds before lint, typecheck, and test.
