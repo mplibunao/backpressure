@@ -29,16 +29,24 @@ version.
 
 TD-CARD-033 "Graded rule severity" (accepted, strength `default`) says correctness, safety, and
 agent-failure-mode rules default to `error` while style and preference rules stay quieter. The
-pack's style-at-error posture (the WI-5 `STYLE_AT_ERROR_EXCEPTIONS` allowlist, widened by the DP-2
+pack's style-at-error posture (the WI-5 `styleAtErrorExceptions` allowlist, widened by the DP-2
 unicorn set) deviates from that default. WI-5 flagged it as unratified and deferred ratification to
 the canon phase (WI-17).
 
 MP decided **Path B**: amend TD-CARD-033 to permit graded style-at-error for opinionated
 agent-nudging packs, recorded per-rule, rather than scatter consumer-repo ADR overrides (the pack
 ships the posture to every consumer, so it is a general-default shift, not one repo's deviation).
-The amendment is a governed taste-distillery edit (`just docs`, `just prose`); its sequencing
-relative to this backpressure run is the open scope question above the ledger. DP-1 rules are all
-graded correctness/safety/agent-failure-mode and need no exception; the deviation lives in DP-2.
+MP folded the amendment into this run as the immediate next step rather than a separate canon phase.
+
+**Landed (taste-distillery branch `reshape/introspection-v1`).** The amendment permits a narrow,
+per-rule-recorded style-at-error exception for agent-nudging packs and explicitly does not soften
+TD-CARD-008. Commits: `9a1231b` (amendment), `d6b0ba8` (evidence-sentence fix naming the live
+inventory-gate allowlist instead of a non-existent symbol), `276c86b` (tighten redundant wording).
+The amendment commit `9a1231b` landed before its gates ran; the review and refactor gates were then
+run fix-forward, which produced `d6b0ba8` and `276c86b`. Gates: governed canon gates `just docs`
+and `just prose` green; orchestrate-loop review gate clean (no findings) and refactor gate converged
+after one tightening. DP-1 rules are all graded correctness/safety/agent-failure-mode and need no
+exception; the deviation this card now ratifies lives in DP-2.
 
 ## Branch
 
@@ -64,7 +72,7 @@ The orchestrator owns the gates and does not trust agent self-reports:
   diff rather than asserted. New plugins (jsdoc) follow the established silence-wall-plus-drift-guard
   pattern from `unicornConfig`/`vitestConfig`.
 - **Canon guard (TD-CARD-033):** every newly enabled rule is graded by kind in the manifest
-  (`rationaleClass`), with style-at-error rules held in the `STYLE_AT_ERROR_EXCEPTIONS` allowlist and
+  (`rationaleClass`), with style-at-error rules held in the `styleAtErrorExceptions` allowlist and
   carrying autofix evidence. No blanket all-error pack.
 
 ## Status
