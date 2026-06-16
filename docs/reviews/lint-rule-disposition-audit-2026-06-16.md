@@ -11,27 +11,53 @@ and the deferred layers described in
 
 ## How to decide: base vs layer vs off
 
-The one question for every rule:
+Two enable-tests, not one:
 
-> **Would you turn this on, by hand, on a fresh app repo of yours?**
+1. **Would you turn this on, by hand, on a fresh app repo of yours?** (your taste)
+2. **Does it catch a slop pattern agents over-produce that you do not want?** (the reason
+   this package exists). You might not set `no-continue` by hand, yet still want it policing
+   generated code.
 
-If yes, it belongs **on by default** (in base, or in a layer your repos always compose).
-Only **two** reasons validly keep a good rule out of the default:
+Enable a rule (in base, or the layer it belongs to) when it is correctness or safety, when
+you would set it by hand, or when it catches an agent-failure-mode pattern.
 
-1. **Stack-specific:** it only means something in a stack you are not always in (React,
-   Effect, browser/DOM, Node-only APIs). Those live in a stack or runtime layer that applies
-   when you are in that stack. This is real separation.
-2. **Tooling not ready:** the rule is not verified to run in oxlint at the pinned version
-   (the type-aware family). Defer until verified.
+**Keep it off, or out of base, if any of these hold:**
 
-**"Needs setup or a sweep" is NOT a valid reason.** Path aliases, converting default
-exports, removing barrels, decomposing functions: that is work the repo setup should do to
-match the rule, not grounds to drop the rule. Treating setup cost as a disqualifier is the
-exact failure that put the architecture rules off everywhere.
+- a better tool in the pipeline already does it (`tsc`, the Effect language-service, or
+  `oxfmt`); let the better tool own it (the lesson from `no-undef`);
+- it is style or formatting an autoformatter owns;
+- it is mostly noise: high false-positive, or you would disable it often with justification;
+- it contradicts a taste you hold (you *want* the thing it bans);
+- it is stack or project-type-specific (goes in a layer keyed to that type, not base);
+- oxlint cannot run it yet (verify against the rule page; do not assume).
 
-A rule is correctly **off** only when: it is redundant with another check already running
-(the TypeScript compiler), it contradicts a taste you hold (you *want* the thing
-it bans), or it is for a stack you are not in.
+**"Needs setup or a sweep" is NOT a reason to drop a rule.** Path aliases, converting default
+exports, removing barrels, decomposing functions: that is repo setup the rule earns, not
+grounds to exclude it. Treating setup cost as a disqualifier is what put the architecture
+rules off everywhere.
+
+**For every rule you enable, also:**
+
+- grade it (`rationaleClass`: correctness, safety, agent-failure-mode, or style) and set
+  severity by kind, per the WI-5 manifest mechanism;
+- decide it in a cluster where it interacts with neighbors (`no-continue` with `max-depth`;
+  the type-import quartet), not in isolation;
+- record autofixability, verified against the oxc rule page (autofixable is cheap to adopt;
+  non-autofixable cosmetic is ongoing friction that needs a higher bar).
+
+**Base-vs-layer axis:** enumerate your project types (app, library, CLI, browser, Effect,
+React). A rule good across most of them is BASE; one that fits only a type is a layer keyed
+to that type.
+
+**Default direction:** base is opinionated-on by default; weakening a rule is an explicit,
+visible per-repo opt-out, never a silent unbuilt layer (the failure that started this audit).
+
+The last two inputs are cross-checks, not deciders. Per-project fit (above) decides base vs
+layer. What serious TS rule sets use is for discovering candidate rules and learning each
+rule's known pitfalls and recommended config, not a popularity vote: popularity is a lagging
+signal, and eslint-config-airbnb was once universal and is now aged-out cruft. Mine individual
+rules and their docs; do not adopt a config wholesale. Your taste and the anti-slop purpose
+break ties.
 
 Legend in the tables: **BASE** = on by default; **STACK/RUNTIME** = on in the matching
 layer; **DEFER** = blocked on tooling; **OFF** = correctly disabled, with reason.
