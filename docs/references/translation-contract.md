@@ -54,6 +54,8 @@ A deliberate deviation from the source severity belongs in the manifest note, wi
 
 Rule-level tests use oxlint's `RuleTester` from `oxlint/plugins-dev` for parser parity. Real-engine checks are still required because `RuleTester` does not prove package loading through `jsPlugins`.
 
+The package build uses tsdown to emit a single-entry, Node-resolvable ESM bundle and bundled declarations under `dist/`. Package internals remain private; `@mplibunao/oxlint-standards` exposes only the package root and `./package.json`, not public subpaths.
+
 The local fixture replay script builds the package and loads `dist/index.js` through a temp `.oxlintrc.json`; it then checks real oxlint diagnostics. The packed-consumer smoke script builds the package, packs the tarball, installs it into a temp project, and verifies both the diagnostic and package allowlist.
 
 ## Alpha API pin

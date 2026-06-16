@@ -21,7 +21,7 @@ Type-aware Effect semantics are not reimplemented here. The package recommends `
 
 Rules are authored as ESLint-v9-compatible JavaScript plugin rules and loaded by oxlint through `jsPlugins`. Each rule uses `create(context)`, not oxlint-only `createOnce`, unless a later ADR explicitly narrows portability.
 
-The plugin package ships compiled `.js` and `.d.ts` files under `dist/`. Consumers should configure oxlint with a standalone `.oxlintrc.json` because plugin resolution through inline vite-plus config is not yet proven.
+The plugin package builds with tsdown and ships a single-entry, Node-resolvable ESM bundle plus bundled declarations under `dist/`. This replaces the earlier `tsc -b` preserve-modules output. Package internals are private; the package exposes only the root entrypoint and `./package.json`, not public subpaths. Consumers should configure oxlint with a standalone `.oxlintrc.json` because plugin resolution through inline vite-plus config is not yet proven.
 
 The alpha API contract is pinned in `docs/references/translation-contract.md`: default plugin export, `meta.name`, `rules`, `create(context)`, `context.report`, `oxlint/plugins-dev` `RuleTester`, and `.oxlintrc.json` `jsPlugins`.
 
