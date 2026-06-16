@@ -83,7 +83,7 @@ config edit.
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
 | DP-1 | Base architecture rules + control-flow/promotions (4 import rules with carve-outs and repo setup, `no-continue`, `no-throw-literal`, `no-self-compare`) | L | DONE | `db539d0` |
-| DP-1c | Bundler migration to tsdown (single-file ESM bundle) + `#oxlint-standards/*` alias; re-enable `no-relative-parent-imports` for the package src only (monorepo-wide disable kept); dist no-leak + artifact guards; TD build-system card | L | CODE DONE; TD card pending | `6485b2d`, `6054bbe` |
+| DP-1c | Bundler migration to tsdown (single-file ESM bundle) + `#oxlint-standards/*` alias; re-enable `no-relative-parent-imports` for the package src only (monorepo-wide disable kept); dist no-leak + artifact guards; TD build-system card | L | DONE | `6485b2d`, `6054bbe`, `db3f338`, `4e62741`; TD `0437b7b` |
 | DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | PENDING | |
 | DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | PENDING | |
 | DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | PENDING | |
@@ -215,11 +215,16 @@ Entries are appended here as each item passes its gates and commits.
   packed smokes, both package allowlists (oxlint packs 9 files), `introspection check`, and prose
   (0 findings over 45 files).
 - **Commits:** `6485b2d` (migration code, config, scripts, lockfile), `6054bbe` (architecture and
-  translation-contract docs), plus this ledger-record commit.
+  translation-contract docs), `db3f338` (explicit `--noEmit` on the typecheck scripts), `4e62741`
+  (dist guard also rejects leaked `#oxlint-standards/` aliases, with a positive-control test), plus
+  the ledger-record commits.
 - **Issues:** none open in the DP-1c code.
-- **Remaining sub-step:** the taste-distillery build-system card. GNO-first discovery is done:
-  TD-CARD-019 owns `#/*` aliases, TD-CARD-035 the Bun scripts, and TD-CARD-018/TD-BASELINE-008 the
-  artifact smoke; the open gap is the build-tool decision. The card runs under its own canon gates
-  and closes DP-1c.
+- **Taste-distillery canon (landed):** TD-CARD-038 (build published packages with tsdown, under
+  `ci-and-release`), its anchoring investigation (the bundler comparison), and TD-SPECIMEN-009 (the
+  frozen backpressure build) landed on the taste-distillery branch `reshape/introspection-v1` as
+  commit `0437b7b`, gated by `just docs`, `just prose`, and the orchestrate-loop review and refactor
+  loops. The canon review there surfaced one further backpressure fix: the dist guard rejected only
+  relative specifiers, so a leaked `#oxlint-standards/` alias would have passed; the guard was
+  strengthened to reject the alias prefix too (`4e62741`).
 - **Deferred (tracked):** repo-wide `no-relative-parent-imports` conformance for app and scripts sits
   outside DP-1c by design; the monorepo-wide disable stays until those areas gain an alias plan.
