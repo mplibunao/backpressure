@@ -87,7 +87,7 @@ config edit.
 | DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | DONE | `f2f934b` |
 | DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | DONE | `bc0fe38` |
 | DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | DONE | `f8addaf` |
-| DP-5 | Changesets and close-out (WI-10 against the final config, full re-dogfood) | S | PENDING | |
+| DP-5 | Changesets and close-out (WI-10 against the final config, full re-dogfood) | S | DONE | `f653aab` |
 
 ## Per-item detail
 
@@ -403,3 +403,32 @@ Entries are appended here as each item passes its gates and commits.
   `check-param-names`. BP-TD-012 still tracks the custom require-jsdoc-on-exports presence rule. The DP-2
   deferrals (export-surface cleanup, held `number-literal-case` and `switch-case-braces`, deferred
   `filename-case` and browser family) carry forward.
+
+### DP-5: changesets and close-out (DONE)
+
+- **Scope (measured):** only `@mplibunao/oxlint-standards` changed on this branch (35 files versus
+  `main`). `packages/tsconfig` is identical to `main`, so the WI-10 "both packages" framing collapsed to
+  one package and tsconfig needs no changeset.
+- **Version bump (MP decision):** MP chose a `minor` bump, so the changeset moves the package from 0.1.0
+  to 0.2.0. The pre-1.0 minor signals the consolidation and the newly enforced rules without declaring
+  1.0 API stability for a rule set that still changes from release to release.
+- **Changeset:** `.changeset/oxlint-standards-rule-consolidation.md` records the bump and a
+  consumer-facing summary covering the base rule additions, the `unicornConfig` and `jsdocConfig`
+  fragments, the vitest and module-boundary rules, the manifest grading, and the tsdown build with its
+  package-internal alias. It warns adopters that the new error-level rules fire on existing code, so an
+  upgrade wants a cleanup pass.
+- **Gates:** the review and refactor loops do not apply to a single release-metadata file with no code
+  surface. The verification for this item is the full re-dogfood below plus a changeset-accuracy check
+  against the DP-1 through DP-4 commits.
+- **Re-dogfood (orchestrator, independent):** clean full `pnpm check` green with the changeset present,
+  covering build, `vp lint` 0/0 over 76 files and 211 rules, version pins, `tsc -b --noEmit`, 790 tests,
+  the release-workflow and changesets contracts, rule inventory, fixture replay, both packed smokes, both
+  package allowlists, `introspection check` (12 records), and prose.
+- **Commits:** `f653aab` (the changeset), plus this ledger-record commit.
+- **Issues:** none open. The deep pass is complete; DP-1 through DP-5 have all landed and passed their
+  gates.
+- **Deferred (tracked, into steady state):** BP-TD-012 (custom require-jsdoc-on-exports presence rule)
+  and BP-TD-013 (stale-`@param` coverage pending `check-param-names`) stay open. The export-surface
+  cleanup, the held `number-literal-case` and `switch-case-braces`, and the deferred `filename-case` and
+  browser family remain for a future pass. Publishing 0.2.0 and pinning backpressure to it stays the
+  manual release step outside this run.
