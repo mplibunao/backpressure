@@ -1,15 +1,15 @@
 import type { Context, ESTree, Rule } from '@oxlint/plugins';
 
-import { getCallExpressionArguments, getStaticMemberCall } from '../../utils/ast.js';
-import { effectValueMappingMembers } from '../../utils/effect-identifiers.js';
-import { isInAnyWrapperOwnedExpression } from '../../utils/effect-ownership.js';
+import { getCallExpressionArguments, getStaticMemberCall } from '#oxlint-standards/utils/ast.js';
+import { effectValueMappingMembers } from '#oxlint-standards/utils/effect-identifiers.js';
+import { isInAnyWrapperOwnedExpression } from '#oxlint-standards/utils/effect-ownership.js';
 import {
   collectEffectNamespaceImports,
   collectImportNames,
   isEffectNamespaceImportReference,
-} from '../../utils/imports.js';
-import { reportByMessageId } from '../../utils/reports.js';
-import { containsSideEffectCall } from '../../utils/side-effects.js';
+} from '#oxlint-standards/utils/imports.js';
+import { reportByMessageId } from '#oxlint-standards/utils/reports.js';
+import { containsSideEffectCall } from '#oxlint-standards/utils/side-effects.js';
 import { noEffectAsMessage } from './no-effect-as-message.js';
 
 const effectValueMappingMemberSet: ReadonlySet<string> = new Set(effectValueMappingMembers);

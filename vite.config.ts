@@ -4,6 +4,7 @@ import {
   nodeRuntimeConfig,
   vitestConfig,
 } from '@mplibunao/oxlint-standards';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
 const toolIgnorePatterns = [
@@ -44,7 +45,24 @@ export default defineConfig({
         'import/no-relative-parent-imports': 'off',
       },
     },
+    {
+      overrides: [
+        {
+          files: ['packages/oxlint-standards/src/**'],
+          rules: {
+            'import/no-relative-parent-imports': 'error',
+          },
+        },
+      ],
+    },
   ),
+  resolve: {
+    alias: {
+      '#oxlint-standards': fileURLToPath(
+        new URL('./packages/oxlint-standards/src', import.meta.url),
+      ),
+    },
+  },
   staged: {
     '*.{js,ts,tsx,jsx,json}': 'vp check --fix',
     '*.{md,mdx}': 'pnpm prose',

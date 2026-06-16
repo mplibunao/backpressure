@@ -16,7 +16,7 @@ import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './pac
 import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './real-engine.ts';
 import { ruleMessage } from '../../../packages/oxlint-standards/src/rule-messages.ts';
 import { canonicalVersions } from '../../lib/tool-versions.ts';
-import { assertOxlintPackedArtifact } from './artifact-assertions.ts';
+import { assertOxlintDistArtifact, assertOxlintPackedArtifact } from './artifact-assertions.ts';
 import {
   installConsumerDevDependencies,
   installPackedTarball,
@@ -70,12 +70,21 @@ const assertMainEntryExports = (consumerDir: string) => {
       ruleManifest,
       vitestConfig,
     } from ${JSON.stringify(oxlintPackageName)};
+    import defaultPlugin from ${JSON.stringify(oxlintPackageName)};
 
     const assertRuleFragment = (fragment, label) => {
       if (typeof fragment !== 'object' || fragment === null || typeof fragment.rules !== 'object' || fragment.rules === null) {
         throw new Error(label + ' did not expose rules');
       }
     };
+
+    if (defaultPlugin !== plugin) {
+      throw new Error('default export did not equal named plugin export');
+    }
+
+    if (defaultPlugin.meta.name !== ${JSON.stringify(oxlintPackageName)}) {
+      throw new Error('default plugin meta.name did not match package name');
+    }
 
     if (plugin.rules['no-effect-as']?.meta?.messages?.avoidEffectAs !== ${JSON.stringify(ruleMessage('no-effect-as'))}) {
       throw new Error('no-effect-as rule message in plugin does not match expected');
@@ -136,7 +145,7 @@ const assertMainEntryTypes = (consumerDir: string) => {
   });
   writeFileSync(
     join(consumerDir, 'contract.ts'),
-    `import { baseConfig, composeLintConfigs, effectPreset, generalPreset, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!noEffectAsInPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
+    `import defaultPlugin, { baseConfig, composeLintConfigs, effectPreset, generalPreset, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst noEffectAsInDefaultPlugin: unknown = defaultPluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!noEffectAsInPlugin || !noEffectAsInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
   );
 
   const result = runCommand('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: consumerDir });
@@ -235,6 +244,7 @@ const typeConsumerDir = createTempDir(typeConsumerPrefix);
 
 try {
   buildOxlintStandards();
+  assertOxlintDistArtifact();
   const packed = packWorkspacePackage(oxlintPackageDir, packDestination, 'npm pack');
   assertOxlintPackedArtifact(packed.files);
   prepareTypeConsumer(typeConsumerDir, packed.tarballPath);

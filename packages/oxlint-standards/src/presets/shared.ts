@@ -1,9 +1,9 @@
-import { pluginName } from '../plugin.js';
-import type { RuleDomain } from '../rule-manifest.js';
+import { pluginName } from '#oxlint-standards/plugin.js';
+import type { RuleDomain } from '#oxlint-standards/rule-manifest.js';
 import {
   oxlintSeverityForManifestEntry,
   presetEntriesForDomains,
-} from '../rule-manifest-selection.js';
+} from '#oxlint-standards/rule-manifest-selection.js';
 
 export type RuleSeverity = 'off' | 'warn' | 'error';
 export type RuleConfig = RuleSeverity | readonly [RuleSeverity, ...(readonly unknown[])];

@@ -45,6 +45,7 @@ export const releasePackages = [
 
 export const releasePreparationCommands = [
   'pnpm build',
+  'pnpm typecheck',
   'bun scripts/checks/check-npm-publish-client.ts',
   'bun scripts/checks/check-changesets-release-state.ts',
   ...releasePackages.map((releasePackage) => releasePackage.allowlistCommand),

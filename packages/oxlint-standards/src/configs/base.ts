@@ -1,6 +1,6 @@
 import type { OxlintConfig } from 'oxlint';
 
-import { generalPreset } from '../presets/index.js';
+import { generalPreset } from '#oxlint-standards/presets/index.js';
 
 const maxStatementsPerFunction = 10;
 

@@ -23,7 +23,7 @@
     "pack:dry-run": "pnpm -r --if-present pack:dry-run",
     "prepare": "vp config",
     "release": "pnpm release:prepare && changeset publish",
-    "release:prepare": "pnpm build && bun scripts/checks/check-npm-publish-client.ts && bun scripts/checks/check-changesets-release-state.ts && SKIP_BUILD=true pnpm oxlint:package:allowlist && pnpm tsconfig:package:allowlist && SKIP_BUILD=true pnpm smoke:oxlint-packed-consumer && pnpm smoke:tsconfig-packed-consumer",
+    "release:prepare": "pnpm build && pnpm typecheck && bun scripts/checks/check-npm-publish-client.ts && bun scripts/checks/check-changesets-release-state.ts && SKIP_BUILD=true pnpm oxlint:package:allowlist && pnpm tsconfig:package:allowlist && SKIP_BUILD=true pnpm smoke:oxlint-packed-consumer && pnpm smoke:tsconfig-packed-consumer",
     "prose": "pnpm prose:files",
     "prose:commit": "scripts/prose-commit.sh",
     "prose:files": "scripts/prose-files.sh",

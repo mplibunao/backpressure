@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { generalPreset } from '../presets/index.js';
+import { generalPreset } from '#oxlint-standards/presets/index.js';
 import { baseConfig } from './base.js';
 
 const rules = baseConfig.rules ?? {};

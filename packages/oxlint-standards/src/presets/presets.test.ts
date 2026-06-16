@@ -1,9 +1,9 @@
 import { RuleTester } from 'oxlint/plugins-dev';
 import { describe, expect, it, vi } from 'vitest';
 
-import { catalogRules } from '../rule-catalog.js';
-import { presetEntriesForDomains } from '../rule-manifest.js';
-import { ruleMessage } from '../rule-messages.js';
+import { catalogRules } from '#oxlint-standards/rule-catalog.js';
+import { presetEntriesForDomains } from '#oxlint-standards/rule-manifest.js';
+import { ruleMessage } from '#oxlint-standards/rule-messages.js';
 import { boundariesPreset } from './boundaries.js';
 import { effectPreset } from './effect.js';
 import { effectReactPreset } from './effect-react.js';
