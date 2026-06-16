@@ -86,7 +86,7 @@ config edit.
 | DP-1c | Bundler migration to tsdown (single-file ESM bundle) + `#oxlint-standards/*` alias; re-enable `no-relative-parent-imports` for the package src only (monorepo-wide disable kept); dist no-leak + artifact guards; TD build-system card | L | DONE | `6485b2d`, `6054bbe`, `db3f338`, `4e62741`; TD `0437b7b` |
 | DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | DONE | `f2f934b` |
 | DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | DONE | `bc0fe38` |
-| DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | PENDING | |
+| DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | DONE | `f8addaf` |
 | DP-5 | Changesets and close-out (WI-10 against the final config, full re-dogfood) | S | PENDING | |
 
 ## Per-item detail
@@ -337,3 +337,69 @@ Entries are appended here as each item passes its gates and commits.
 - **Issues:** none open in the DP-3 code.
 - **Deferred (tracked):** unchanged from DP-2. The export-surface cleanup, the held `number-literal-case`
   and `switch-case-braces`, and the deferred `filename-case` and browser family all carry forward.
+
+### DP-4: jsdocConfig fragment (DONE)
+
+- **Build (delegated):** one `pair` agent (Codex CLI, gpt-5.5-fast, reasoning high), dispatched via
+  `agent_run` against the resolution's confirmed jsdoc decision. It measured the blast radius
+  non-destructively and grounded each rule against the live oxlint catalog and the oxc.rs rule pages.
+- **Fragment:** a new `src/configs/jsdoc.ts` declares the `jsdoc` plugin behind an exhaustive silence
+  wall of all 18 current jsdoc rules, then re-enables five at error (`check-tag-names`, `check-access`,
+  `empty-tags`, `require-param`, `require-returns`). The file spreads the silence wall first and lists
+  the re-enables after, so the hard resolution constraint of silencing before enabling is visible in the
+  source. `baseConfig` composes it the way it composes `unicornConfig`.
+- **check-param-names deviation (forced):** the resolution named `jsdoc/check-param-names` as a
+  correctness rule to enable, but oxlint 1.58.0 does not ship it. The installed catalog has no such
+  entry, and configuring it errors that the rule is not found. `require-param` covers the common
+  documented-parameter-drift case instead. The residual gap, a stale `@param` for a removed parameter
+  when the remaining parameters stay documented, is tracked as BP-TD-013 and pinned as a living test in
+  the behavioral drift guard.
+- **check-access and empty-tags (vetted, enabled):** both validate existing tags rather than force
+  documentation presence, and both measured a blast radius of zero, so both were enabled. They grade
+  correctness in the manifest because they catch malformed doc tags rather than a style preference, so
+  neither touches the style-at-error allowlist.
+- **Canon grading (TD-CARD-033):** the five rules are graded by kind. The three tag-correctness rules
+  (`check-tag-names`, `check-access`, `empty-tags`) grade correctness; `require-param` and
+  `require-returns` grade agent-failure-mode. Their manifest notes state the validate-where-documented
+  boundary explicitly, that they do not require docs on undocumented functions. No style-at-error entry
+  was added.
+- **Blast radius (measured first):** ten diagnostics (five `require-param` and five `require-returns`),
+  all on the five manifest-builder helpers in `rule-manifest.ts` whose doc blocks lacked `@param` and
+  `@returns`. The fix documented each existing doc block with accurate per-property tags rather than
+  gutting it. `require-param` mandates the destructured-property tags, reproduced against the binary, so
+  the per-property documentation is rule-required rather than optional verbosity. After the fix: zero
+  diagnostics.
+- **Drift guard:** `drift-guards.test.ts` gained an engine-backed activation-shape guard asserting
+  exactly the five jsdoc rules resolve to `deny` and the other 13 to `allow` (18 total, matching the
+  catalog). A second behavioral fixture guard lints real source through oxlint. It proves an undocumented
+  export reports nothing while a documented-incomplete function reports `require-param` and
+  `require-returns`. A stale extra `@param` reports nothing under the known check-param-names gap, with a
+  comment naming the limitation.
+- **Verify gate (orchestrator, independent):** the silence wall was confirmed to list all 18 catalog
+  rules with none missing and none extra. The five added doc blocks were checked against their option
+  interfaces, including the unusual `ReimplementedScenarioRuleOptions` fields, and the namepaths match.
+  The `check-param-names` absence and the `require-param` destructured-property requirement were both
+  reproduced against the binary rather than taken from the agent report. A clean `pnpm check` (after
+  wiping `.tsbuildinfo`) was green, and `vp lint` was 0/0 over 76 files and 211 rules with `require-param`
+  active, which proves the `@param` coverage is complete.
+- **Review gate:** `context_builder` review (`dp4-jsdoc-review-61F6E5`). No correctness findings. One P1
+  and two P2 were resolved fix-forward. The check-param-names gap became the durable record BP-TD-013.
+  The behavioral fixture guard above answered the request to prove the validate-where-documented behavior.
+  The untracked prompt export stays out of the commit. A delegated session stalled partway through the
+  fixture follow-up and was cancelled, then the fixture work was re-dispatched to a fresh agent.
+- **Refactor gate:** a separate `context_builder` chat (`dp4-quality-review-AB8543`). One P2 was declined
+  with evidence: the per-property `@param` tags read as repetition, but `require-param` requires them for
+  destructured parameters, reproduced against the binary, so trimming them would fail lint. Everything
+  else (the intentional rule-name duplication for drift protection, the split guards, the comments, the
+  helper and manifest-row structure) was confirmed clean.
+- **Checks (orchestrator, independent):** clean full `pnpm check` green, covering build, `vp lint` 0/0,
+  version pins, `tsc -b --noEmit`, 790 tests, the release-workflow and changesets contracts, rule
+  inventory, fixture replay, both packed smokes, both package allowlists, `introspection check` (12
+  records), and prose.
+- **Commits:** `f8addaf` (the fragment, manifest grading, drift guards, inventory and smoke wiring,
+  barrels, and effective-config), plus the BP-TD-013 record and this ledger-record commit.
+- **Issues:** none open in the DP-4 code.
+- **Deferred (tracked):** BP-TD-013 captures the stale-`@param` coverage that waits on oxlint shipping
+  `check-param-names`. BP-TD-012 still tracks the custom require-jsdoc-on-exports presence rule. The DP-2
+  deferrals (export-surface cleanup, held `number-literal-case` and `switch-case-braces`, deferred
+  `filename-case` and browser family) carry forward.
