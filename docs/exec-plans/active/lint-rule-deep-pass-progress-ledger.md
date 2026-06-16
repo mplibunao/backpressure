@@ -83,6 +83,7 @@ config edit.
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
 | DP-1 | Base architecture rules + control-flow/promotions (4 import rules with carve-outs and repo setup, `no-continue`, `no-throw-literal`, `no-self-compare`) | L | DONE | `db539d0` |
+| DP-1c | Bundler migration to tsdown (single-file ESM bundle) + `#oxlint-standards/*` alias; re-enable `no-relative-parent-imports` for the package src only (monorepo-wide disable kept); dist no-leak + artifact guards; TD build-system card | L | CODE DONE; TD card pending | `6485b2d`, `6054bbe` |
 | DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | PENDING | |
 | DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | PENDING | |
 | DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | PENDING | |
@@ -167,4 +168,58 @@ Entries are appended here as each item passes its gates and commits.
 - **Action items for MP:** confirm whether the TD-CARD-033 amendment folds into this run as a
   close-out step or stays the separate canon phase. Note that `import/no-relative-parent-imports`
   ships in BASE with no current dogfood, because backpressure opts out as a library and introspection
-  exercises it only on adoption.
+  exercises it only on adoption. (Resolved by DP-1c below: the package now dogfoods the rule.)
+
+### DP-1c: tsdown build migration + package-scoped import conformance (CODE DONE; TD card pending)
+
+- **Scope:** package-only, per the corrected oracle plan. The package src re-enables
+  `import/no-relative-parent-imports`; the monorepo-wide disable stays for app and scripts that have
+  no bundler/alias plan. This closes DP-1's "no repo dogfoods this rule" gap for the package.
+- **Build (delegated):** one `pair` agent (Codex CLI, gpt-5.5, reasoning high), dispatched via
+  `agent_run` with an oriented brief pointing at the plan, a scope boundary, and hard guardrails (no
+  rule weakening, keep the default-export contract, no commit). An earlier orchestrator attempt
+  drifted off-workflow (generic Agent tool, turn-by-turn brief); it was stopped, its partial changes
+  reverted, and the work re-dispatched through `agent_run` per orchestrate-loop.
+- **Decisions:** tsdown single-entry ESM bundle (not preserve-modules/unbundle), with dts plus
+  declaration maps; `tsc -b` stays the typecheck. The alias `#oxlint-standards/* -> ./src/*` lives
+  only in the package `tsconfig.json` as the single source; `vite.config.ts` mirrors it for Vitest
+  source runs. No explicit tsdown alias was added, to avoid a second alias source that could drift.
+- **Blast radius:** 15 parent-relative import specifier lines in package src migrated to the alias,
+  ending at 0; the remaining `../` matches are test-fixture strings only.
+- **Verify gate (orchestrator, independent of the agent report):** the changed set stayed confined to
+  the package, root `vite.config.ts`, the package scripts, and the docs. An anti-cheat scan found no
+  new `oxlint-disable`/`eslint-disable`/`@ts-` comments. The rule re-enable is a package-scoped
+  override layered after the monorepo-wide `off`, not a global weaken. A fresh build emitted the
+  four-file dist contract with zero `#oxlint-standards/` leaks in `index.js` and `index.d.ts`;
+  independent `vp lint` was 0/0 and `tsc -b` was clean.
+- **Review gate:** `context_builder` review (chat `tsdown-review-780589`) plus a follow-up. One
+  must-fix: switching the build from `tsc -b` to tsdown removed the implicit typecheck from the
+  publish path, so `pnpm typecheck` was added to `release:prepare`. One suggestion applied: the dist
+  no-leak guard became AST-based: it parses `dist/index.js` and `dist/index.d.ts` with the
+  TypeScript compiler and fails on any relative specifier, catching root-level leaks (`./plugin.js`
+  and similar) that the prior enumerated check missed. One suggestion declined: an explicit tsdown
+  alias, to keep the single tsconfig source. The follow-up review was clean.
+- **Refactor gate:** a separate `context_builder` chat (`dp-1c-refactor-review-0C486E`). Three P2
+  cleanups landed in `artifact-assertions.ts`: shared arrays now back the packed-file contracts as
+  one source of truth; AST extraction moved into a `moduleSpecifierForNode` helper, leaving the
+  visitor to filter and record; the nested/root private-path rule now lives in a named
+  `matchesForbiddenPackagePath` helper. The follow-up analysis reported convergence.
+- **Orchestrator independent verification (the key catch):** the orchestrator's full `pnpm check`,
+  run beyond the agent's targeted commands, caught that the review-gate typecheck addition broke the
+  pinned `release:prepare` contract in `scripts/lib/release-contract.ts`. The agent's targeted
+  re-checks had not exercised `check-release-workflow`. The pinned contract was updated to the
+  intended new release path as an explicit reviewed change, and the full check then passed.
+- **Checks (orchestrator, independent):** full `pnpm check` green, covering build, `vp lint` 0/0 over 71
+  files and 171 rules, version pins, `tsc -b`, 771 tests, the release-workflow contract, the
+  changesets contract, rule inventory, fixture replay (87 suites, 512 cases), the oxlint and tsconfig
+  packed smokes, both package allowlists (oxlint packs 9 files), `introspection check`, and prose
+  (0 findings over 45 files).
+- **Commits:** `6485b2d` (migration code, config, scripts, lockfile), `6054bbe` (architecture and
+  translation-contract docs), plus this ledger-record commit.
+- **Issues:** none open in the DP-1c code.
+- **Remaining sub-step:** the taste-distillery build-system card. GNO-first discovery is done:
+  TD-CARD-019 owns `#/*` aliases, TD-CARD-035 the Bun scripts, and TD-CARD-018/TD-BASELINE-008 the
+  artifact smoke; the open gap is the build-tool decision. The card runs under its own canon gates
+  and closes DP-1c.
+- **Deferred (tracked):** repo-wide `no-relative-parent-imports` conformance for app and scripts sits
+  outside DP-1c by design; the monorepo-wide disable stays until those areas gain an alias plan.
