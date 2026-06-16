@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  assertIncludes,
   commandOutput,
   createTempDir,
   ensureFailure,
@@ -36,6 +37,7 @@ const noEffectAsRules: RuleConfig = {
 const noBarrelImportRules: RuleConfig = {
   'no-barrel-import': 'error',
 };
+const composedConfigFixture = "console.log('x');\nawait import('node:fs');\n";
 const prepareConsumer = (consumerDir: string, tarballPath: string) => {
   writeTempConsumerPackageJson(consumerDir, 'backpressure-smoke-consumer');
   installConsumerDevDependencies(
@@ -58,7 +60,22 @@ const prepareTypeConsumer = (consumerDir: string, tarballPath: string) => {
 
 const assertMainEntryExports = (consumerDir: string) => {
   const script = `
-    import { effectPreset, generalPreset, plugin, ruleManifest } from ${JSON.stringify(oxlintPackageName)};
+    import {
+      baseConfig,
+      composeLintConfigs,
+      effectPreset,
+      generalPreset,
+      nodeRuntimeConfig,
+      plugin,
+      ruleManifest,
+      vitestConfig,
+    } from ${JSON.stringify(oxlintPackageName)};
+
+    const assertRuleFragment = (fragment, label) => {
+      if (typeof fragment !== 'object' || fragment === null || typeof fragment.rules !== 'object' || fragment.rules === null) {
+        throw new Error(label + ' did not expose rules');
+      }
+    };
 
     if (plugin.rules['no-effect-as']?.meta?.messages?.avoidEffectAs !== ${JSON.stringify(ruleMessage('no-effect-as'))}) {
       throw new Error('no-effect-as rule message in plugin does not match expected');
@@ -74,6 +91,23 @@ const assertMainEntryExports = (consumerDir: string) => {
 
     if (!ruleManifest.some((entry) => entry.name === 'lsp/missingEffectServiceDependency')) {
       throw new Error('ruleManifest did not expose LSP-owned checks');
+    }
+
+    if (typeof composeLintConfigs !== 'function') {
+      throw new Error('composeLintConfigs did not expose a function');
+    }
+
+    assertRuleFragment(baseConfig, 'baseConfig');
+    assertRuleFragment(vitestConfig, 'vitestConfig');
+    assertRuleFragment(nodeRuntimeConfig, 'nodeRuntimeConfig');
+
+    const composed = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig);
+    if (typeof composed.rules !== 'object' || composed.rules === null || Object.keys(composed.rules).length === 0) {
+      throw new Error('composeLintConfigs did not return a populated rules map');
+    }
+
+    if ('extends' in composed) {
+      throw new Error('composeLintConfigs returned top-level extends');
     }
   `;
   const result = runCommand('node', ['--input-type=module', '--eval', script], {
@@ -102,11 +136,55 @@ const assertMainEntryTypes = (consumerDir: string) => {
   });
   writeFileSync(
     join(consumerDir, 'contract.ts'),
-    `import { effectPreset, generalPreset, plugin, ruleManifest } from ${JSON.stringify(oxlintPackageName)};\n\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst manifestCount: number = ruleManifest.length;\n\nif (!noEffectAsInPlugin || !effectRule || !generalRule || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
+    `import { baseConfig, composeLintConfigs, effectPreset, generalPreset, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!noEffectAsInPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
   );
 
   const result = runCommand('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: consumerDir });
   ensureSuccess(result, 'packed main-entry TypeScript contract');
+};
+
+const writeComposedConfig = (consumerDir: string) => {
+  const script = `
+    import { writeFileSync } from 'node:fs';
+    import { join } from 'node:path';
+    import {
+      baseConfig,
+      composeLintConfigs,
+      nodeRuntimeConfig,
+      vitestConfig,
+    } from ${JSON.stringify(oxlintPackageName)};
+
+    const config = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig);
+    writeFileSync(join(process.cwd(), '.oxlintrc.json'), JSON.stringify(config, null, 2) + '\\n');
+  `;
+  const result = runCommand('node', ['--input-type=module', '--eval', script], {
+    cwd: consumerDir,
+  });
+  ensureSuccess(result, 'write packed composed oxlint config');
+};
+
+const runComposedConfigFixture = (consumerDir: string) => {
+  const fixturePath = join(consumerDir, 'composed-config-fixture.ts');
+  writeFileSync(fixturePath, composedConfigFixture);
+
+  return runCommand('pnpm', ['exec', 'oxlint', '--config', '.oxlintrc.json', fixturePath], {
+    cwd: consumerDir,
+  });
+};
+
+const runComposedConfigOxlint = (consumerDir: string) => {
+  writeComposedConfig(consumerDir);
+  const result = runComposedConfigFixture(consumerDir);
+
+  ensureFailure(result, `packed composed-config oxlint\n${commandOutput(result)}`);
+  assertDiagnostic(result, {
+    label: 'packed composed-config oxlint',
+    message: ruleMessage('prevent-dynamic-imports'),
+    ruleName: 'prevent-dynamic-imports',
+  });
+  // Native base rule: oxlint reports eslint-core rules as `eslint(<rule>)`, so assert the
+  // diagnostic token rather than the bare name (which could appear in a non-diagnostic line).
+  assertIncludes(commandOutput(result), 'eslint(no-console)', 'packed composed-config oxlint');
 };
 
 const runConsumerOxlint = (consumerDir: string) => {
@@ -119,7 +197,11 @@ const runConsumerOxlint = (consumerDir: string) => {
     source: "import * as Effect from 'effect/Effect';\nEffect.as('done');\n",
   });
 
-  ensureFailure(result, `packed consumer oxlint\n${commandOutput(result)}`);
+  ensureFailure(
+    result,
+    `packed consumer oxlint
+${commandOutput(result)}`,
+  );
   assertDiagnostic(result, {
     label: 'packed consumer oxlint',
     message: ruleMessage('no-effect-as'),
@@ -135,7 +217,11 @@ const runConsumerOxlint = (consumerDir: string) => {
     source: "import { Effect } from 'effect';\nEffect.succeed(1);\n",
   });
 
-  ensureFailure(catalogResult, `packed consumer catalog oxlint\n${commandOutput(catalogResult)}`);
+  ensureFailure(
+    catalogResult,
+    `packed consumer catalog oxlint
+${commandOutput(catalogResult)}`,
+  );
   assertDiagnostic(catalogResult, {
     label: 'packed consumer catalog oxlint',
     message: ruleMessage('no-barrel-import'),
@@ -156,6 +242,7 @@ try {
   prepareConsumer(consumerDir, packed.tarballPath);
   assertMainEntryExports(consumerDir);
   runConsumerOxlint(consumerDir);
+  runComposedConfigOxlint(consumerDir);
   printLine('packed consumer smoke passed');
 } finally {
   removeTempDir(packDestination);
