@@ -85,7 +85,7 @@ config edit.
 | DP-1 | Base architecture rules + control-flow/promotions (4 import rules with carve-outs and repo setup, `no-continue`, `no-throw-literal`, `no-self-compare`) | L | DONE | `db539d0` |
 | DP-1c | Bundler migration to tsdown (single-file ESM bundle) + `#oxlint-standards/*` alias; re-enable `no-relative-parent-imports` for the package src only (monorepo-wide disable kept); dist no-leak + artifact guards; TD build-system card | L | DONE | `6485b2d`, `6054bbe`, `db3f338`, `4e62741`; TD `0437b7b` |
 | DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | DONE | `f2f934b` |
-| DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | PENDING | |
+| DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | DONE | `bc0fe38` |
 | DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | PENDING | |
 | DP-5 | Changesets and close-out (WI-10 against the final config, full re-dogfood) | S | PENDING | |
 
@@ -286,3 +286,54 @@ Entries are appended here as each item passes its gates and commits.
   these gate-only helpers off the public surface stays the deferred cleanup. `number-literal-case` and
   `switch-case-braces` remain held pending oxfmt scope; `filename-case` and the browser family remain
   deferred.
+
+### DP-3: vitest rules and explicit-module-boundary-types (DONE)
+
+- **Build (delegated):** one fresh `pair` agent (Codex CLI, gpt-5.5-fast, reasoning high), dispatched
+  via `agent_run` against the resolution's vitest and explicit-return sections. It measured the blast
+  radius first and graded the new rules against the live oxlint catalog.
+- **vitest fragment:** the four added rules (`consistent-each-for`, `no-import-node-test`,
+  `require-mock-type-parameters`, `require-local-test-context-for-concurrent-snapshots`) go into the
+  global silence wall at `off` and re-enable at `error` only inside the `**/*.test.ts` override, the
+  same bleed-prevention pattern `unicornConfig` uses. The `require-test-timeout` comment was corrected:
+  the rule stays off as a team-policy opt-in rather than a technical conflict, because the repo's
+  `vi.setConfig({ testTimeout })` form satisfies it.
+- **explicit-module-boundary-types:** made an explicit `error` entry in `base.ts` with
+  `allowHigherOrderFunctions`, `allowTypedFunctionExpressions`, and a denied
+  `allowArgumentsExplicitlyTypedAsAny`. `oxlint --print-config` showed it already resolved to `deny`
+  through the restriction sweep both before and after, so the change surfaces the policy rather than
+  altering it; `explicit-function-return-type` stays off to avoid the redundant twin.
+- **Canon grading (TD-CARD-033):** the five newly explicit rules are graded by kind in the manifest.
+  `consistent-each-for` and `require-local-test-context-for-concurrent-snapshots` grade correctness;
+  `no-import-node-test` and `require-mock-type-parameters` grade agent-failure-mode;
+  `explicit-module-boundary-types` grades correctness. None is style-at-error, so the allowlist did not
+  grow.
+- **Blast radius (measured first):** the live checkout held five `it.each` array-case sites, not the
+  resolution's historical estimate of about twelve, and `explicit-module-boundary-types` surfaced zero
+  new violations because it already fired. The five `it.each` sites moved to `it.for`, ending at zero
+  `it.each` repo-wide.
+- **Verify gate (orchestrator, independent):** the four rules were confirmed present in both the
+  silence wall and the test override, never in a global rules map. The `it.each` to `it.for`
+  conversions were checked behavior-preserving: every converted case is a scalar string or a
+  destructured object, so none relied on the array-spreading that only `it.each` does. The anti-cheat
+  scan found no new `oxlint-disable` comments, and a clean `pnpm check` (after wiping `.tsbuildinfo`)
+  was green.
+- **Review gate:** `context_builder` review (`dp3-review-DCCAEC`). No findings. It independently
+  confirmed the bleed-safety, the conversion equivalence, the visible-not-changed reading of
+  `explicit-module-boundary-types`, and the manifest consistency. One residual was noted and accepted:
+  the four new rules carry no per-rule live diagnostic fixture, which matches the existing curated set,
+  where only `warn-todo` carries a behavioral fixture as the representative scoping proof and the rest
+  rely on the exact-set scope assertions.
+- **Refactor gate:** a separate `context_builder` chat (`dp3-refactor-review-6259B3`). No findings.
+  The rule-name repetition across the silence wall, the override, and the exact-set assertions is the
+  intended drift-protection design, the comments explain intent, and the manifest rows match their
+  neighbors.
+- **Checks (orchestrator, independent):** clean full `pnpm check` green, covering build, `vp lint` 0/0
+  over 74 files and 206 rules, version pins, `tsc -b --noEmit`, 782 tests, the release-workflow and
+  changesets contracts, rule inventory, fixture replay, both packed smokes, both package allowlists,
+  `introspection check`, and prose (0 findings over 45 files).
+- **Commits:** `bc0fe38` (the four vitest rules, the explicit return-type entry, manifest grading, the
+  `it.for` conversions, and regenerated effective-config), plus this ledger-record commit.
+- **Issues:** none open in the DP-3 code.
+- **Deferred (tracked):** unchanged from DP-2. The export-surface cleanup, the held `number-literal-case`
+  and `switch-case-braces`, and the deferred `filename-case` and browser family all carry forward.
