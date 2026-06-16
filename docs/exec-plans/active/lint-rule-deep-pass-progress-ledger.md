@@ -84,7 +84,7 @@ config edit.
 | --- | --- | --- | --- | --- |
 | DP-1 | Base architecture rules + control-flow/promotions (4 import rules with carve-outs and repo setup, `no-continue`, `no-throw-literal`, `no-self-compare`) | L | DONE | `db539d0` |
 | DP-1c | Bundler migration to tsdown (single-file ESM bundle) + `#oxlint-standards/*` alias; re-enable `no-relative-parent-imports` for the package src only (monorepo-wide disable kept); dist no-leak + artifact guards; TD build-system card | L | DONE | `6485b2d`, `6054bbe`, `db3f338`, `4e62741`; TD `0437b7b` |
-| DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | PENDING | |
+| DP-2 | `unicornConfig` fragment (move the silence wall, enable the general-quality set, trim `nodeRuntimeConfig`, extend the drift guard) | L | DONE | `f2f934b` |
 | DP-3 | vitest rules + `explicit-module-boundary-types` (four test-scoped rules, comment fix, make the return-type rule explicit with options) | M | PENDING | |
 | DP-4 | `jsdocConfig` fragment (jsdoc plugin, silence wall, validate-only set, drift guard) | L | PENDING | |
 | DP-5 | Changesets and close-out (WI-10 against the final config, full re-dogfood) | S | PENDING | |
@@ -228,3 +228,61 @@ Entries are appended here as each item passes its gates and commits.
   strengthened to reject the alias prefix too (`4e62741`).
 - **Deferred (tracked):** repo-wide `no-relative-parent-imports` conformance for app and scripts sits
   outside DP-1c by design; the monorepo-wide disable stays until those areas gain an alias plan.
+
+### DP-2: unicornConfig fragment (DONE)
+
+- **Build (delegated):** one fresh `pair` agent (Codex CLI, gpt-5.5, reasoning high), dispatched via
+  `agent_run` against the resolution's unicorn section. It measured the blast radius non-destructively
+  (a temporary script that imported the config, removed the silence lines, added the explicit entries,
+  and counted diagnostics) and graded rules against the live oxlint catalog rather than guessing.
+- **Fragment + split:** a new `src/configs/unicorn.ts` owns the unicorn plugin, the silence wall, and
+  the explicit-on rules; `baseConfig` composes it. `nodeRuntimeConfig` keeps only
+  `unicorn/prefer-node-protocol` (and re-declares `plugins: ['unicorn']` so it resolves standalone).
+- **Rules (per the resolution):** the swept and explicit sets at `error`, `prefer-set-has` at `warn`.
+  `number-literal-case` and `switch-case-braces` stay held (oxfmt turf). The Effect/Bun-idiom
+  conflicts stay dropped. `filename-case` and the browser/DOM family are deferred, with the
+  browser-family correctness members (`no-invalid-fetch-options`, `no-invalid-remove-event-listener`)
+  kept per-rule in the silence list so the sweep cannot turn them on.
+- **Canon grading (TD-CARD-033):** every enabled rule is graded by kind in the manifest; the
+  style-at-error rules sit in the `styleAtErrorExceptions` allowlist with autofix evidence, including
+  the documented no-autofix entry `no-useless-switch-case`. No blanket all-error.
+- **Blast radius (measured first):** `no-typeof-undefined` 32, `no-array-sort` 18, `prefer-set-has` 1
+  warning. After cleanup: 0 violations and 0 warnings. Fixes used `globalThis.undefined`, `toSorted`,
+  and one `Set#has`, with no suppressions.
+- **Verify gate (orchestrator, independent):** the anti-cheat scan found no new suppressions, and the
+  silence wall moved rather than expanded (`no-abusive-eslint-disable` was already silenced at HEAD).
+  The `toSorted` rewrites were checked safe: each operates on a fresh or result-consumed array (spread,
+  `map`, `filter`, `Object.entries`, or test assertions), so no caller relies on in-place mutation.
+  A clean `pnpm check` (after wiping `.tsbuildinfo`) caught a typecheck failure the agent's incremental
+  run masked: `toSorted` is an ES2023 API but the repo's `lib` defaulted to ES2022. Since `no-array-sort`
+  mandates `toSorted` and the Bun/Node runtime supports it, the fix added `"lib": ["ES2023"]` (target
+  stays ES2022) and restored the concrete public `baseConfig.rules` type via `ConfigWithRules`.
+- **Review gate:** `context_builder` review (`unicorn-review-0FF22E`) plus follow-ups. One must-fix was
+  DISPROVEN by an orchestrator probe: the review claimed the unattended `vp check --fix` lane could
+  apply dangerous autofixes, but `vp check --fix` applied only the safe instances (`[...[1,2,3]]` to
+  `[1,2,3]`, `parseInt` to `Number.parseInt`) and left the behavior-changing ones (a `[...src]` clone,
+  `isNaN`) untouched. Applied instead: the manifest now records that autofix boundary for
+  `no-useless-spread`, `prefer-number-properties`, and `prefer-set-has`; `nodeRuntimeConfig` became
+  self-contained; and a contract test pins that `composeLintConfigs(baseConfig, nodeRuntimeConfig)`
+  resolves `prefer-node-protocol` to `error` (the split made that rule order-sensitive). The changeset
+  is DP-5 scope, so it was not added.
+- **Refactor gate:** a separate `context_builder` chat (`dp2-refactor-review-D0FC38`). Two P1
+  consolidations landed: a `manifestCollectionsForConfiguredFragment` helper and a centralized
+  `styleAtErrorExceptions` constant, each a single source of truth consumed by both the manifest test
+  and the inventory gate. Two P2 ideas were deferred with reasons: the `unicorn.test.ts` and
+  `drift-guards.test.ts` expected-rule lists stay separate (independent static and engine-backed
+  assertions are a deliberate strength), and the `deriveOmittedNonErrorRuleAllowlist` restructure waits
+  until that area is next touched. The follow-up reported convergence.
+- **Checks (orchestrator, independent):** clean full `pnpm check` green, covering build, `vp lint`
+  0/0, version pins, `tsc -b --noEmit`, 782 tests, the release-workflow and changesets contracts, rule
+  inventory, fixture replay, both packed smokes, both package allowlists, `introspection check`, and
+  prose.
+- **Commits:** `f2f934b` (the fragment, manifest grading, lib bump, violation fixes, drift guard, and
+  effective-config), plus this ledger-record commit.
+- **Issues:** none open in the DP-2 code.
+- **Deferred (tracked):** the export-surface cleanup carried from DP-1 grew, because the inventory gate
+  consumes `manifestCollectionsForConfiguredFragment` and `styleAtErrorExceptions` from the built
+  package, so both are exported from the public root alongside the existing manifest helpers. Folding
+  these gate-only helpers off the public surface stays the deferred cleanup. `number-literal-case` and
+  `switch-case-braces` remain held pending oxfmt scope; `filename-case` and the browser family remain
+  deferred.
