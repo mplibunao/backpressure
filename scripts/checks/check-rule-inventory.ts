@@ -85,6 +85,7 @@ type DeriveOmittedNonErrorRuleAllowlistFn = (options: {
   readonly nodeRuntimeConfig: RuleConfigFragment;
   readonly pluginRulePrefix: string;
   readonly unicornConfig: RuleConfigFragment;
+  readonly jsdocConfig: RuleConfigFragment;
   readonly vitestConfig: RuleConfigFragment;
 }) => ReadonlySet<string>;
 
@@ -189,6 +190,7 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
     isRuleConfigFragment(moduleNamespace['vitestConfig']) &&
     isRuleConfigFragment(moduleNamespace['nodeRuntimeConfig']) &&
     isRuleConfigFragment(moduleNamespace['unicornConfig']) &&
+    isRuleConfigFragment(moduleNamespace['jsdocConfig']) &&
     isDeriveOmittedNonErrorRuleAllowlistFn(moduleNamespace['deriveOmittedNonErrorRuleAllowlist']) &&
     isManifestCollectionsForConfiguredFragmentFn(
       moduleNamespace['manifestCollectionsForConfiguredFragment'],
@@ -200,6 +202,7 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
         baseConfig: moduleNamespace['baseConfig'],
         nodeRuntimeConfig: moduleNamespace['nodeRuntimeConfig'],
         unicornConfig: moduleNamespace['unicornConfig'],
+        jsdocConfig: moduleNamespace['jsdocConfig'],
         vitestConfig: moduleNamespace['vitestConfig'],
       },
       deriveOmittedNonErrorRuleAllowlist: moduleNamespace['deriveOmittedNonErrorRuleAllowlist'],
@@ -213,7 +216,7 @@ const readPackageEntry = (moduleNamespace: unknown): InventoryPackageEntry => {
   }
 
   return fail(
-    'Built package did not export ruleManifest, configs, policy helpers, runtime rules, and unicornConfig.',
+    'Built package did not export ruleManifest, configs, policy helpers, runtime rules, unicornConfig, and jsdocConfig.',
   );
 };
 
@@ -532,6 +535,7 @@ const omittedNonErrorRuleNames = deriveOmittedNonErrorRuleAllowlist({
   nodeRuntimeConfig: nodeRuntimeConfigEntry,
   pluginRulePrefix,
   unicornConfig: configs['unicornConfig'] ?? fail('Built package missing unicornConfig.'),
+  jsdocConfig: configs['jsdocConfig'] ?? fail('Built package missing jsdocConfig.'),
   vitestConfig: vitestConfigEntry,
 });
 const enabledWithoutImplementation = collectionEntries.filter(

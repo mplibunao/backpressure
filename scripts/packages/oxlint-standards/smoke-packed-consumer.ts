@@ -65,6 +65,7 @@ const assertMainEntryExports = (consumerDir: string) => {
       composeLintConfigs,
       effectPreset,
       generalPreset,
+      jsdocConfig,
       nodeRuntimeConfig,
       plugin,
       ruleManifest,
@@ -107,6 +108,7 @@ const assertMainEntryExports = (consumerDir: string) => {
     }
 
     assertRuleFragment(baseConfig, 'baseConfig');
+    assertRuleFragment(jsdocConfig, 'jsdocConfig');
     assertRuleFragment(vitestConfig, 'vitestConfig');
     assertRuleFragment(nodeRuntimeConfig, 'nodeRuntimeConfig');
 
@@ -145,7 +147,7 @@ const assertMainEntryTypes = (consumerDir: string) => {
   });
   writeFileSync(
     join(consumerDir, 'contract.ts'),
-    `import defaultPlugin, { baseConfig, composeLintConfigs, effectPreset, generalPreset, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst noEffectAsInDefaultPlugin: unknown = defaultPluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!noEffectAsInPlugin || !noEffectAsInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
+    `import defaultPlugin, { baseConfig, composeLintConfigs, effectPreset, generalPreset, jsdocConfig, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst noEffectAsInDefaultPlugin: unknown = defaultPluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst jsdocRules: NonNullable<typeof jsdocConfig.rules> = jsdocConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst jsdocRuleCount: number = Object.keys(jsdocRules).length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!noEffectAsInPlugin || !noEffectAsInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || jsdocRuleCount === 0 || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
   );
 
   const result = runCommand('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: consumerDir });

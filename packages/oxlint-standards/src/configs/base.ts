@@ -2,6 +2,7 @@ import type { OxlintConfig } from 'oxlint';
 
 import { generalPreset } from '#oxlint-standards/presets/index.js';
 import { composeLintConfigs } from './compose.js';
+import { jsdocConfig } from './jsdoc.js';
 import { unicornConfig } from './unicorn.js';
 
 type ConfigWithRules = OxlintConfig & { readonly rules: NonNullable<OxlintConfig['rules']> };
@@ -183,4 +184,8 @@ const baseCoreConfig = {
   ],
 } satisfies OxlintConfig;
 
-export const baseConfig = composeLintConfigs(baseCoreConfig, unicornConfig) as ConfigWithRules;
+export const baseConfig = composeLintConfigs(
+  baseCoreConfig,
+  unicornConfig,
+  jsdocConfig,
+) as ConfigWithRules;

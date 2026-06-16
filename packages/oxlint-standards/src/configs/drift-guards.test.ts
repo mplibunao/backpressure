@@ -183,6 +183,118 @@ describe('drift guards — engine-backed suppression contracts', () => {
       }
     });
   });
+  // ─── jsdocConfig ─────────────────────────────────────────────────────────────
+  // jsdocConfig owns validate-where-documented behavior. The guard proves the live
+  // engine sees only the intended jsdoc rules after baseConfig composes the plugin.
+  describe('jsdocConfig: DP-4 validate-where-documented surface', () => {
+    const expectedBaseJsdocRules = [
+      ['jsdoc/check-access', 'deny'],
+      ['jsdoc/check-tag-names', 'deny'],
+      ['jsdoc/empty-tags', 'deny'],
+      ['jsdoc/require-param', 'deny'],
+      ['jsdoc/require-returns', 'deny'],
+    ] as const;
+    const intentionallyInactiveRules = [
+      'jsdoc/check-property-names',
+      'jsdoc/implements-on-classes',
+      'jsdoc/no-defaults',
+      'jsdoc/require-param-description',
+      'jsdoc/require-param-name',
+      'jsdoc/require-param-type',
+      'jsdoc/require-property',
+      'jsdoc/require-property-description',
+      'jsdoc/require-property-name',
+      'jsdoc/require-property-type',
+      'jsdoc/require-returns-description',
+      'jsdoc/require-returns-type',
+      'jsdoc/require-yields',
+    ] as const;
+
+    const printJsdocRules = (): Record<string, string> | undefined => {
+      const { configPath, filePath } = writeOxlintFixture(
+        baseConfig,
+        'subject.ts',
+        'export const x = 1;\n',
+      );
+
+      const result = runOxlint(['--config', configPath, '--print-config', filePath]);
+      return parsePrintConfig(result.stdout).rules;
+    };
+
+    it('--print-config on baseConfig shows exactly the DP-4 jsdoc validate rules', () => {
+      const activeJsdocRules = activeRulesWithPrefix(printJsdocRules(), ['jsdoc/']);
+
+      expect(activeJsdocRules).toStrictEqual(expectedBaseJsdocRules);
+    });
+
+    it('keeps every other current jsdoc rule inactive', () => {
+      const rules = printJsdocRules() ?? {};
+
+      for (const ruleName of intentionallyInactiveRules) {
+        expect({ ruleName, severity: rules[ruleName] }).toStrictEqual({
+          ruleName,
+          severity: 'allow',
+        });
+      }
+    });
+  });
+
+  describe('jsdocConfig: DP-4 validate-where-documented behavior', () => {
+    const jsdocDiagnosticRules = (output: string): string[] =>
+      Array.from(
+        output.matchAll(/eslint-plugin-jsdoc\(([^)]+)\)/g),
+        ([, ruleName]) => `jsdoc/${ruleName}`,
+      ).toSorted();
+
+    const lintBaseConfigFixtureForJsdocRules = (fileName: string, source: string): string[] => {
+      const { configPath, filePath } = writeOxlintFixture(baseConfig, fileName, source);
+      const result = runOxlint(['--config', configPath, filePath]);
+      return jsdocDiagnosticRules(result.stdout + result.stderr);
+    };
+
+    it('validates only functions that already have JSDoc blocks', () => {
+      const undocumentedRules = lintBaseConfigFixtureForJsdocRules(
+        'undocumented.ts',
+        `export function undocumentedExport(value: string): string {
+  return value;
+}
+`,
+      );
+      const incompleteDocumentedRules = lintBaseConfigFixtureForJsdocRules(
+        'incomplete-documented.ts',
+        `/**
+ * Echoes the value.
+ */
+export function incompleteDocumented(value: string): string {
+  return value;
+}
+`,
+      );
+      const staleExtraParamRules = lintBaseConfigFixtureForJsdocRules(
+        'stale-extra-param.ts',
+        `/**
+ * Increments the value.
+ *
+ * @param value The value to increment.
+ * @param stale Removed option.
+ * @returns The incremented value.
+ */
+export function staleExtraParam(value: number): number {
+  return value + 1;
+}
+`,
+      );
+
+      expect(undocumentedRules).toStrictEqual([]);
+      expect(incompleteDocumentedRules).toStrictEqual([
+        'jsdoc/require-param',
+        'jsdoc/require-returns',
+      ]);
+      // Known gap: oxlint 1.58.0 does not expose jsdoc/check-param-names, so stale extra @param tags are not diagnosed when every real parameter is documented.
+      expect(staleExtraParamRules).toStrictEqual([]);
+    });
+  });
+
   // ─── baseConfig oxc scope ───────────────────────────────────────────────────
   // Enabling the oxc plugin for oxc/no-barrel-file must not silently activate the
   // rest of the oxc namespace through baseConfig's correctness/suspicious/restriction categories.

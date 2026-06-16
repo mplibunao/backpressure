@@ -26,6 +26,7 @@ export type {
 export {
   baseConfig,
   composeLintConfigs,
+  jsdocConfig,
   nodeRuntimeConfig,
   unicornConfig,
   vitestConfig,

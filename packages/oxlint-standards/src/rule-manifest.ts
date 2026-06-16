@@ -17,13 +17,14 @@ export type RuleCollection =
   | 'baseConfig'
   | 'vitestConfig'
   | 'unicornConfig'
+  | 'jsdocConfig'
   | 'nodeRuntimeConfig';
 // Config fragments can physically compose other fragments. This helper states which
 // manifest collections are allowed to explain one configured fragment's explicit rules.
 export const manifestCollectionsForConfiguredFragment = (
   collection: RuleCollection,
 ): readonly RuleCollection[] =>
-  collection === 'baseConfig' ? ['baseConfig', 'unicornConfig'] : [collection];
+  collection === 'baseConfig' ? ['baseConfig', 'unicornConfig', 'jsdocConfig'] : [collection];
 
 // Independent policy allowlist: tests and inventory compare the manifest's style-at-error rows
 // against this hardcoded list, then require each listed row to carry autofix evidence.
@@ -203,6 +204,16 @@ interface PortedScenarioRuleOptions {
 /**
  * Ported linteffect rule with semantic-scenario-replay coverage.
  * Hardcodes: ported / implemented / covered / semantic-scenario-replay / v4-primary structural / linteffect / testSource:none.
+ * @param options Manifest fields that vary for a ported scenario rule.
+ * @param options.name Rule name.
+ * @param options.domain Preset domain.
+ * @param options.sourcePresets Upstream source preset names.
+ * @param options.severity Default severity.
+ * @param options.rationaleClass Severity rationale class.
+ * @param options.gating Consumer-safety gate classification.
+ * @param options.collections Config or preset collections that enable the rule.
+ * @param options.note Human-readable manifest note.
+ * @returns A normalized manifest entry with the ported scenario defaults applied.
  */
 export const portedScenarioRule = ({
   name,
@@ -245,6 +256,15 @@ interface PortedFixtureRuleOptions {
 /**
  * Ported linteffect rule tested via upstream source fixtures.
  * Hardcodes: ported / error / implemented / covered / source-fixture-replay / v4-primary structural / linteffect / linteffect-fixture.
+ * @param options Manifest fields that vary for a ported fixture-backed rule.
+ * @param options.name Rule name.
+ * @param options.domain Preset domain.
+ * @param options.sourcePresets Upstream source preset names.
+ * @param options.rationaleClass Severity rationale class.
+ * @param options.gating Consumer-safety gate classification.
+ * @param options.collections Config or preset collections that enable the rule.
+ * @param options.note Human-readable manifest note.
+ * @returns A normalized manifest entry with the ported fixture defaults applied.
  */
 export const portedFixtureRule = ({
   name,
@@ -289,6 +309,18 @@ interface ReimplementedScenarioRuleOptions {
 /**
  * Net-new or executor/recon reimplemented rule (no linteffect source).
  * Hardcodes: reimplemented / sourcePresets:[] / implemented / covered / semantic-scenario-replay.
+ * @param options Manifest fields that vary for a reimplemented scenario rule.
+ * @param options.name Rule name.
+ * @param options.domain Preset domain.
+ * @param options.severity Default severity.
+ * @param options.rationaleClass Severity rationale class.
+ * @param options.effectVersionSensitivity Effect-version sensitivity note.
+ * @param options.sourceOwnership Source or inspiration owner.
+ * @param options.testSource Replay source classification.
+ * @param options.gating Consumer-safety gate classification.
+ * @param options.collections Config or preset collections that enable the rule.
+ * @param options.note Human-readable manifest note.
+ * @returns A normalized manifest entry with the reimplemented scenario defaults applied.
  */
 export const reimplementedScenarioRule = ({
   name,
@@ -333,6 +365,15 @@ interface BuiltInRuleOptions {
 /**
  * Built-in oxlint rule included in a preset with no custom implementation.
  * Hardcodes: built-in / sourcePresets:[] / implemented / not-applicable / not-applicable / structural / built-in / none.
+ * @param options Manifest fields that vary for a built-in preset rule.
+ * @param options.name Rule name.
+ * @param options.domain Preset domain.
+ * @param options.severity Default severity.
+ * @param options.rationaleClass Severity rationale class.
+ * @param options.gating Consumer-safety gate classification.
+ * @param options.collections Config or preset collections that enable the rule.
+ * @param options.note Human-readable manifest note.
+ * @returns A normalized manifest entry with the built-in rule defaults applied.
  */
 export const builtInRule = ({
   name,
@@ -374,6 +415,15 @@ interface NativeRuleOptions {
 /**
  * Native oxlint/plugin rule explicitly decided by an exported config fragment.
  * Category-swept native rules are intentionally not represented here; WI-6 owns the generated effective-config view.
+ * @param options Manifest fields that vary for a native config-fragment rule.
+ * @param options.name Rule name.
+ * @param options.domain Config-fragment domain.
+ * @param options.severity Default severity.
+ * @param options.rationaleClass Severity rationale class.
+ * @param options.collections Config collections that enable the rule.
+ * @param options.gating Consumer-safety gate classification.
+ * @param options.note Human-readable manifest note.
+ * @returns A normalized manifest entry with the native rule defaults applied.
  */
 export const nativeRule = ({
   name,
@@ -405,6 +455,7 @@ export const nativeRule = ({
 const baseConfigCollections = ['baseConfig'] as const;
 const vitestConfigCollections = ['vitestConfig'] as const;
 const unicornConfigCollections = ['unicornConfig'] as const;
+const jsdocConfigCollections = ['jsdocConfig'] as const;
 const nodeRuntimeConfigCollections = ['nodeRuntimeConfig'] as const;
 
 const baseRule = (options: Omit<NativeRuleOptions, 'collections' | 'domain'>): RuleManifestEntry =>
@@ -417,6 +468,8 @@ const unicornRule = (
   options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
 ): RuleManifestEntry =>
   nativeRule({ ...options, collections: unicornConfigCollections, domain: 'base' });
+const jsdocRule = (options: Omit<NativeRuleOptions, 'collections' | 'domain'>): RuleManifestEntry =>
+  nativeRule({ ...options, collections: jsdocConfigCollections, domain: 'base' });
 const nodeRuntimeRule = (
   options: Omit<NativeRuleOptions, 'collections' | 'domain'>,
 ): RuleManifestEntry =>
@@ -431,6 +484,7 @@ interface DeriveOmittedNonErrorRuleAllowlistOptions {
   readonly nodeRuntimeConfig: RuleConfigFragmentLike;
   readonly pluginRulePrefix: string;
   readonly unicornConfig: RuleConfigFragmentLike;
+  readonly jsdocConfig: RuleConfigFragmentLike;
   readonly vitestConfig: RuleConfigFragmentLike;
 }
 
@@ -461,6 +515,14 @@ const vitestBleedGuardRuleNames = (
     normalizeConfiguredRuleName(ruleName, pluginRulePrefix),
   );
 
+const jsdocBleedGuardRuleNames = (
+  jsdocConfig: RuleConfigFragmentLike,
+  pluginRulePrefix: string,
+): readonly string[] =>
+  Object.entries(jsdocConfig.rules ?? {})
+    .filter(([, setting]) => configuredRuleSettingSeverity(setting) === 'off')
+    .map(([ruleName]) => normalizeConfiguredRuleName(ruleName, pluginRulePrefix));
+
 const nodeRuntimeBleedGuardRuleNames = (
   nodeRuntimeConfig: RuleConfigFragmentLike,
   pluginRulePrefix: string,
@@ -482,6 +544,7 @@ export const deriveOmittedNonErrorRuleAllowlist = ({
   nodeRuntimeConfig,
   pluginRulePrefix,
   unicornConfig,
+  jsdocConfig,
   vitestConfig,
 }: DeriveOmittedNonErrorRuleAllowlistOptions): ReadonlySet<string> =>
   new Set([
@@ -492,6 +555,7 @@ export const deriveOmittedNonErrorRuleAllowlist = ({
     ...vitestBleedGuardRuleNames(vitestConfig, pluginRulePrefix),
     ...nodeRuntimeBleedGuardRuleNames(nodeRuntimeConfig, pluginRulePrefix),
     ...unicornBleedGuardRuleNames(unicornConfig, pluginRulePrefix),
+    ...jsdocBleedGuardRuleNames(jsdocConfig, pluginRulePrefix),
   ]);
 
 const unicornManifestEntries = [
@@ -742,8 +806,47 @@ const unicornManifestEntries = [
   }),
 ] as const;
 
+const jsdocManifestEntries = [
+  jsdocRule({
+    name: 'jsdoc/check-tag-names',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Validates existing doc blocks by catching invalid or typoed JSDoc tag names.',
+  }),
+  jsdocRule({
+    name: 'jsdoc/require-param',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Validates documented functions by catching signature parameters missing from an existing JSDoc block; it does not require docs on undocumented functions.',
+  }),
+  jsdocRule({
+    name: 'jsdoc/require-returns',
+    severity: 'error',
+    rationaleClass: 'agent-failure-mode',
+    gating: 'stack-neutral',
+    note: 'Validates documented functions by catching return statements missing from an existing JSDoc block; it does not require docs on undocumented functions.',
+  }),
+  jsdocRule({
+    name: 'jsdoc/check-access',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Validates existing access tags by catching invalid values, mixed access forms, and duplicate access declarations.',
+  }),
+  jsdocRule({
+    name: 'jsdoc/empty-tags',
+    severity: 'error',
+    rationaleClass: 'correctness',
+    gating: 'stack-neutral',
+    note: 'Validates existing void tags by catching content attached to tags that are defined to be empty.',
+  }),
+] as const;
+
 export const ruleManifest = [
   ...unicornManifestEntries,
+  ...jsdocManifestEntries,
   sourceRule({
     name: 'no-arrow-ladder',
     domain: 'effect',

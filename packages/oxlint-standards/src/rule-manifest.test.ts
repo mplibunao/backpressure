@@ -1,7 +1,13 @@
 import type { OxlintConfig } from 'oxlint';
 import { describe, expect, it, vi } from 'vitest';
 
-import { baseConfig, nodeRuntimeConfig, unicornConfig, vitestConfig } from './configs/index.js';
+import {
+  baseConfig,
+  jsdocConfig,
+  nodeRuntimeConfig,
+  unicornConfig,
+  vitestConfig,
+} from './configs/index.js';
 import { pluginRuleName } from './presets/shared.js';
 import {
   collapseManifestSeverity,
@@ -32,12 +38,14 @@ const allCollections = [
   'baseConfig',
   'vitestConfig',
   'unicornConfig',
+  'jsdocConfig',
   'nodeRuntimeConfig',
 ] as const satisfies readonly RuleCollection[];
 const configCollectionPairs = [
   { collection: 'baseConfig', config: baseConfig },
   { collection: 'vitestConfig', config: vitestConfig },
   { collection: 'unicornConfig', config: unicornConfig },
+  { collection: 'jsdocConfig', config: jsdocConfig },
   { collection: 'nodeRuntimeConfig', config: nodeRuntimeConfig },
 ] as const satisfies readonly ConfigCollectionPair[];
 const missingRuleSeverity = Symbol('missing rule severity');
@@ -96,6 +104,7 @@ const derivedOmittedNonErrorRuleAllowlist = (): ReadonlySet<string> =>
     nodeRuntimeConfig,
     pluginRulePrefix: pluginRuleName(''),
     unicornConfig,
+    jsdocConfig,
     vitestConfig,
   });
 
@@ -258,6 +267,25 @@ describe('rule manifest schema', () => {
       'unicorn/prefer-structured-clone',
       'unicorn/throw-new-error',
     ]);
+  });
+
+  it('records the DP-4 jsdoc manifest surface exactly once', () => {
+    const jsdocEntries = entriesForCollection('jsdocConfig');
+
+    expect(jsdocEntries.map((entry) => entry.name).toSorted()).toStrictEqual([
+      'jsdoc/check-access',
+      'jsdoc/check-tag-names',
+      'jsdoc/empty-tags',
+      'jsdoc/require-param',
+      'jsdoc/require-returns',
+    ]);
+
+    for (const entry of jsdocEntries) {
+      expect({ name: entry.name, severity: topLevelSeverity(jsdocConfig, entry) }).toEqual({
+        name: entry.name,
+        severity: collapseManifestSeverity(entry.severity),
+      });
+    }
   });
 
   it('round-trips nodeRuntimeConfig membership without manifesting silenced unicorn bleed guards', () => {
