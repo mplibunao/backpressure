@@ -52,12 +52,19 @@ to that type.
 **Default direction:** base is opinionated-on by default; weakening a rule is an explicit,
 visible per-repo opt-out, never a silent unbuilt layer (the failure that started this audit).
 
-The last two inputs are cross-checks, not deciders. Per-project fit (above) decides base vs
-layer. What serious TS rule sets use is for discovering candidate rules and learning each
-rule's known pitfalls and recommended config, not a popularity vote: popularity is a lagging
-signal, and eslint-config-airbnb was once universal and is now aged-out cruft. Mine individual
-rules and their docs; do not adopt a config wholesale. Your taste and the anti-slop purpose
-break ties.
+Two inputs feed the decision; neither overrides your taste. Per-project fit (above) decides
+base vs layer.
+
+Current popularity is a real quality signal when defined right: it means present mindshare
+among quality-conscious devs (what the modern crowd has moved to), not cumulative install
+count. By that measure oxlint and Biome are popular and eslint-config-airbnb is not, despite
+its legacy install base. Recency-weighted mindshare tracks quality because that crowd churns
+off bad tools fast. The deep pass starts from the modern tool's own curation, oxlint's
+defaults and any recommended sets it ships plus the current rule packs, rather than
+hand-assembling or copying a legacy config (the tool maintains its own curation, so you
+inherit its updates). Then it filters through your project types and taste, and lets the
+agent-failure-mode purpose add what the mainstream omits. Premature hype (hot for a quarter,
+gone the next) does not earn a slot; taste and purpose break ties.
 
 Legend in the tables: **BASE** = on by default; **STACK/RUNTIME** = on in the matching
 layer; **DEFER** = blocked on tooling; **OFF** = correctly disabled, with reason.
