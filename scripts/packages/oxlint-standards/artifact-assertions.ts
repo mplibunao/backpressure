@@ -50,6 +50,7 @@ const forbiddenPackagePathFragments = [
 const forbiddenDependencyPatterns = ['rika'];
 const distIndexJsPath = join(oxlintPackageDir, 'dist', 'index.js');
 const distIndexDtsPath = join(oxlintPackageDir, 'dist', 'index.d.ts');
+const packageInternalAliasPrefix = '#oxlint-standards/';
 
 interface ModuleSpecifierForNode {
   readonly kind: string;
@@ -57,7 +58,7 @@ interface ModuleSpecifierForNode {
   readonly specifier: string;
 }
 
-interface RelativeModuleSpecifier {
+export interface LeakedInternalModuleSpecifier {
   readonly kind: string;
   readonly line: number;
   readonly specifier: string;
@@ -100,8 +101,10 @@ const isAllowedPackedFile = (file: string) => {
   return allowedDistFiles.has(file);
 };
 
-const isRelativeSpecifier = (specifier: string): boolean =>
-  specifier.startsWith('./') || specifier.startsWith('../');
+const isLeakedInternalSpecifier = (specifier: string): boolean =>
+  specifier.startsWith('./') ||
+  specifier.startsWith('../') ||
+  specifier.startsWith(packageInternalAliasPrefix);
 
 const lineForNode = (sourceFile: ts.SourceFile, node: ts.Node): number =>
   sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
@@ -172,18 +175,24 @@ const moduleSpecifierForNode = (node: ts.Node): ModuleSpecifierForNode | null =>
   importTypeSpecifierForNode(node) ??
   dynamicImportSpecifierForNode(node);
 
-const collectRelativeModuleSpecifiers = (
-  path: string,
+export const collectLeakedInternalModuleSpecifiers = (
+  sourceText: string,
+  sourceName: string,
   scriptKind: ts.ScriptKind,
-): RelativeModuleSpecifier[] => {
-  const content = readFileSync(path, 'utf8');
-  const sourceFile = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, scriptKind);
-  const relativeSpecifiers: RelativeModuleSpecifier[] = [];
+): LeakedInternalModuleSpecifier[] => {
+  const sourceFile = ts.createSourceFile(
+    sourceName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
+  const leakedSpecifiers: LeakedInternalModuleSpecifier[] = [];
 
   const visit = (node: ts.Node): void => {
     const moduleSpecifier = moduleSpecifierForNode(node);
-    if (moduleSpecifier !== null && isRelativeSpecifier(moduleSpecifier.specifier)) {
-      relativeSpecifiers.push({
+    if (moduleSpecifier !== null && isLeakedInternalSpecifier(moduleSpecifier.specifier)) {
+      leakedSpecifiers.push({
         kind: moduleSpecifier.kind,
         line: lineForNode(sourceFile, moduleSpecifier.node),
         specifier: moduleSpecifier.specifier,
@@ -194,21 +203,25 @@ const collectRelativeModuleSpecifiers = (
   };
 
   visit(sourceFile);
-  return relativeSpecifiers;
+  return leakedSpecifiers;
 };
 
-const assertNoRelativeDistSpecifiers = (
+const assertNoLeakedInternalDistSpecifiers = (
   path: string,
   label: string,
   scriptKind: ts.ScriptKind,
 ): void => {
-  const leakedSpecifiers = collectRelativeModuleSpecifiers(path, scriptKind);
+  const leakedSpecifiers = collectLeakedInternalModuleSpecifiers(
+    readFileSync(path, 'utf8'),
+    path,
+    scriptKind,
+  );
 
   if (leakedSpecifiers.length > 0) {
     const formattedSpecifiers = leakedSpecifiers.map(
       (leak) => `${leak.kind} ${JSON.stringify(leak.specifier)} at line ${leak.line}`,
     );
-    fail(`${label} leaked relative module specifier(s): ${formattedSpecifiers.join(', ')}.`);
+    fail(`${label} leaked internal module specifier(s): ${formattedSpecifiers.join(', ')}.`);
   }
 };
 
@@ -263,8 +276,8 @@ export const assertOxlintPackedArtifact = (files: readonly string[]): void => {
 };
 
 export const assertOxlintDistArtifact = (): void => {
-  assertNoRelativeDistSpecifiers(distIndexJsPath, 'dist/index.js', ts.ScriptKind.JS);
-  assertNoRelativeDistSpecifiers(distIndexDtsPath, 'dist/index.d.ts', ts.ScriptKind.TS);
+  assertNoLeakedInternalDistSpecifiers(distIndexJsPath, 'dist/index.js', ts.ScriptKind.JS);
+  assertNoLeakedInternalDistSpecifiers(distIndexDtsPath, 'dist/index.d.ts', ts.ScriptKind.TS);
 
   const entryUrl = pathToFileURL(distIndexJsPath).href;
   const runtimeContract = `
