@@ -2,6 +2,7 @@
 
 Status: accepted (2026-05-30) · Authored ahead of build because it carries settled
 decisions that Items 5/10/14/15 of the setup plan depend on.
+[ADR-007](../decisions/007-tsgo-delegation-and-overlap.md) records the intended Effect v4 alignment; that behavior is not yet implemented.
 
 ## Purpose
 

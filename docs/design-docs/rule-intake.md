@@ -1,6 +1,6 @@
 # Rule intake
 
-Status: current-state procedure for triaging a candidate rule into this package.
+Status: current-state procedure for triaging a candidate rule into this package. [ADR-007](../decisions/007-tsgo-delegation-and-overlap.md) records the intended `@effect/tsgo` delegation; that cutover is not yet implemented.
 
 ## Purpose
 

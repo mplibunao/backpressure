@@ -22,3 +22,7 @@ The rule pack does not depend on Rika's package. Rika may be used only as a refe
 - Effect-specific native-rule carve-outs, such as `require-yield: off` and `no-shadow: off`, stay confined to the `effect` preset so non-Effect consumers keep stricter defaults.
 - `no-if-statement`, `no-effect-fn-generator`, `no-ternary`, and executor's `no-match-orelse` are not built for v0 because they conflict with the gen-first posture or real-world Match usage.
 - Error-model rules must not blanket-ban `Data.TaggedError`. The v0 catalog preserves the Data-vs-Schema boundary: Schema-tagged errors are for wire contracts, while Data-tagged errors remain valid for internal errors.
+
+## Supersession (2026-09-25)
+
+[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the language-service delegation and overlap clauses above. The preset remains gen-first and v4-primary, and it still ships structural oxlint rules. Type-aware Effect checks are delegated to `@effect/tsgo` instead of `@effect/language-service`. The overlap rule is owned by [ADR-007](007-tsgo-delegation-and-overlap.md). That cutover is not yet implemented.

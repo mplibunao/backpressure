@@ -1,6 +1,6 @@
 # Rule pack architecture
 
-Status: current-state design for the group-3 catalog.
+Status: current-state design for the group-3 catalog. [ADR-007](../decisions/007-tsgo-delegation-and-overlap.md) records the intended `@effect/tsgo` successor; that cutover is not yet implemented.
 
 ## Purpose
 

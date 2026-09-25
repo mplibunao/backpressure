@@ -1,6 +1,6 @@
 # Rules reference
 
-`@mplibunao/oxlint-standards` ships fast AST-shape rules. `@effect/language-service` owns type-aware semantic diagnostics. Consumers can override each oxlint rule in their own config.
+`@mplibunao/oxlint-standards` ships fast AST-shape rules. `@effect/language-service` owns type-aware semantic diagnostics. [ADR-007](../decisions/007-tsgo-delegation-and-overlap.md) records the intended `@effect/tsgo` successor; that cutover is not yet implemented. Consumers can override each oxlint rule in their own config.
 
 The machine-checkable catalog is `packages/oxlint-standards/src/rule-manifest.ts`. The inventory gate is `scripts/checks/check-rule-inventory.ts`.
 

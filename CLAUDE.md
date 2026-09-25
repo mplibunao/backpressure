@@ -13,6 +13,8 @@ This repo is MP's personal monorepo for code-quality backpressure tooling. The v
 - Candidate-rule intake procedure: `docs/design-docs/rule-intake.md`.
 - Lint architecture terminology (rule / plugin / preset / shareable config): `docs/references/lint-glossary.md`.
 - Accepted decisions index: `docs/decisions/index.md`.
+- Effect v4 alignment decision: `docs/decisions/007-tsgo-delegation-and-overlap.md` (accepted; not yet implemented).
+- Effect v4 progress ledger: `docs/exec-plans/active/effect-rules-v4-implementation-progress-ledger.md`.
 - Deferred work records: run `introspection prime` before planning and `introspection check` before finishing changes.
 - Prose gate policy: `docs/references/prose-gate.md`.
 
