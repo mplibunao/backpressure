@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "customManagers": [
+    {
+      "customType": "jsonata",
+      "description": "Isolated Effect integration pins; the unsupported-target control is deliberately not managed.",
+      "fileFormat": "json",
+      "managerFilePatterns": ["/^scripts/config/effect-toolchain\\.json$/"],
+      "matchStrings": [
+        "$each(integration, function($v, $k) { { \"depName\": $k, \"currentValue\": $v } })"
+      ],
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "tsgo patches exact oxlint, oxlint-tsgolint, and TypeScript builds, so these move together and never automerge; the policy, matrix, and packed-engine gates decide compatibility.",
+      "matchPackageNames": ["@effect/tsgo", "vite-plus", "oxlint", "oxlint-tsgolint"],
+      "groupName": "effect tsgo integration",
+      "automerge": false
+    },
+    {
+      "description": "Every integration-only pin joins the same group.",
+      "matchFileNames": ["scripts/config/effect-toolchain.json"],
+      "groupName": "effect tsgo integration",
+      "automerge": false
+    }
+  ]
+}

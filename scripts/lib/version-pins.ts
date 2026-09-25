@@ -6,11 +6,16 @@ import { fail, isObjectRecord, readText, repoRoot } from './script-runtime.ts';
 import {
   type CanonicalVersionInput,
   type CanonicalVersions,
+  type EffectIntegrationVersions,
   type RootPackageJson,
   parseRootPackageJson,
   readCanonicalVersionInputs,
   readCanonicalVersions,
+  readEffectIntegrationVersionInputs,
+  readEffectIntegrationVersions,
 } from './tool-versions.ts';
+import type { TsgoSnapshot } from './tsgo-snapshot.ts';
+import { readRetainedTsgoSnapshot } from './tsgo-snapshot-files.ts';
 
 const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'ci.yml'),
@@ -257,6 +262,42 @@ export const assertVersionPinContract = (inputs: VersionPinContractInput): void 
   }
 };
 
+const assertSupported = (version: string, supported: readonly string[], label: string): void => {
+  if (!supported.includes(version)) {
+    fail(`${label} ${version} is not supported by the pinned tsgo (${supported.join(', ')}).`);
+  }
+};
+
+// The supported matrix comes from the pinned tsgo release itself (its tagged README table,
+// retained in the snapshot), so an integration pin bump cannot drift outside what the patch accepts.
+// The unsupported-target control must stay unsupported or it stops proving the failure mode.
+export const assertEffectIntegrationMatrix = (
+  versions: EffectIntegrationVersions,
+  snapshot: TsgoSnapshot,
+): void => {
+  if (snapshot.package.version !== versions.effectTsgo) {
+    fail(
+      `tsgo snapshot ${snapshot.package.version} does not match catalog @effect/tsgo ${versions.effectTsgo}.`,
+    );
+  }
+  const targets = snapshot.supportedTargets;
+  assertSupported(versions.oxlint, targets.oxlint, 'Integration oxlint');
+  assertSupported(
+    versions.oxlintTsgolint,
+    targets['oxlint-tsgolint'],
+    'Integration oxlint-tsgolint',
+  );
+  assertSupported(versions.tscRouteTypescript, targets.typescript, 'Integration TypeScript');
+  if (targets.oxlint.includes(versions.unsupportedOxlint)) {
+    fail(`Unsupported-target control oxlint ${versions.unsupportedOxlint} is supported by tsgo.`);
+  }
+};
+
+const readPinnedSnapshot = (versions: EffectIntegrationVersions): TsgoSnapshot =>
+  readRetainedTsgoSnapshot(join(repoRoot, 'scripts', 'references', 'tsgo'), versions.effectTsgo);
+
 export const assertWorkflowPins = (): void => {
   assertVersionPinContract(readVersionPinInputs());
+  const integration = readEffectIntegrationVersions(readEffectIntegrationVersionInputs());
+  assertEffectIntegrationMatrix(integration, readPinnedSnapshot(integration));
 };

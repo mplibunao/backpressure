@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "plugins": [
+      {
+        "barrelImportPackages": [],
+        "diagnostics": false,
+        "effectFn": ["span", "inferred-span", "suggested-span"],
+        "name": "@effect/language-service",
+        "namespaceImportPackages": ["effect"],
+        "pipeableMinArgCount": 2
+      }
+    ]
+  }
+}
