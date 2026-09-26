@@ -97,7 +97,7 @@ Reason: C is the most precise option, and the name heuristic misfires on typed e
 | C. Drop | Nothing flagged | None |
 | D. B plus flag chained `.pipe(a).pipe(b)` | Also mirrors the language service's `unnecessaryPipeChain` suggestion at lint time | Medium |
 
-Reason: MP has repeatedly seen agents, GPT models especially, stack fallback after fallback in nested pipes, a shape as hard to read as nested try/catch. The published receipts for nested Effect pipes as agent slop are thin, but first-hand observation of agent output is the evidence this repo exists to act on.
+Reason: no recorded evidence supports this rule. MP's firsthand observation is that agent output drifts toward try/catch and defensive coding, not nested Effect pipes, and the published evidence for nested Effect pipes as agent slop is thin. Whether to keep, narrow, or drop the rule is an open MP decision (2026-09-26).
 
 ### `no-react-state` (pattern 15): chose B
 
