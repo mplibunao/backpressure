@@ -27,7 +27,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (pushed) | `eaff7e4` |
 | WI-06 | Activate the full Effect config and both package surfaces | L | DONE (pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
-| WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | DONE (uncommitted) | |
+| WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | DONE (pushed) | `c2f6a4d` |
 | WI-14 | Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure | M | DONE (pushed) | `63e5a65` |
 | WI-11 | Rule list with its generated page and local viewer | M | DONE (pushed) | `b848cb5` |
 | WI-07 | Install all six durable gates | L | DONE (pushed) | `671fcb9` |
