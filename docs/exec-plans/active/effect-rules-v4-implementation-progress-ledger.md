@@ -25,8 +25,10 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | DONE (local, not pushed) | `ec4f4f8` |
 | WI-04 | Narrow composition and error contracts | L | DONE (local, not pushed) | `9c12bcc` |
 | WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (local, not pushed) | `eaff7e4` |
-| WI-06 | Activate the full Effect config and both package surfaces | L | DONE (uncommitted); the `prefer-effect-fn` restore is an orchestrator call pending MP confirmation | |
-| WI-11 | Rule list with its generated page and local viewer | M | PENDING | |
+| WI-06 | Activate the full Effect config and both package surfaces | L | DONE (local, not pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
+| WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
+| WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | WAITING for the upstream release | |
+| WI-11 | Rule list with its generated page and local viewer | M | DONE (uncommitted) | |
 | WI-07 | Install all six durable gates | L | PENDING | |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | PENDING | |
 | WI-09 | Complete consumer guidance, records, and changesets | M | PENDING | |
@@ -710,3 +712,78 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 - **Review gate:** the agent's own oracle review did not run. RepoPrompt `manage_selection` mutations and `ask_oracle` were cancelled, as in WI-02. The orchestrator owns review.
 - **Commits:** none. The orchestrator commits.
 - **Action item for MP:** confirm or reverse the orchestrator's restore of `prefer-effect-fn`. The alternatives are recorded under the decision above.
+
+### WI-11: Rule list with its generated page and local viewer (DONE)
+
+- **Build:**
+  - **Collector (`scripts/lib/rules-collector.ts`):** `buildRuleList(inputs)` is pure over its inputs. `collectRules()` does the I/O: it imports the built package with shape guards, reads the retained tsgo snapshot, and runs root oxlint. Package rows come from `ruleManifest` (ported or reimplemented, implemented, in at least one collection), tsgo rows from `tsgoPolicyRows` plus the snapshot, and built-in rows from `oxlint --print-config` on `baseConfig` and on `baseConfig + vitestConfig + nodeRuntimeConfig` only. Presets add built-in rows only through the rules they set explicitly. Print-config `deny`/`warn`/`allow` normalize to `error`/`warn`/`off`, and a rule is listed only when some target has it on for normal or test files. Dropped rows and the five tsgo rules set off everywhere are excluded.
+  - **Wire types (`scripts/lib/rule-list.ts`):** an import-free module holding the list shape. The viewer's page script imports it too.
+  - **Renderer (`scripts/lib/rules-markdown.ts`) and generator (`scripts/checks/generate-rules-page.ts`):** `pnpm gen:rules-page` writes `docs/references/rules.md`; `pnpm rules-page:check` renders in memory and fails when the committed page differs. The page has a fixed header with the regenerate command and the tsgo attribution, then one table per source.
+  - **Viewer (`packages/rules-viewer`):** `"private": true`, no `version`, no scripts. `src/server.ts` builds the package through `buildOxlintStandards()`, so `SKIP_BUILD` applies. It collects the list once at startup. Its two routes are `/`, where Bun bundles `index.html` with `src/page.ts`, and `/rules.json`, served from memory. It listens on `127.0.0.1` at port 4178 unless `RULES_VIEWER_PORT` says otherwise. The page is plain DOM with `textContent` only. It has a search box, filters for source, preset or config, and severity, a normal/tests severity grid per target, and a collapsed tsgo example with the reported spans highlighted. `bun-types` 1.3.11 (published 2026-03-18, matching the Bun pin) joins the catalog. Both viewer tsconfigs are in the root `references`.
+  - **Smoke (`scripts/packages/rules-viewer/smoke.ts`):** the server starts on port 0 and prints its URL. The smoke then requires `/rules.json` to hold rows from all three sources, and requires `/` and its bundled script to respond. The server is killed in `finally`.
+  - **Removed:** `docs/references/effective-config.json`, `docs/references/effective-config.md`, `scripts/checks/generate-effective-config.ts`, the artifact types and generator in `scripts/lib/effective-config.ts`, the inventory staleness gate, the `gen:effective-config` script, and the `vite.config.ts` format-ignore entry. `effective-config.ts` gained `readOxlintRuleItems` (705 items on 1.58.0) and exports `flattenTestOverridesIntoGlobal`; `buildOxlintRuleCatalog` keeps its signature and derives its set from the items.
+  - **Wiring:** `pnpm check` runs `SKIP_BUILD=true pnpm rules-page:check` and `SKIP_BUILD=true pnpm smoke:rules-viewer` after `inventory:rules`. `pnpm rules:view` is `bun packages/rules-viewer/src/server.ts`.
+  - **Docs:** `.vale.ini` has an empty `BasedOnStyles` section for `docs/references/rules.md`, and `prose-gate.md` records the exemption. The package README links the rules page and `pnpm rules:view`, and it takes the still-true parts of the old page: the fuller Effect v4 target, the `generalPreset` rule list, and the executor/t3code/effect-smol and Rika attribution lines. ADR-007 no longer calls the viewer planned. The `nativeRule` comment in `rule-manifest.ts` points at the rules page.
+- **Page contents at this tree:** 43 package rows, 108 tsgo rows, and 253 built-in rows. The built-in names and every normal and test severity match the deleted artifact at `HEAD` exactly (an independent script over `git show HEAD:docs/references/effective-config.json`).
+- **Judgment calls:**
+  - **Renderer file:** `renderRulesMarkdown` lives in `rules-markdown.ts` beside the collector, not inside `rules-collector.ts`, to stay under the 500-line lint ceiling.
+  - **Snapshot input:** the collector reads the snapshot through `readRetainedTsgoSnapshot`, which validates the schema and the license hash, instead of adding `metadata.json` to the scripts tsconfig `include`.
+  - **Targets:** the four presets, `effectTsgoConfig`, `baseConfig`, and the base, Vitest, and Node runtime composition. `vitestConfig`, `nodeRuntimeConfig`, `unicornConfig`, and `jsdocConfig` appear through the two compositions; printing any of them alone would credit oxlint's default rules to it.
+  - **Package test severity:** the manifest gives the normal severity; the test severity comes from the target config's test-file override. That is how `no-double-cast` shows `error / off` in `baseConfig`.
+  - **Stale-build guard:** the collector fails when a built preset or config sets a package or tsgo rule differently from the manifest and policy, for normal files or for test files. Under `SKIP_BUILD=true`, a stale `dist` fails `rules-page:check` with the differing settings named; test-file differences carry a `tests` label.
+  - **Explicit offs:** when a rule is on elsewhere, a target's explicit `off` still appears as an activation. `no-shadow` in `effectPreset` is the example.
+  - **Built-in descriptions:** a built-in row shows its manifest note when the manifest has a native row for it, and otherwise its oxlint category.
+  - **Message access:** `rule-messages.ts` gained an internal `ruleMessageTemplate` so the collector reads the unfilled Fix and Ref text; `ruleMessage` now calls it. The package root does not export it.
+  - **Deferred to its consumer:** the explicit cwd for `materializeEffectiveRules` belongs to the G3b comparison. The collector uses the defaults, so it is not added here.
+  - **Viewer tsconfigs:** both set `lib` to ES2023 (the scripts use `toSorted`, which `server.json`'s ES2022 lacks) and `rootDir` to the repo root. The server project lists the collector's transitive `scripts/lib` imports, including `stable-json.ts`.
+  - **Unchanged:** the `drift-guards.test.ts` comment still names a function that exists in `scripts/lib/effective-config.ts`, so it stays as is. The router pointer to the rules page and the README's stale counts and language-service section stay with the consumer-docs item, per §4.
+- **Visual check (surf):** the global `surf` link points at a missing `native/cli.cjs`, so the built CLI in the surf-cli checkout ran directly against the extension socket in an isolated window. Screenshots are in the session scratchpad `wi11-shots/`, and every one was viewed.
+  - **Desktop at 1440 wide:** rows from all three sources are readable. Typing `provide` with real key events leaves 4 tsgo rows, and `strict-effect-provide` shows `error / off`.
+  - **Source filter:** `oxlint` 253, `tsgo` 108, `package` 43, each with only that source's badge.
+  - **Preset and severity filters:** `effectReactPreset` leaves its 3 rules. `effectPreset` leaves 145 (35 package, 108 tsgo, and the `no-shadow` and `require-yield` carve-outs). `effectPreset` with `off` leaves exactly `strict-effect-provide`, `no-shadow`, and `require-yield`. `warn` alone leaves 68 (3 package, 64 tsgo, and the one built-in warning).
+  - **tsgo example:** the `layer-merge-all-with-dependencies` block shows the source with `A.Default` highlighted and the diagnostic text below it.
+  - **Phone (iPhone 14, 390 wide):** rows stack as cards. Search `date` with source `tsgo` leaves 3 rows, the `global-date` example shows `Date.now()` highlighted, and the full composition with `warn` leaves `unicorn/prefer-set-has`. Under touch emulation, surf's key events did not reach the input, so the phone search used surf's JS input method; real typing was verified on desktop.
+  - **Fixed after review, then re-shot:**
+    - Opening an example widened the description column and broke `effectTsgoConfig` mid-word. The table now uses a fixed layout, target names wrap at word boundaries, and the code block scrolls.
+    - Choosing a source through surf's `select` did not change the rows, because that path fires only `change`. The page now re-renders on `change` as well as `input`.
+    - On the phone, the search box and the preset select ran past the right edge, because the long composition option set the select's minimum width. Zero-minimum grid tracks and full-width controls fixed it; measured page width equals the 390-pixel viewport.
+    - The preset placeholder is now `All presets`, since the longer label truncated on the phone.
+  - **Final wide-window shot:** at 2260 pixels the content sits centered at its 1280-pixel maximum. Nothing regressed.
+- **Negative controls (each restored by checksum):**
+  - Hand-editing one severity in the committed `rules.md` failed `rules-page:check` with the stale message.
+  - Changing the `no-arrow-ladder` manifest severity without rebuilding failed `SKIP_BUILD=true pnpm rules-page:check`, naming `built ...no-arrow-ladder=error, source ...no-arrow-ladder=warn`.
+  - In the unit tests, dropping the `<` escape failed the golden render. Dropping the on-somewhere filter failed the source-merge test. Dropping the built-config cross-check failed the stale-preset test. Letting dropped rows through made collection fail on the fixture's missing message. Mapping `deny` to `warn` failed the normalization tests.
+  - Two unit tests cover the test-file half of the guard: a built `effectTsgoConfig` with no test-file override, and one whose override sets the rule to `warn` instead of the policy's `off`. Each throws and names `effecttsgo/a-rule`. Removing the test-file comparison failed both and nothing else.
+- **Checks (each run separately at the uncommitted tree):**
+  - `durable:refs`, `build`, `typecheck`, `versions:check`, `check-release-workflow`, `changesets:check`: exit 0.
+  - `/bin/sh -c "pnpm run lint"`: exit 0 with 0 warnings and 0 errors after fixing eight findings in the new code. `vp fmt --check`: exit 0.
+  - `test`: exit 0, 1052 tests in 30 files (1054 after the review fix).
+  - `SKIP_BUILD=true inventory:rules`: exit 0. `SKIP_BUILD=true fixture:replay`: exit 0, 43 suites and 444 cases.
+  - `SKIP_BUILD=true gen:rules-page` then `SKIP_BUILD=true rules-page:check`: exit 0 and exit 0.
+  - `SKIP_BUILD=true smoke:rules-viewer`: exit 0, 404 rules served.
+  - `SKIP_BUILD=true smoke:oxlint-packed-consumer` and `smoke:tsconfig-packed-consumer`: exit 0. `pnpm -r --if-present pack:dry-run:no-build`: exit 0 (10 and 9 allowed files).
+  - `pnpm -r publish --dry-run --no-git-checks`: exit 0. Its only output is the no-new-packages notice, because npm already has both published packages at their current versions. On the viewer: `pnpm --filter rules-viewer publish --dry-run --no-git-checks` publishes nothing, `--report-summary` lists no packages, and `pnpm changeset status` would bump only `@mplibunao/oxlint-standards`.
+  - `prose`: exit 0 after one viewer README rewording.
+  - `pnpm check`: exit 1 at `introspection check` with the same `config.schema_violation`. Every earlier step passed, including the two new ones.
+- **Review gate (orchestrator, iteration 1):** one finding, fixed. The built-config guard compared only normal-file severities, so a build with a missing or changed tsgo test-file override passed while the page printed the policy's test severity. It now compares both scopes.
+- **Refactor gate (cycle 1):** one accepted suggestion. `targetScopes` returns the typed record directly, calling `configuredScopes` once per target, instead of filling a partial record and rebuilding it through seven unreachable missing-entry checks. Behavior is unchanged.
+- **Checks after the review fix and refactor:** `typecheck`, `test` (1054 tests), `SKIP_BUILD=true pnpm rules-page:check`, `SKIP_BUILD=true pnpm smoke:rules-viewer`, lint, and `vp fmt --check`: exit 0 each.
+- **Commits:** none. The orchestrator commits.
+- **For later items:**
+  - Many package manifest notes describe provenance rather than what the rule catches; `no-arrow-ladder`'s note reads "Scenario-covered structural port with RuleTester coverage and preset assignment." The page and viewer show the note in the column headed `What it catches`, so the consumer-docs item may want to rewrite those notes.
+  - Bun serves the bundled page script at `/../../chunk-*.js`, because the page imports from `scripts/lib`. Browsers normalize the path and the smoke fetches it, so it works as is.
+- **Action item for MP:** none required. MP's own look at the page (`pnpm rules:view`) gets recorded here when it happens; it does not gate later items.
+
+### WI-12: Extend prefer-effect-fn to tsgo shape parity (PARKED)
+
+- **Goal:** report the two wrapper shapes that `effecttsgo/effect-fn-opportunity` reports with the overlay's `effectFn` settings and the restored rule misses: an arrow as a named object property, and `Effect.gen(...).pipe(...)` with operators other than a final `Effect.withSpan(...)`.
+- **State:** the first pass matched tsgo on the 14-shape probe corpus, and the full check chain passed after a typecheck fix. The orchestrator had recorded VERIFY iteration 1 as passed before reading the gate output; iteration 2 records that correction and the typecheck failure. REVIEW iteration 1 found four valid defects: async and generator outer functions reported, object getters reported, parameter references resolved by name, and no recognition of imported `pipe(...)`. The agent was cancelled mid-fix.
+- **MP decision (2026-09-26):** park it. Upstream merged the `extends` fix (Effect-TS/tsgo#768, closing Effect-TS/tsgo#766), so tsgo covers these shapes once the pin moves. The work sits in the git stash entry whose message starts with `prefer-effect-fn parity extension (parked`. Nothing from it is committed.
+
+### WI-13: Bump @effect/tsgo to the first release containing the extends fix (WAITING)
+
+- **Trigger:** the first `@effect/tsgo` release that contains Effect-TS/tsgo#768. 0.46.0 predates the merge.
+- **MP decisions (2026-09-26):**
+  - That release may enter before the seven-day `minimumReleaseAge` window closes, through exact-version `minimumReleaseAgeExclude` entries for `@effect/tsgo` and its platform binary packages, in both the root workspace and the copied consumer settings. The window stays for every other package.
+  - The restored `prefer-effect-fn` stays until this bump proves that `effect-fn-opportunity` reports the plain wrappers under `extends`. Removal needs MP's explicit OK after he sees that evidence.
+- **Scope:** pin the release; regenerate the tsgo policy and grade every new check; update the supported oxlint, oxlint-tsgolint, and vite-plus matrix (tsgo `main` supports oxlint 1.81.0 to 1.83.0, and vite-plus `1.0.0-rc.1` bundles oxlint 1.85.0, which no tsgo release supports yet); show that the oxlint-route smoke's wrapper split flips; update BP-TD-014.

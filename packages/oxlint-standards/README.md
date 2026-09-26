@@ -71,8 +71,9 @@ lint: composeLintConfigs(
 ),
 ```
 
-For the full effective rule view (all categories expanded, standard plugin rules, and
-severity at each file scope), see `docs/references/effective-config.md`.
+For every rule each preset and config turns on, with its severity for normal and test files,
+see the generated `docs/references/rules.md`. In this repository, `pnpm rules:view` serves
+the same list locally with search and filters.
 
 ### Preset-only usage
 
@@ -101,7 +102,7 @@ The main package entry exports:
 
 - `effectPreset`: gen-first Effect v4 structural rules. It includes `require-yield: off` and `no-shadow: off` because idiomatic `Effect.gen` conflicts with those native rules.
 - `effectReactPreset`: Effect and `@effect-atom` rules for React code, including atom/state-update rules and the broad React state-hook ban.
-- `generalPreset`: stack-neutral JS/TS backpressure, including `prevent-dynamic-imports` and built-in `no-nested-ternary`.
+- `generalPreset`: stack-neutral JS/TS backpressure. It owns `prevent-dynamic-imports`, `no-double-cast`, `no-ts-nocheck`, `no-redundant-primitive-cast`, and built-in `no-nested-ternary`.
 - `boundariesPreset`: package-boundary rules such as `no-cross-package-relative-imports`.
 
 The unqualified `react` preset name is reserved for a future stack-neutral React preset. Do not combine `effect-react` with that future hooks-first preset because `effect-react` forbids hooks that a general React preset would regulate.
@@ -143,7 +144,7 @@ Recommended consumer setup:
 
 ## Catalog posture
 
-v0 targets Effect v4 identifiers. Effect v3 spellings are out of scope unless a v4 structural matcher catches them naturally.
+v0 targets Effect v4 identifiers and conventions: gen-first logic, named `Effect.fn` / `Effect.fnUntraced` wrappers, namespace imports from submodules, and v4 Schema, Layer, and Error names. Effect v3 spellings are out of scope unless a v4 structural matcher catches them naturally.
 
 The catalog currently records:
 
@@ -159,3 +160,5 @@ See `docs/references/rules.md` for the consumer-facing catalog and `src/rule-man
 ## Attribution
 
 The linteffect-derived rules are derived from `@catenarycloud/linteffect`, the MIT-licensed GritQL rule pack by Roman Naumenko. The GritQL tooling is not copied into this package.
+
+Executor, t3code, and effect-smol are idea or scenario references for reimplemented rules; this package copies no runtime code from them. Rika's Effect rules are reference material only, and this package does not depend on Rika.

@@ -10,7 +10,7 @@ type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-09-26T04:52:16Z
-updated_at: 2026-09-26T04:52:16Z
+updated_at: 2026-09-26T07:30:00Z
 tags:
   - record/tech-debt
   - repo/backpressure
@@ -34,7 +34,7 @@ Lint three exported wrappers with only `effecttsgo/effect-fn-opportunity` enable
 - Any `extends` reports only `addThree`. The tested forms were a plain base with the plugin entry in the leaf, a plugin-only base file, and `effect.json` alone or in an array.
 - `--tsconfig` does not change which file supplies the Effect options.
 
-The TypeScript 7.0.2 route patched by `effect-tsgo patch` keeps the options through `extends` and reports all three. In the tagged source, the patched `tsc` imports `etscheckerhooks`, which registers the Effect option merge hook, and the tsgolint patch does not.
+The TypeScript 7.0.2 route patched by `effect-tsgo patch` keeps the options through `extends` and reports all three. In the tagged source, the patched `tsc` imports `etscheckerhooks`, which registers the Effect option merge hook, and the tsgolint patch does not. Upstream fixed the same bug for `tsc` in Effect-TS/tsgo#176 (issue #169). The oxlint-route report is Effect-TS/tsgo#766.
 
 ## Why deferred
 
@@ -42,7 +42,7 @@ The fix belongs to upstream's tsgolint integration, and the backpressure landing
 
 ## Revisit trigger
 
-Revisit on every `@effect/tsgo` bump. `scripts/packages/oxlint-standards/smoke-effect-packed-consumer.ts` asserts the current behavior: under the shipped setup, `effect-fn-opportunity` reports only the `Effect.withSpan` wrapper. It fails with a message naming this record when tsgo starts reporting the plain wrappers.
+Upstream merged the fix in Effect-TS/tsgo#768 on 2026-09-26, after the 0.46.0 release. Revisit when the first `@effect/tsgo` release with the fix is published; MP allows that release in before the seven-day `minimumReleaseAge` window closes, through exact-version exclusions. Also revisit on every `@effect/tsgo` bump. `scripts/packages/oxlint-standards/smoke-effect-packed-consumer.ts` asserts the current behavior: under the shipped setup, `effect-fn-opportunity` reports only the `Effect.withSpan` wrapper. It fails with a message naming this record when tsgo starts reporting the plain wrappers.
 
 ## Done when
 

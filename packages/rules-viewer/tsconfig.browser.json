@@ -1,0 +1,10 @@
+{
+  "extends": "@mplibunao/tsconfig/browser.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "rootDir": "../..",
+    "tsBuildInfoFile": "../../.tsbuildinfo/rules-viewer-browser.tsbuildinfo"
+  },
+  "include": ["src/page.ts", "../../scripts/lib/rule-list.ts"]
+}

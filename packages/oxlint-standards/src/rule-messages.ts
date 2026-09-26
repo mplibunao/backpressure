@@ -185,22 +185,26 @@ const placeholderPattern = /\{\{(\w+)\}\}/g;
 export const hasExplicitRuleMessage = (ruleName: string): boolean =>
   explicitRuleMessages.has(ruleName);
 
+// The written message with its placeholders unfilled, for documentation that shows a rule's fix
+// outside any report. Throws for a rule with no written message.
+export const ruleMessageTemplate = (ruleName: string): string => {
+  const template = explicitRuleMessages.get(ruleName);
+  if (template === globalThis.undefined) {
+    throw new Error(`No written message for rule ${ruleName}.`);
+  }
+  return template;
+};
+
 // Throws for a rule with no written message and for an unfilled placeholder, so a new rule cannot
 // ship a generated message.
 export const ruleMessage = (
   ruleName: string,
   data: Readonly<Record<string, string>> = {},
-): string => {
-  const template = explicitRuleMessages.get(ruleName);
-  if (template === globalThis.undefined) {
-    throw new Error(`No written message for rule ${ruleName}.`);
-  }
-
-  return template.replaceAll(placeholderPattern, (_placeholder, key: string) => {
+): string =>
+  ruleMessageTemplate(ruleName).replaceAll(placeholderPattern, (_placeholder, key: string) => {
     const value = data[key];
     if (value === globalThis.undefined) {
       throw new Error(`Message for rule ${ruleName} needs a value for {{${key}}}.`);
     }
     return value;
   });
-};

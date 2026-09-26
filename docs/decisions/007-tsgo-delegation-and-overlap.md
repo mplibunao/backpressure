@@ -21,7 +21,7 @@ Policy is an explicit pinned `@effect/tsgo` list generated from category default
 
 An AST check may overlap a `@effect/tsgo` diagnostic when it is stricter or when it fires without a TypeScript project. That overlap keeps rules such as `no-json-parse` beside `prefer-schema-over-json` and keeps `no-barrel-import`.
 
-Private, unpublished tool packages are allowed in v0. The planned `packages/rules-viewer` is one such package: `"private": true`, no `version` field, and no publish or pack scripts. Published package names stay under `@mplibunao/*`.
+Private, unpublished tool packages are allowed in v0. `packages/rules-viewer` is one such package: `"private": true`, no `version` field, and no publish or pack scripts. Published package names stay under `@mplibunao/*`.
 
 This decision is accepted. The shipping package still follows ADR 001's language-service recommendation until the alignment cutover lands.
 

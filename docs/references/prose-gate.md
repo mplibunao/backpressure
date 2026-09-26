@@ -20,6 +20,10 @@ The prose gate blocks from v0:
 - `pnpm check` includes `pnpm prose`.
 - `.vite-hooks/commit-msg` runs `pnpm prose:commit -- "$1"` so commit messages use the `ai-tells-commits` style.
 
+## Generated pages
+
+Generated pages are exempt from the prose gate. `docs/references/rules.md` is rendered by `pnpm gen:rules-page` and reproduces upstream `@effect/tsgo` rule descriptions that this repo cannot rewrite, so `.vale.ini` gives it an empty `BasedOnStyles`. Review its wording at the source: the manifest notes and rule messages are TypeScript strings reviewed with the code.
+
 ## Sync behavior
 
 Hooks must work in fresh clones. The scripts call `scripts/vale-ensure-styles.sh`, which runs `vale --no-global sync` only when one of the configured style package directories is missing.

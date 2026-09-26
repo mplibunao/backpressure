@@ -7,10 +7,8 @@ import { pathToFileURL } from 'node:url';
 import {
   buildOxlintRuleCatalog,
   configuredRuleEntries,
-  generateEffectiveConfigArtifact,
   isConfiguredRuleKnown,
   type RuleEntry,
-  serializeArtifact,
 } from '../lib/effective-config.ts';
 import {
   tsgoPolicyVersion,
@@ -238,11 +236,6 @@ const isRuleConfigFragment = (value: unknown): value is RuleConfigFragment =>
   (value['overrides'] === globalThis.undefined ||
     (Array.isArray(value['overrides']) && value['overrides'].every(isRuleConfigOverride)));
 
-// Type alias for the composeLintConfigs factory function exported from the built package.
-type ComposeConfigsFn = (...configs: readonly object[]) => object;
-
-const isComposeConfigsFn = (value: unknown): value is ComposeConfigsFn =>
-  typeof value === 'function';
 const isDeriveOmittedNonErrorRuleAllowlistFn = (
   value: unknown,
 ): value is DeriveOmittedNonErrorRuleAllowlistFn => typeof value === 'function';
@@ -250,15 +243,6 @@ const isManifestCollectionsForConfiguredFragmentFn = (
   value: unknown,
 ): value is ManifestCollectionsForConfiguredFragmentFn => typeof value === 'function';
 
-const extractComposeConfigsFn = (namespace: unknown): ComposeConfigsFn => {
-  if (isObjectRecord(namespace)) {
-    const composeFn = namespace['composeLintConfigs'];
-    if (isComposeConfigsFn(composeFn)) {
-      return composeFn;
-    }
-  }
-  return fail('Built package did not export composeLintConfigs.');
-};
 const readReplaySuites = (moduleNamespace: unknown): readonly ReplaySuite[] => {
   if (isObjectRecord(moduleNamespace) && isReplaySuites(moduleNamespace['replaySuites'])) {
     return moduleNamespace['replaySuites'];
@@ -380,29 +364,13 @@ const {
   styleAtErrorExceptions,
 } = readPackageEntry(packageEntry);
 
-// ─── Effective-config staleness gate ────────────────────────────────────────
+// ─── Config fragments ────────────────────────────────────────────────────────
 // Bracket notation required because configs is Record<string, RuleConfigFragment>.
 // Nullish coalesce with fail() narrows from RuleConfigFragment|undefined to RuleConfigFragment.
 const baseConfigEntry = configs['baseConfig'] ?? fail('Package missing baseConfig entry.');
 const vitestConfigEntry = configs['vitestConfig'] ?? fail('Package missing vitestConfig entry.');
 const nodeRuntimeConfigEntry =
   configs['nodeRuntimeConfig'] ?? fail('Package missing nodeRuntimeConfig entry.');
-const composeLintConfigsFn = extractComposeConfigsFn(packageEntry);
-const fullComposed = composeLintConfigsFn(
-  baseConfigEntry,
-  vitestConfigEntry,
-  nodeRuntimeConfigEntry,
-);
-const freshArtifact = serializeArtifact(
-  generateEffectiveConfigArtifact(baseConfigEntry, fullComposed, oxlintBin),
-);
-const effectiveConfigPath = join(repoRoot, 'docs', 'references', 'effective-config.json');
-if (!existsSync(effectiveConfigPath)) {
-  fail('effective-config.json is missing. Run `pnpm gen:effective-config` to generate it.');
-}
-if (read(effectiveConfigPath) !== freshArtifact) {
-  fail('effective-config.json is stale. Run `pnpm gen:effective-config` to regenerate it.');
-}
 
 // ─── Unknown-rule gate ───────────────────────────────────────────────────────
 const allConfiguredEntries: readonly RuleEntry[] = [

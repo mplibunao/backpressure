@@ -467,7 +467,7 @@ interface NativeRuleOptions {
 
 /**
  * Native oxlint/plugin rule explicitly decided by an exported config fragment.
- * Category-swept native rules are intentionally not represented here; WI-6 owns the generated effective-config view.
+ * Category-swept native rules are intentionally not represented here; the generated rules page, docs/references/rules.md, lists them.
  * @param options Manifest fields that vary for a native config-fragment rule.
  * @param options.name Rule name.
  * @param options.domain Config-fragment domain.

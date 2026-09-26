@@ -24,6 +24,9 @@ catalogs:
     '@types/node':
       specifier: 25.5.2
       version: 25.5.2
+    bun-types:
+      specifier: 1.3.11
+      version: 1.3.11
     oxfmt:
       specifier: 0.43.0
       version: 0.43.0
@@ -109,6 +112,15 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.2(typescript@6.0.2)
+
+  packages/rules-viewer:
+    devDependencies:
+      '@mplibunao/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      bun-types:
+        specifier: 'catalog:'
+        version: 1.3.11
 
   packages/tsconfig:
     dependencies:
@@ -1362,6 +1374,9 @@ packages:
     resolution: {integrity: sha512-48xSriZYYg+8qXna9kwqjIVzuQxi+KYWp2+5nCYnYKPTr0LvD89Jqk2Or5ogxz0NUMfIjhh2lIUX/LyX9B4oIg==}
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
     hasBin: true
+
+  bun-types@1.3.11:
+    resolution: {integrity: sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg==}
 
   cac@7.0.0:
     resolution: {integrity: sha512-tixWYgm5ZoOD+3g6UTea91eow5z6AAHaho3g0V9CNSNb45gM8SmflpAc+GRd1InC4AqN/07Unrgp56Y94N9hJQ==}
@@ -3484,6 +3499,10 @@ snapshots:
       electron-to-chromium: 1.5.361
       node-releases: 2.0.46
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
+
+  bun-types@1.3.11:
+    dependencies:
+      '@types/node': 25.5.2
 
   cac@7.0.0: {}
 

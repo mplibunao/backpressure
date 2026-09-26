@@ -6,7 +6,7 @@ import { createTempDir, isObjectRecord, removeTempDir, repoRoot } from './script
 
 // Preview limit for error messages when oxlint output cannot be parsed.
 const outputPreviewLength = 400;
-// JSON indent for writing temp configs and the committed artifact.
+// JSON indent for the temp configs handed to oxlint --print-config.
 const jsonIndentSpaces = 2;
 
 // Canonical alias: @typescript-eslint/* (not typescript/*).
@@ -44,44 +44,59 @@ const spawnOxlintRules = (oxlintBin: string): string => {
   return result.stdout ?? '';
 };
 
-// Adds one --rules JSON item to the catalog, normalizing scope and handling the TS extension alias.
-const addCatalogItem = (catalog: Set<string>, item: Record<string, unknown>): void => {
-  const { scope, value } = item;
-  if (typeof scope !== 'string' || typeof value !== 'string') {
-    return;
+// One built-in rule as `oxlint --rules --format=json` describes it. `configNames` holds every
+// canonical spelling a config may use for the rule: eslint-scope rules use the bare value, plus the
+// @typescript-eslint/ alias for the extension-rule allowlist above; every other scope uses
+// `scope/value` with underscores turned into dashes (jsx_a11y → jsx-a11y), and the typescript
+// scope is further normalized to @typescript-eslint/*.
+export interface OxlintRuleItem {
+  readonly category: string;
+  readonly configNames: readonly string[];
+  readonly docsUrl: string;
+  readonly fix: string;
+  readonly typeAware: boolean;
+}
+
+const itemConfigNames = (scope: string, value: string): readonly string[] => {
+  if (scope !== 'eslint') {
+    return [normalizeTypescriptAlias(`${scope.replaceAll('_', '-')}/${value}`)];
   }
-  if (scope === 'eslint') {
-    // Bare form — how eslint-scope rules are authored in configs.
-    catalog.add(value);
-    // @typescript-eslint/ alias — only for the explicit extension-rule allowlist above.
-    if (typescriptEslintExtensionRules.has(value)) {
-      catalog.add(`@typescript-eslint/${value}`);
-    }
-  } else {
-    // All other scopes use `scope/value`, with underscore-to-dash conversion for compound names.
-    catalog.add(normalizeTypescriptAlias(`${scope.replaceAll('_', '-')}/${value}`));
-  }
+  return typescriptEslintExtensionRules.has(value)
+    ? [value, `@typescript-eslint/${value}`]
+    : [value];
 };
 
-// Builds the authoritative set of every rule name oxlint recognizes, normalized to canonical form.
-// Runs `oxlint --rules --format=json` once; eslint-scope rules use the bare value,
-// All other scopes use `scope/value` with underscore-to-dash conversion for compound scope names
-// (e.g., jsx_a11y → jsx-a11y), and the typescript scope is further normalized to @typescript-eslint/*.
-// This is the single source of truth for what oxlint actually knows — not print-config output.
-export const buildOxlintRuleCatalog = (oxlintBin: string): ReadonlySet<string> => {
-  const stdout = spawnOxlintRules(oxlintBin);
-  const catalog = new Set<string>();
-  const parsed: unknown = JSON.parse(stdout);
+const parseRuleItem = (item: unknown): OxlintRuleItem => {
+  if (!isObjectRecord(item)) {
+    throw new Error('oxlint --rules emitted a non-object item.');
+  }
+  const { category, docs_url: docsUrl, fix, scope, type_aware: typeAware, value } = item;
+  if (
+    typeof scope !== 'string' ||
+    typeof value !== 'string' ||
+    typeof category !== 'string' ||
+    typeof docsUrl !== 'string' ||
+    typeof fix !== 'string' ||
+    typeof typeAware !== 'boolean'
+  ) {
+    throw new Error(`oxlint --rules item has an unexpected shape: ${JSON.stringify(item)}`);
+  }
+  return { category, configNames: itemConfigNames(scope, value), docsUrl, fix, typeAware };
+};
+
+// Parses `oxlint --rules --format=json` once. This is the source of truth for which built-in rules
+// oxlint knows, not print-config output.
+export const readOxlintRuleItems = (oxlintBin: string): readonly OxlintRuleItem[] => {
+  const parsed: unknown = JSON.parse(spawnOxlintRules(oxlintBin));
   if (!Array.isArray(parsed)) {
     throw new Error('oxlint --rules did not emit a JSON array.');
   }
-  for (const item of parsed) {
-    if (isObjectRecord(item)) {
-      addCatalogItem(catalog, item);
-    }
-  }
-  return catalog;
+  return parsed.map(parseRuleItem);
 };
+
+// Every rule name oxlint recognizes, in the canonical spellings of `OxlintRuleItem.configNames`.
+export const buildOxlintRuleCatalog = (oxlintBin: string): ReadonlySet<string> =>
+  new Set(readOxlintRuleItems(oxlintBin).flatMap((item) => item.configNames));
 
 // Determines whether a configured rule is recognized — either by the oxlint catalog
 // Or as a custom JS-plugin rule the package ships (which oxlint --rules does not enumerate).
@@ -160,23 +175,6 @@ export const materializeEffectiveRules = (
   }
 };
 
-// Captures both the global and test-file effective rule sets for a single composition.
-// Global scope uses a non-test path; test scope uses *.test.ts to activate file overrides.
-export interface EffectiveScopeSnapshot {
-  readonly global: Record<string, unknown>;
-  readonly test: Record<string, unknown>;
-}
-
-export interface EffectiveConfigArtifact {
-  readonly base: EffectiveScopeSnapshot;
-  readonly full: EffectiveScopeSnapshot;
-}
-
-const sortedRecord = (record: Record<string, unknown>): Record<string, unknown> =>
-  Object.fromEntries(
-    Object.entries(record).toSorted(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)),
-  );
-
 // Oxlint --print-config does not activate file-path overrides regardless of the target file path.
 // To capture the test-file scope, merge all overrides targeting *.test.ts into the global rules
 // And run print-config on the modified (flat) config — this gives an accurate view of what test files see.
@@ -200,7 +198,7 @@ const mergeTestOverrideRules = (
   }
 };
 
-const flattenTestOverridesIntoGlobal = (composed: object): object => {
+export const flattenTestOverridesIntoGlobal = (composed: object): object => {
   if (!isObjectRecord(composed)) {
     return composed;
   }
@@ -218,29 +216,6 @@ const flattenTestOverridesIntoGlobal = (composed: object): object => {
   // Strip overrides so print-config sees a flat config — the test rules are now in global scope.
   return { ...composed, rules: baseRules, overrides: [] };
 };
-
-const captureCompositionScopes = (composed: object, oxlintBin: string): EffectiveScopeSnapshot => ({
-  global: sortedRecord(materializeEffectiveRules(composed, oxlintBin, 'subject.ts')),
-  test: sortedRecord(
-    materializeEffectiveRules(flattenTestOverridesIntoGlobal(composed), oxlintBin, 'subject.ts'),
-  ),
-});
-
-// Generates the two-composition artifact, each with global and test-file scopes.
-// Base composition: baseConfig alone. Full composition: baseConfig + vitestConfig + nodeRuntimeConfig.
-// Run via `pnpm gen:effective-config` to update the committed artifact.
-export const generateEffectiveConfigArtifact = (
-  baseComposed: object,
-  fullComposed: object,
-  oxlintBin: string,
-): EffectiveConfigArtifact => ({
-  base: captureCompositionScopes(baseComposed, oxlintBin),
-  full: captureCompositionScopes(fullComposed, oxlintBin),
-});
-
-// Serializes the artifact to the checked-in format (sorted keys, 2-space indent, trailing newline).
-export const serializeArtifact = (artifact: EffectiveConfigArtifact): string =>
-  `${JSON.stringify(artifact, null, jsonIndentSpaces)}\n`;
 
 // Minimal shape needed for extracting configured rule entries.
 // Both OxlintConfig and RuleConfigFragment satisfy this interface.

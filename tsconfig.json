@@ -1,4 +1,9 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/oxlint-standards" }, { "path": "./tsconfig.scripts.json" }]
+  "references": [
+    { "path": "./packages/oxlint-standards" },
+    { "path": "./tsconfig.scripts.json" },
+    { "path": "./packages/rules-viewer" },
+    { "path": "./packages/rules-viewer/tsconfig.browser.json" }
+  ]
 }
