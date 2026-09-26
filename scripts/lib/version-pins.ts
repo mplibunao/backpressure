@@ -19,6 +19,7 @@ import { readRetainedTsgoSnapshot } from './tsgo-snapshot-files.ts';
 
 const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'ci.yml'),
+  join(repoRoot, '.github', 'workflows', 'effect-integration.yml'),
   join(repoRoot, '.github', 'workflows', 'release.yml'),
 ];
 

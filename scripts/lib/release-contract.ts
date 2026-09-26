@@ -43,6 +43,11 @@ export const releasePackages = [
   },
 ] as const satisfies readonly ReleasePackageContract[];
 
+export const effectPolicyCheckCommand = 'pnpm effect-policy:check';
+export const effectIntegrationScriptName = 'check:effect-integration';
+
+// `release:prepare` does not run `pnpm check`, so the offline policy check appears here as well as
+// in `check`. The isolated integration reuses the build `release:prepare` already made.
 export const releasePreparationCommands = [
   'pnpm build',
   'pnpm typecheck',
@@ -50,6 +55,8 @@ export const releasePreparationCommands = [
   'bun scripts/checks/check-changesets-release-state.ts',
   ...releasePackages.map((releasePackage) => releasePackage.allowlistCommand),
   ...releasePackages.map((releasePackage) => releasePackage.smokeCommand),
+  effectPolicyCheckCommand,
+  `SKIP_BUILD=true pnpm ${effectIntegrationScriptName}`,
 ] as const;
 
 export const expectedReleaseScript = 'pnpm release:prepare && changeset publish';

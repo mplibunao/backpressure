@@ -34,3 +34,4 @@ This repo is MP's personal monorepo for code-quality backpressure tooling. The v
 - `AGENTS.md` is a symlink to this file. Update this file, not the symlink.
 - Do not build oxlint rule logic during the baseline group. Empty package scaffolding is allowed only so build and package checks can run.
 - Use a hard cutover when behavior changes. Do not add backwards-compatibility shims unless MP asks.
+- Before committing a work item that touched `configs/effect-tsgo.ts`, `configs/effect-boundaries.ts`, `presets/effect.ts`, the tsconfig Effect overlays, the tsgo policy or metadata snapshot, or a supported-matrix pin (`scripts/config/effect-toolchain.json`, or the catalog's `@effect/tsgo` or `typescript`), run `pnpm check:effect-integration` once. It installs isolated consumers from the network, so it is not part of `pnpm check`.

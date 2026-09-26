@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { createTempDir, isObjectRecord, removeTempDir, repoRoot } from './script-runtime.ts';
 
@@ -54,7 +54,11 @@ export interface OxlintRuleItem {
   readonly configNames: readonly string[];
   readonly docsUrl: string;
   readonly fix: string;
+  // The plugin scope as `oxlint --rules` spells it, for example `jsx_a11y`.
+  readonly scope: string;
   readonly typeAware: boolean;
+  // The bare rule name, which is also the part inside the parentheses of a reported diagnostic code.
+  readonly value: string;
 }
 
 const itemConfigNames = (scope: string, value: string): readonly string[] => {
@@ -81,7 +85,15 @@ const parseRuleItem = (item: unknown): OxlintRuleItem => {
   ) {
     throw new Error(`oxlint --rules item has an unexpected shape: ${JSON.stringify(item)}`);
   }
-  return { category, configNames: itemConfigNames(scope, value), docsUrl, fix, typeAware };
+  return {
+    category,
+    configNames: itemConfigNames(scope, value),
+    docsUrl,
+    fix,
+    scope,
+    typeAware,
+    value,
+  };
 };
 
 // Parses `oxlint --rules --format=json` once. This is the source of truth for which built-in rules
@@ -123,15 +135,27 @@ const parsePrintConfig = (stdout: string): Record<string, unknown> => {
   }
 };
 
+// Where print-config runs. The default is the repo root with its own oxlint. A consumer context runs
+// another engine (the isolated patched one) from the consumer directory, and the temp config and
+// subject file go inside that directory so the config's JS plugins resolve from its node_modules.
+export interface PrintConfigContext {
+  readonly cwd: string;
+  readonly timeoutMs: number;
+}
+
 // Runs oxlint --print-config and returns stdout; throws on process failure.
 const spawnOxlintPrintConfig = (
   oxlintBin: string,
   configPath: string,
   filePath: string,
+  context: PrintConfigContext | undefined,
 ): string => {
   const result = spawnSync(oxlintBin, ['--config', configPath, '--print-config', filePath], {
-    cwd: repoRoot,
+    cwd: context?.cwd ?? repoRoot,
     encoding: 'utf8',
+    ...(context === globalThis.undefined
+      ? {}
+      : { killSignal: 'SIGKILL', timeout: context.timeoutMs }),
   });
   if (result.error !== globalThis.undefined) {
     throw new Error(`oxlint failed to start: ${result.error.message}`);
@@ -156,19 +180,27 @@ const normalizeRuleKeys = (rawRules: Record<string, unknown>): Record<string, un
 
 // Materializes a temp .oxlintrc.json + dummy source file, runs oxlint --print-config,
 // Returns the effective rules map with TypeScript alias normalized to @typescript-eslint/*.
-// Sets cwd to the repo root so plugin resolution finds node_modules regardless of temp dir location.
+// Without a context it runs from the repo root so plugin resolution finds the root node_modules.
+// `fileName` may name subdirectories, so a representative test or boundary path can be printed.
 export const materializeEffectiveRules = (
   composed: object,
   oxlintBin: string,
   fileName = 'subject.ts',
+  context?: PrintConfigContext,
 ): Record<string, unknown> => {
-  const tempDir = createTempDir('oxlint-effective-');
+  const tempDir =
+    context === globalThis.undefined
+      ? createTempDir('oxlint-effective-')
+      : mkdtempSync(join(context.cwd, '.oxlint-effective-'));
   try {
     const configPath = join(tempDir, '.oxlintrc.json');
     const filePath = join(tempDir, fileName);
     writeFileSync(configPath, JSON.stringify(composed, null, jsonIndentSpaces));
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, 'export const x = 1;\n');
-    const rawRules = parsePrintConfig(spawnOxlintPrintConfig(oxlintBin, configPath, filePath));
+    const rawRules = parsePrintConfig(
+      spawnOxlintPrintConfig(oxlintBin, configPath, filePath, context),
+    );
     return normalizeRuleKeys(rawRules);
   } finally {
     removeTempDir(tempDir);

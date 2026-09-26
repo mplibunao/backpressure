@@ -5,6 +5,10 @@ import { pathToFileURL } from 'node:url';
 import { parseDocument } from 'yaml';
 
 import {
+  assertEffectGateScripts,
+  assertEffectIntegrationWorkflowContract,
+} from '../lib/effect-integration-contract.ts';
+import {
   assertNoForbiddenReleaseWorkflowAuth,
   expectedReleasePrepareScript,
   expectedReleaseScript,
@@ -53,6 +57,12 @@ interface ExactKeySetAssertion {
 }
 
 const releaseWorkflowPath = join(repoRoot, '.github', 'workflows', 'release.yml');
+const effectIntegrationWorkflowPath = join(
+  repoRoot,
+  '.github',
+  'workflows',
+  'effect-integration.yml',
+);
 const releaseReadinessPath = join(repoRoot, 'docs', 'references', 'release-readiness.md');
 const packageJsonPath = join(repoRoot, 'package.json');
 const directPublishCommandPattern = /\bpublish\b|\bpnpm\s+(?:run\s+)?release\b/u;
@@ -366,11 +376,14 @@ export const assertReleaseWorkflowContract = ({
 };
 
 const run = (): void => {
+  const scripts = readPackageScripts();
   assertReleaseWorkflowContract({
     releaseReadiness: readText(releaseReadinessPath),
-    scripts: readPackageScripts(),
+    scripts,
     workflow: readText(releaseWorkflowPath),
   });
+  assertEffectGateScripts(scripts);
+  assertEffectIntegrationWorkflowContract(readText(effectIntegrationWorkflowPath));
 
   printLine('release workflow contract check passed');
 };

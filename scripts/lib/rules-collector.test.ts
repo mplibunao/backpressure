@@ -57,7 +57,9 @@ const item = (configName: string): OxlintRuleItem => ({
   configNames: [configName],
   docsUrl: `https://oxc.example/${configName}`,
   fix: 'none',
+  scope: 'eslint',
   typeAware: false,
+  value: configName.split('/').at(-1) ?? configName,
 });
 
 const baseScopes = {

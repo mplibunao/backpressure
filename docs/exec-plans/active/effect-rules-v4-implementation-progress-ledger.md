@@ -28,8 +28,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-06 | Activate the full Effect config and both package surfaces | L | DONE (local, not pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
 | WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | WAITING for the upstream release | |
-| WI-11 | Rule list with its generated page and local viewer | M | DONE (uncommitted) | |
-| WI-07 | Install all six durable gates | L | PENDING | |
+| WI-11 | Rule list with its generated page and local viewer | M | DONE (local, not pushed) | `b848cb5` |
+| WI-07 | Install all six durable gates | L | DONE (uncommitted) | |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | PENDING | |
 | WI-09 | Complete consumer guidance, records, and changesets | M | PENDING | |
 | WI-10 | Run acceptance and classify the remaining blocker accurately | S | PENDING | |
@@ -642,7 +642,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
   - **Impact:** the documented setup extends `effect.json`, so on the default route plain `(...) => Effect.gen(...)` wrappers do not report `effect-fn-opportunity`. Those are the shapes the dropped `prefer-effect-fn` caught. The floor gate passes, because the gap is in which shapes the rule sees, not in its severity. On this route severity is not a tsconfig observable: WI-02 showed oxlint owns every severity. `effectFn` is the overlay setting the route actually depends on.
 - **For WI-07, outside-program files (re-checked; still holds, independent of the cause):** in a plain consumer whose root `tsconfig.json` has `include: ["src"]`, `oxlint -c date.oxlintrc.json --format json outside.ts src/inside.ts` reported `outside.ts effecttsgo(global-date) warning` beside `src/inside.ts`. The result was the same with `--tsconfig tsconfig.json`. With no `tsconfig.json` at all, both files still reported. The plan's G6 "Program coverage" row expects no `effecttsgo` diagnostics there. The tsconfig README makes no claim about files outside the program.
 - **For WI-07, plugin-array premise contradicted by evidence (re-checked on the tsc route, where the merge hook exists; still holds):** §3.5 says consumers adding other plugins must retain the complete Effect entry. On the patched `tsc` 7.0.2, a tsconfig extending `base.json` and `effect-tsc.json` with `plugins: [{ "name": "unrelated-typescript-plugin" }]` still reported `error TS377032` (`strictEffectProvide`) on a `Layer` provide. Without the overlay it reported nothing, since the upstream default is off. The tsc smoke asserts this. The WI-07 G6 "plugin-array replacement control" row rests on the contradicted premise.
-- **Decision: restore `prefer-effect-fn` as an active overlapping rule (orchestrator call, pending MP confirmation).** The drop assumed `effecttsgo/effect-fn-opportunity` covers the same wrappers on the default route. Under the shipped setup it does not. ADR-007 allows an AST overlap that fires without a TypeScript project.
+- **Decision: restore `prefer-effect-fn` as an active overlapping rule (orchestrator call; MP confirmed it on 2026-09-26).** The drop assumed `effecttsgo/effect-fn-opportunity` covers the same wrappers on the default route. Under the shipped setup it does not. ADR-007 allows an AST overlap that fires without a TypeScript project.
   - **Alternative, accept the gap:** keep the rule dropped, and plain wrappers go unreported on the default route until upstream keeps the options through `extends`.
   - **Alternative, hold the landing group:** keep WI-03 to WI-07 unmerged until upstream ships that fix.
   - **Rule:** restored from `ec4f4f8^` onto current helpers. `isNamedEffectGenWrapper` requires a named function, either a declaration or a function initializing a variable, whose return node is a bound `Effect.gen` call. It uses `functionReturnNode` and `boundNamespaceCallMember`, so aliases, shadowing, type-only imports, and local look-alikes behave like the other catalog rules. `utils/reports.ts` stays deleted. The message is `Rule/Why/Fix/Ref` pointing at `Effect.fn` and `Effect.fnUntraced`, both exported by v4 `Effect.ts`, and it cites ADR-001's named-wrapper guidance.
@@ -709,6 +709,32 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
     - A warning-only file exits 0, and 1 with `--max-warnings 0`.
   - `prose`: exit 0 after two README wording fixes.
   - `introspection:check`: exit 1 with the same `config.schema_violation` as the intake baseline.
+- **Review iteration 1 (orchestrator): five findings, all fixed.** Each fix has a negative control, restored by checksum.
+  - **Typed canary proved nothing typed.** File counts plus any `effecttsgo` diagnostic can pass without types, because `global-date` reports even on a file whose `effect` import does not resolve.
+    - **Probe (patched oxlint 1.82.0):** `strict-effect-provide` reported in the program, on an outside-program file with `effect` installed, and on a canary linked to the installed `effect`. It stayed silent on an unresolved import and on an unlinked canary.
+    - **Fix:** the typed canary is now that type-resolved diagnostic on an audit-owned file (see G2). A new smoke probe pins the premise on the supported engine: the canary source reports with `effect` resolved and stays silent with it unresolved.
+    - **Negative control:** the scratch app's installed `effect` is a type-less stub. A typed audit of it exited 1 and reported that the typed canary did not report `effecttsgo(strict-effect-provide)`, so the typed pass is not evidence. Ignoring the canary failed the unit test.
+  - **Unknown codes were accepted.** Every diagnostic code must now belong to the custom rules the run enables, the pinned tsgo catalog, or the running engine's native catalog. `OxlintRuleItem` gained its bare `value` for that. A codeless diagnostic, which is how oxlint prints a parse error, fails the run as an engine error.
+    - **Negative tests:** `effecttsgo(no-such-rule)` and a dropped custom code are rejected. A valid `effecttsgo(global-date)` beside a codeless `Unexpected token` fails. Making the check accept everything failed those tests.
+  - **The AST route had no interrupt handling.** `withInterruptScope` now holds the harness's interrupt handling; `withEffectConsumer` and the AST route both use it. The scope clears its marker on exit.
+    - **Test:** a child writes its grandchild's pid to a file; the test waits for the file, emits `SIGINT`, and requires the result to be incomplete ("interrupted"), the group gone, and exit code 130. Removing the handler install failed it by timeout.
+  - **An empty case kept its ID.** The corpus test now requires each case's exact variant roles. A raw variant with a barrel-import deviation also needs an adapted copy. In-test negatives cover an emptied case and a case that lost its adapted copy. Setting `variants: []` in `corpus.json` failed the gate.
+  - **The `diagnostics: false` probe went through `extends`, which the engine ignores.** A new control inlines the installed plugin entry, with `diagnostics: false`, in a tsconfig without `extends`. It requires `strict-effect-provide` at error and exit 1. With a clean file substituted, the smoke failed: "effecttsgo(strict-effect-provide) was absent and oxlint exited 0".
+  - **Found while fixing:** run from the app root, the patched oxlint looked for `tsgolint` in the app and stopped because it could not find the `tsgolint` executable. The audit treated that as a startup failure. `runBounded` now takes an options object with an extra environment, and the typed audit sets `OXLINT_TSGOLINT_PATH`.
+  - **Found while fixing:** the file-count canary caught a selection bug. The patched engine resolves config `ignorePatterns` against the temp config's folder, so it linted excluded files (5 where 3 were expected). Exclusions now go through `--ignore-pattern`, which resolves against the app root, and the counts match.
+  - **Re-run after the fixes:** the check chain without `introspection check` exited 0. It ran 2468 tests in 34 files, and lint and prose reported nothing. `pnpm check:effect-integration` exited 0.
+- **Review iteration 2 (orchestrator): three findings, all fixed.** Each fix has a negative control, restored by checksum.
+  - **The typed audit never proved app-project coverage.** oxlint lints every selected file whatever the tsconfig includes, and the separate canary still passed.
+    - **Probe:** `--listFilesOnly` works on the pinned TypeScript 7.0.2 and on the audit consumer's 6.0.2. Both list only the included file of a project with an `exclude`. The audit uses the consumer's 6.0.2, because the audit consumer is the oxlint route and has no TypeScript 7.
+    - **Fix:** a non-zero `tsc` exit stops the run with TypeScript's output. A selected file missing from the list marks the evidence unusable and names the file.
+    - **Scratch app:** it links a harness consumer's real `effect` rc.115. With a tsconfig that includes `src`, the typed audit exited 0. With `exclude: ["src"]`, it exited 1 on TypeScript's own TS18003 (no inputs found). With `exclude: ["src/generated"]`, it exited 1: "tsconfig.excludes-generated.json does not include 1 selected files … (first: src/generated/extra.ts)". With the coverage check disabled, that last case exited 0.
+    - **For the app measurement item:** a solution-style tsconfig with only `references` lists no files, so the audit refuses it. Name each app's leaf project with `--tsconfig`. Selected `.js` files need `allowJs` in that project or an `--exclude`.
+  - **Any plugin prefix passed native validation.** Native codes are now exact pairs, built from `oxlint --rules` as the scope's diagnostic prefix plus the rule: `eslint(no-debugger)`, `eslint-plugin-jsx-a11y(alt-text)`. `OxlintRuleItem` gained its `scope`.
+    - **Evidence for the prefix table:** the prefixes come from the oxlint binary's strings, and a lint probe confirmed them. Core rules report as `eslint(<rule>)`; no unprefixed codes appeared. Root 1.58 has 15 scopes; the patched 1.82 adds only `effecttsgo`.
+    - **Fail loud:** a scope missing from the table stops the audit and names it.
+    - **Negative tests:** `bogus(no-debugger)`, `eslint-plugin-jsx-a11y(no-debugger)`, and a bare `no-debugger` are rejected. A lookup by rule name alone failed the test.
+  - **A check script reduced to two steps passed the contract.** `requiredCheckCommands` lists all 18 current steps by name. Each has a removal test that fails with that step named, and a two-step reduction fails too. Disabling the presence check failed all 18 removal tests.
+  - **Re-run after the fixes:** the check chain without `introspection check` exited 0. It ran 2491 tests, and lint and prose reported nothing. `pnpm check:effect-integration` exited 0.
 - **Review gate:** the agent's own oracle review did not run. RepoPrompt `manage_selection` mutations and `ask_oracle` were cancelled, as in WI-02. The orchestrator owns review.
 - **Commits:** none. The orchestrator commits.
 - **Action item for MP:** confirm or reverse the orchestrator's restore of `prefer-effect-fn`. The alternatives are recorded under the decision above.
@@ -773,6 +799,76 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
   - Many package manifest notes describe provenance rather than what the rule catches; `no-arrow-ladder`'s note reads "Scenario-covered structural port with RuleTester coverage and preset assignment." The page and viewer show the note in the column headed `What it catches`, so the consumer-docs item may want to rewrite those notes.
   - Bun serves the bundled page script at `/../../chunk-*.js`, because the page imports from `scripts/lib`. Browsers normalize the path and the smoke fetches it, so it works as is.
 - **Action item for MP:** none required. MP's own look at the page (`pnpm rules:view`) gets recorded here when it happens; it does not gate later items.
+
+### WI-07: Install all six durable gates (DONE)
+
+- **Build:**
+  - **Gate wiring:** `pnpm check` runs `pnpm effect-policy:check` before `pnpm build`. `check:effect-integration` runs `smoke:effect-oxlint-packed-consumer` then `smoke:effect-tsc-packed-consumer`; the oxlint smoke builds unless `SKIP_BUILD=true`. `release:prepare` ends with `pnpm effect-policy:check` and `SKIP_BUILD=true pnpm check:effect-integration`. `audit:effect-apps` runs the G2 script. `.github/workflows/effect-integration.yml` runs the integration command on `pull_request` and `workflow_dispatch`, with a `github.workflow`/`github.ref` concurrency group, `cancel-in-progress: true`, read-only permissions, and the `ci.yml` setup steps. `versions:check` now covers that workflow.
+  - **Gate contract (`scripts/lib/effect-integration-contract.ts`):** `check-release-workflow` also asserts that `check` keeps every current step by name, runs the policy check before the build and never runs `check:effect-integration`, that `check:effect-integration` runs exactly the two route smokes, and the workflow's triggers, concurrency, permissions, install step, and final command.
+  - **Router:** one `CLAUDE.md` working rule says to run `pnpm check:effect-integration` once before committing a work item that touched the tsgo fragment, boundary rules, Effect preset, tsconfig Effect overlays, tsgo policy or snapshot, or a supported-matrix pin.
+  - **G1 (`test-fixtures/effect-v4/`, `src/reference-corpus.test.ts`):** the corpus holds 20 cases and 40 variants. Each provenance-register row has a case, and `ef-reason-errors` adds the `catchReason` reference.
+    - **Metadata:** `corpus.json` records each case's source, its pinned revision (effect `3788b63`, 4.0.0-rc.117; effect-solutions `09f82e6`, effect 4.0.0-beta.59), excerpt line ranges, and intended valid behaviors. It also records each variant's lint filename, harness changes, and deviations. Every deviation names an enabled rule, an exact count, and its owning decision.
+    - **Snippets:** raw snippets are verbatim line ranges generated from the pinned checkouts, and a sha256 in `corpus.json` pins them. Adapted copies change only the value barrel imports. The Cause excerpt also gets a house-style positive control.
+    - **Library excerpts:** retained library source is provenance only and is not linted as app code. The Atom and Option excerpts also back derived controls, plus misuse variants that must report.
+    - **Engines:** the vitest gate runs all 38 enabled Effect and effect-react rules on every linted variant through RuleTester. `fixture:replay` replays the same variants on the real engine with the built plugin (37 variants) and requires exact per-rule counts. The app-entry `orDie` copy relies on a justified inline disable, which RuleTester cannot honor because it renames the rule, so that variant is marked `engine: oxlint` and checked only there.
+    - **Hits:** discovery found no unexpected hit. The recorded deviations are the value barrel imports, the line-115 `_tag` comparison, three string failures, the data-first `map(succeed(...))` nesting, the raw app-entry `orDie`, and the CLI's plain `save` wrapper (`prefer-effect-fn`).
+  - **G3a:** unchanged checks (`effect-policy:check`, `rules-page:check`, config-shape and policy tests), now all in `pnpm check`.
+  - **G3b (`scripts/packages/oxlint-standards/engine-policy.ts`, `effect-route-probes.ts`):** the oxlint smoke prints the patched engine's config for the Effect and Effect+React compositions at a normal, a test, and a boundary path. It normalizes `deny`/`warn`/`allow` and compares every `effecttsgo/*` rule with the generated policy. An absent rule counts as off. An unknown printed rule, a rule the policy sets off that the engine reports on, or any severity difference fails.
+    - **Print-config evidence (patched oxlint 1.82.0):** it lists all 113 tsgo rules, 58 native rules, and no custom JS-plugin rules. It does not apply file overrides at the printed path; it lists them separately.
+    - **Scopes:** the test and boundary views fold their one override into the global rules first, and fixture lint proves the real file matching.
+    - **Boundary path:** §3.8 names it and §3.12 does not. It expects the policy with the ten delegated boundary rules off.
+    - **`materializeEffectiveRules`:** it gained an optional `{ cwd, timeoutMs }` context. The temp config goes inside that directory so JS plugins resolve from the consumer, and the subprocess gets a timeout and `SIGKILL`. The subject path may name folders. Offline callers are unchanged.
+  - **G4 and G5:** the WI-04 to WI-06 unit gates (`effect-policy.test.ts`, `rule-manifest.test.ts`, `rule-messages.test.ts`) already run in `pnpm test`; the negative controls below re-prove them.
+  - **G6, oxlint route, new rows:**
+    - `vp lint` and direct oxlint print identical diagnostic sets.
+    - Severity ownership: the installed `effect.json` has `diagnostics: false` and no severity map. Three conflicting tsconfig/oxlint probes each follow the oxlint setting (`error`/`off` gives error, `off`/`error` gives nothing, `warn`/`error` gives a warning).
+    - `Effect.provideService` does not report `strict-effect-provide`.
+    - A later consumer override raises `global-date` to error on its path.
+    - Program coverage: a file outside the tsconfig `include` gets custom and `effecttsgo` diagnostics, and a run with no `tsconfig.json` still reports `global-date`.
+    - Reinstall: deleting `node_modules` and reinstalling offline from the private store restores the unpatched binary, and patching again works. `pnpm install --force` did not restore it, so the smoke does not rely on it.
+  - **G6, tsc route, new rows:**
+    - A consumer entry restoring `effectFn: ['span']` reports only the `Effect.withSpan` wrapper, beside the README project's three.
+    - `tsc --showConfig` shows the server composition keeping `bun-types`, and the browser composition keeping `react-jsx` and DOM.
+    - The consumer has no oxlint binary.
+    - The plugins-array control now carries the merge-hook explanation.
+  - **G2 (`scripts/checks/effect-app-audit.ts`, `scripts/lib/effect-app-audit.ts`):** `--mode ast|candidate|shipped`, `--app <name>=<path>@<revision>` (repeatable), `--tsconfig <name>=<path>`, `--exclude <prefix>`, `--output`, `--allow-dirty`, and `--timeout-minutes`.
+    - **Refusals:** the script stops on a wrong revision or a dirty tree. It also stops when `node_modules/effect` is missing, or when a typed mode has no tsconfig.
+    - **Engines:** the AST mode uses root oxlint 1.58 and the built plugin with every implemented custom rule (43). The typed modes install the harness consumer, patch it, and run its oxlint from the app root, with a config outside the app, `--disable-nested-config`, and `--tsconfig`. `OXLINT_TSGOLINT_PATH` points that run at the consumer's patched `tsgolint`. The candidate mode adds `prefer-schema-over-json: warn`.
+    - **Canary:** the engine's `number_of_files` must equal the selected count, with at least one rule enabled. A typed pass also lints an audit-owned canary file outside the app, whose `effect` import links to the app's installed package. That file must report `effecttsgo(strict-effect-provide)`, which fires only when Effect types resolve. Before linting, the audit consumer's TypeScript runs `tsc --listFilesOnly -p <app tsconfig>`, and every selected file must appear in that list.
+    - **Output:** raw engine output goes to `<output>/raw/`. The summary records the revision and dirty state, the Effect version against tsgo's `^4.0.0-beta.107` range, and the engine version. It also holds the config and plugin sha256, per-rule source/test counts, and span identities for the delegation evaluations.
+    - **Nested configs:** on oxlint 1.58, an explicit `--config` already ignores a nested app config (probed).
+- **Plan edits:** §3.5 now states that tsgo merges the Effect plugin entry across `extends` on the tsc route. The G6 rows for cross-package environment preservation and program coverage now state the observed behavior.
+- **Harness flake (root cause fixed):** under load, the process-group timeout test failed in 7 of 20 runs. Its liveness probe, `process.kill(pid, 0)`, succeeds on a killed process that launchd has not reaped yet. A probe run with CPU load saw that in 5 of 60 runs, and `ps` found each process gone moments later, so the harness kill was correct. The test now reads `ps -o stat=` and counts a zombie as dead. After the fix: 10 of 10 isolated runs and 10 of 10 runs beside a concurrent full suite passed, and every concurrent full suite passed 1074 tests. Killing only the child pid still fails the test.
+- **Judgment calls:**
+  - **Corpus metadata:** `corpus.json`, not the planned `corpus.ts`. `test-fixtures/**` is outside every tsconfig and lint scope, and the package's composite tsconfig cannot import it. The test validates every field.
+  - **Line ranges:** the plan's cited ranges have drifted in the pinned checkouts, and `corpus.json` records the actual ranges.
+  - **Imports:** test-file excerpts start with their file's own import lines, so runtime-import gates see real bindings, and they lint under their original test paths.
+  - **Corpus scope:** the corpus runs only Effect and effect-react rules. General and boundaries rules keep their existing suites, and no new controls were added there.
+  - **Audit exclusions:** vendored and generated exclusions come from the caller, because the recorded run named none. A dirty tree fails unless `--allow-dirty` is passed.
+  - **Audit output:** engine output streams into memory through the harness runner, which has no buffer cap. The audit then writes it to raw files.
+- **Negative controls (each restored by checksum):**
+  - Missing plugin: `effectPreset` with `plugins: []` failed `configs/effect.test.ts`.
+  - Missing rule: dropping `global-date` from the fragment failed at import ("effectTsgoConfig must set every pinned @effect/tsgo rule"). Removing `globalDate` from `effect-tsc.json` failed `effect-policy:check`.
+  - Missing message: removing the `no-option-as` message failed `rule-messages.test.ts` ("No written message for rule no-option-as").
+  - Missing owner: naming the dropped `no-effect-orElse-ladder` as an owner failed `rule-manifest.test.ts` and `effect-policy.test.ts`.
+  - Lowered floor: grading `effect-do-notation` `warn` and regenerating failed `effect-policy.test.ts` ("shipped warn is below the error floor").
+  - Unexpected corpus hit: removing the tag-check deviation failed the vitest corpus gate and `fixture:replay`.
+  - Engine revival: composing `effecttsgo/deterministic-keys: warn` failed the oxlint smoke at G3b ("engine applies warn, policy sets off") at all three paths.
+  - Check contract: adding `check:effect-integration` to `check` failed `check-release-workflow`.
+- **Checks (each run separately at the uncommitted tree):**
+  - `pnpm check`: exit 1 at `introspection check` with the same `config.schema_violation`. Every earlier step passed, including `effect-policy:check`, 2462 tests in 34 files, lint with 0 warnings and 0 errors, and `fixture:replay` (43 suites, 444 cases, 37 corpus variants).
+  - `pnpm check:effect-integration`: exit 0.
+  - `pnpm prose`: exit 0, with no alerts in 55 files. `pnpm durable:refs`: exit 0. `pnpm introspection:check`: exit 1.
+  - actionlint 1.7.12 on the three workflows: exit 0.
+- **Typed audit runs:** only against the synthetic scratch app, to prove refusal (see review iteration 1). The first typed run on a real app is the app measurement item.
+- **For the app measurement item:** pass each app's vendored and generated folders with `--exclude`. A canary failure marks that app's typed evidence unusable.
+- **Review gate:** the agent's own oracle review did not run. The RepoPrompt `manage_selection` call was cancelled, as in WI-02 and WI-06. The orchestrator owns review.
+- **Review iteration 3 (orchestrator):** passed. The orchestrator declined its two findings: app-side `paths` mapping `effect` to a type-less stub, and cancelling the synchronous print-config call.
+- **Refactor cycle 1:** one accepted change. The Layer-provide source existed three times, as `provideSource` in both route smokes and as the audit's `typedCanarySource`. It is now `layerProvideSource` in `scripts/lib/effect-consumer-harness.ts`, which the two smokes, the audit runner, and `effect-route-probes.ts` import. `effect-app-audit.ts` keeps `typedCanaryCode`.
+  - **Byte identity:** before the move, all three copies compared equal. Afterwards, the shared constant equals the committed `provideSource` at `HEAD` (sha256 prefix `04ebb451f2247c8c`).
+  - **Checks:** `typecheck`, `/bin/sh -c "pnpm run lint"` (0 warnings, 0 errors), and `vp fmt --check` each exited 0. The four touched test files passed 68 tests. `pnpm check:effect-integration` exited 0.
+- **Commits:** none. The orchestrator commits.
+- **Action items for MP:** none.
 
 ### WI-12: Extend prefer-effect-fn to tsgo shape parity (PARKED)
 

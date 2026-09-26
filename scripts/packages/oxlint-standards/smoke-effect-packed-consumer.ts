@@ -5,12 +5,12 @@
 import { join } from 'node:path';
 
 import {
-  type BoundedResult,
   type EffectConsumer,
   type EffectRoute,
   boundedSummary,
   ensureBoundedSuccess,
   ensureCompleted,
+  layerProvideSource,
   withEffectConsumer,
 } from '../../lib/effect-consumer-harness.ts';
 import { packWorkspacePackage } from '../../lib/packed-consumer-harness.ts';
@@ -26,26 +26,34 @@ import { effectIntegrationVersions } from '../../lib/tool-versions.ts';
 import { assertTsconfigPackedArtifact } from '../tsconfig/artifact-assertions.ts';
 import { tsconfigPackageDir } from '../tsconfig/package.ts';
 import { assertOxlintDistArtifact, assertOxlintPackedArtifact } from './artifact-assertions.ts';
+import {
+  type LintDiagnostic,
+  assertUnknownPlugin,
+  boundaryGlob,
+  codesIn,
+  customCode,
+  expectPresence,
+  lint,
+  lintDiagnostics,
+  severityOf,
+  tsgoCode,
+} from './effect-consumer-lint.ts';
+import { assertRouteProbes, assertVitePlusParity } from './effect-route-probes.ts';
 import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
 
 const versions = effectIntegrationVersions();
-const customCode = (ruleName: string): string => `${oxlintPackageName}(${ruleName})`;
-const tsgoCode = (ruleName: string): string => `effecttsgo(${ruleName})`;
-
-const provideSource = `import * as Context from 'effect/Context'
-import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
-
-class Config extends Context.Service<Config>()('Config', { make: Effect.succeed({}) }) {
-  static Default = Layer.effect(this, this.make)
-}
-
-export const program = Effect.void.pipe(Effect.provide(Config.Default))
-`;
-const escapeSource = `${provideSource}
+const escapeSource = `${layerProvideSource}
 export const fatal = Effect.orDie(program)
 `;
 const clockSource = 'export const now = Date.now()\n';
+// Providing a service value, not a Layer, is not what strict-effect-provide targets.
+const contextProvideSource = `import * as Context from 'effect/Context'
+import * as Effect from 'effect/Effect'
+
+class Config extends Context.Service<Config, { readonly port: number }>()('Config') {}
+
+export const program = Effect.void.pipe(Effect.provideService(Config, Config.of({ port: 1 })))
+`;
 const inEffectClockSource = `import * as Effect from 'effect/Effect'
 
 export const now = Date.now()
@@ -74,53 +82,8 @@ const testScopedFiles = [
   'src/test/provide.ts',
   'src/tests/provide.ts',
 ];
-const boundaryGlob = 'src/boundary/**';
-
-interface LintDiagnostic {
-  readonly code: string;
-  readonly filename: string;
-  readonly severity: string;
-}
-
-const isLintDiagnostic = (value: unknown): value is LintDiagnostic =>
-  isObjectRecord(value) &&
-  typeof value['code'] === 'string' &&
-  typeof value['filename'] === 'string' &&
-  typeof value['severity'] === 'string';
-
-const lintDiagnostics = (result: BoundedResult, label: string): readonly LintDiagnostic[] => {
-  const parsed: unknown = JSON.parse(result.stdout);
-  const diagnostics = isObjectRecord(parsed) ? parsed['diagnostics'] : globalThis.undefined;
-  return Array.isArray(diagnostics) && diagnostics.every(isLintDiagnostic)
-    ? diagnostics
-    : fail(`${label} did not print oxlint JSON diagnostics.\n${boundedSummary(result)}`);
-};
-
-const codesIn = (diagnostics: readonly LintDiagnostic[], file: string): readonly string[] =>
-  diagnostics
-    .filter((diagnostic) => diagnostic.filename === file)
-    .map((diagnostic) => diagnostic.code);
-
-const severityOf = (diagnostics: readonly LintDiagnostic[], file: string, code: string): string =>
-  diagnostics.find((diagnostic) => diagnostic.filename === file && diagnostic.code === code)
-    ?.severity ?? 'absent';
-
-const expectPresence = (
-  diagnostics: readonly LintDiagnostic[],
-  file: string,
-  expected: Readonly<Record<string, boolean>>,
-  label: string,
-): void => {
-  const codes = codesIn(diagnostics, file);
-  const wrong = Object.entries(expected).filter(
-    ([code, present]) => codes.includes(code) !== present,
-  );
-  if (wrong.length > 0) {
-    fail(
-      `${label}: ${file} expected ${wrong.map(([code, present]) => `${present ? '' : 'no '}${code}`).join(', ')}; got [${codes.join(', ')}].`,
-    );
-  }
-};
+// A consumer override listed after the preset raises one rule on one path.
+const lateGlob = 'src/late/**';
 
 // The consumer writes its own config from the installed package, exactly as a vite or
 // .oxlintrc consumer would: the full preset plus a tail override relaxing one boundary path.
@@ -130,7 +93,10 @@ const writeConsumerConfig = async (consumer: EffectConsumer): Promise<void> => {
     import { composeLintConfigs, effectBoundaryRules, effectPreset } from ${JSON.stringify(oxlintPackageName)};
 
     const config = composeLintConfigs(effectPreset, {
-      overrides: [{ files: [${JSON.stringify(boundaryGlob)}], rules: { ...effectBoundaryRules } }],
+      overrides: [
+        { files: [${JSON.stringify(boundaryGlob)}], rules: { ...effectBoundaryRules } },
+        { files: [${JSON.stringify(lateGlob)}], rules: { 'effecttsgo/global-date': 'error' } },
+      ],
     });
     writeFileSync('.oxlintrc.json', JSON.stringify(config, null, 2) + '\\n');
   `;
@@ -147,38 +113,14 @@ const writeFixtures = (consumer: EffectConsumer): void => {
   });
   consumer.writeFile('src/program.ts', escapeSource);
   consumer.writeFile('src/clock.ts', clockSource);
+  consumer.writeFile('src/late/clock.ts', clockSource);
+  consumer.writeFile('src/context-provide.ts', contextProvideSource);
   consumer.writeFile('src/boundary/clock.ts', inEffectClockSource);
   for (const file of testScopedFiles) {
-    consumer.writeFile(file, provideSource);
+    consumer.writeFile(file, layerProvideSource);
   }
   for (const [file, text] of Object.entries(wrapperSources)) {
     consumer.writeFile(file, text);
-  }
-};
-
-const lint = async (
-  consumer: EffectConsumer,
-  paths: readonly string[],
-  extraArgs: readonly string[] = [],
-): Promise<BoundedResult> =>
-  ensureCompleted(
-    await consumer.exec('pnpm', [
-      'exec',
-      'oxlint',
-      '--config',
-      '.oxlintrc.json',
-      '--tsconfig',
-      'tsconfig.json',
-      ...extraArgs,
-      ...paths,
-    ]),
-    `oxlint ${paths.join(' ')}`,
-  );
-
-const assertUnknownPlugin = (result: BoundedResult, label: string): void => {
-  const output = `${result.stdout}\n${result.stderr}`;
-  if (result.status === 0 || !output.includes("Unknown plugin: 'effecttsgo'")) {
-    fail(`${label} must fail on the unknown effecttsgo plugin.\n${boundedSummary(result)}`);
   }
 };
 
@@ -188,6 +130,7 @@ const assertShippedSeverities = (diagnostics: readonly LintDiagnostic[], label: 
     ['src/program.ts', tsgoCode('strict-effect-provide'), 'error'],
     ['src/program.ts', customCode('no-effect-escape-hatch'), 'error'],
     ['src/clock.ts', tsgoCode('global-date'), 'warning'],
+    ['src/late/clock.ts', tsgoCode('global-date'), 'error'],
     ['src/boundary/clock.ts', tsgoCode('global-date-in-effect'), 'error'],
   ] as const) {
     if (severityOf(diagnostics, file, code) !== severity) {
@@ -219,6 +162,12 @@ const assertShippedBehavior = async (consumer: EffectConsumer): Promise<void> =>
     'src/boundary/clock.ts',
     { [tsgoCode('global-date')]: false },
     `${label} boundary relaxation`,
+  );
+  expectPresence(
+    diagnostics,
+    'src/context-provide.ts',
+    { [tsgoCode('strict-effect-provide')]: false },
+    `${label} Context provision`,
   );
 };
 
@@ -343,8 +292,10 @@ const assertDefaultRoute = async (tarballs: readonly string[]): Promise<void> =>
     ensureBoundedSuccess(await consumer.patch(), 'effect-tsgo patch --no-typescript --oxlint');
     ensureBoundedSuccess(await consumer.patch(), 'repeated effect-tsgo patch');
     await assertShippedBehavior(consumer);
+    await assertVitePlusParity(consumer, ['src/program.ts', 'src/clock.ts']);
     await assertWarningExit(consumer);
     await assertWrapperCoverage(consumer);
+    await assertRouteProbes(consumer);
   });
 
 const packDestination = createTempDir('backpressure-effect-oxlint-pack-');

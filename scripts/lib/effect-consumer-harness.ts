@@ -52,6 +52,20 @@ export interface EffectConsumerOptions {
   readonly versions: EffectIntegrationVersions;
 }
 
+// A Layer passed to Effect.provide: strict-effect-provide reports it, but only when the Effect types
+// resolve. The route smokes use it for severity and test-scope checks, and the app audit as its
+// typed canary.
+export const layerProvideSource = `import * as Context from 'effect/Context'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+
+class Config extends Context.Service<Config>()('Config', { make: Effect.succeed({}) }) {
+  static Default = Layer.effect(this, this.make)
+}
+
+export const program = Effect.void.pipe(Effect.provide(Config.Default))
+`;
+
 // Settings copied from the root workspace: a temp directory outside the repo inherits none of them,
 // and dropping them would silently weaken the release-age and trust safeguards.
 const copiedWorkspaceSettings = [
@@ -151,17 +165,23 @@ const collectOutput = (child: ChildProcess): (() => { stderr: string; stdout: st
 
 // Each command runs in its own process group so a timeout or interrupt kills the whole tree,
 // including tsgolint's child server, which a signal to this process alone would not reach.
+export interface BoundedOptions {
+  // Added to the stripped consumer environment, for example to point oxlint at a specific tsgolint.
+  readonly env?: Readonly<Record<string, string>>;
+  readonly timeoutMs?: number;
+}
+
 export const runBounded = (
   command: string,
   args: readonly string[],
   cwd: string,
-  timeoutMs = commandTimeoutMs,
+  { env: extraEnv = {}, timeoutMs = commandTimeoutMs }: BoundedOptions = {},
 ): Promise<BoundedResult> =>
   new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
       detached: true,
-      env: consumerEnv(),
+      env: { ...consumerEnv(), ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const output = collectOutput(child);
@@ -271,7 +291,7 @@ const installConsumer = async (
     'pnpm',
     ['add', '--save-dev', '--ignore-scripts', ...dependencies],
     consumerDir,
-    installTimeoutMs,
+    { timeoutMs: installTimeoutMs },
   );
   ensureBoundedSuccess(
     result,
@@ -289,7 +309,8 @@ const consumerFor = (dir: string, route: EffectRoute): EffectConsumer => {
   };
   return {
     dir,
-    exec: (command, args, timeoutMs) => runBounded(command, args, dir, timeoutMs),
+    exec: (command, args, timeoutMs) =>
+      runBounded(command, args, dir, timeoutMs === globalThis.undefined ? {} : { timeoutMs }),
     patch: () => runBounded('pnpm', patchArgs(route), dir),
     route,
     writeFile: (relativePath, text) => writeFileSync(preparedPath(relativePath), text),
@@ -321,20 +342,32 @@ const setInterruptHandlers = (enabled: boolean): void => {
   }
 };
 
-export const withEffectConsumer = async <T>(
-  options: EffectConsumerOptions,
-  body: (consumer: EffectConsumer) => Promise<T>,
-): Promise<T> => {
-  const root = createTempDir(`backpressure-effect-${options.route}-`);
+// Every caller that runs bounded subprocesses goes through this scope: an interrupt of this process
+// kills each running process group, marks in-flight results incomplete, and exits with 130.
+export const withInterruptScope = async <T>(body: () => Promise<T>): Promise<T> => {
+  interrupted = false;
   setInterruptHandlers(true);
   try {
-    const consumerDir = await prepareConsumer(root, options);
-    return await body(consumerFor(consumerDir, options.route));
+    return await body();
   } finally {
     setInterruptHandlers(false);
-    removeTempDir(root);
     if (interrupted) {
       process.exitCode = interruptExitCode;
     }
+    interrupted = false;
   }
 };
+
+export const withEffectConsumer = <T>(
+  options: EffectConsumerOptions,
+  body: (consumer: EffectConsumer) => Promise<T>,
+): Promise<T> =>
+  withInterruptScope(async () => {
+    const root = createTempDir(`backpressure-effect-${options.route}-`);
+    try {
+      const consumerDir = await prepareConsumer(root, options);
+      return await body(consumerFor(consumerDir, options.route));
+    } finally {
+      removeTempDir(root);
+    }
+  });

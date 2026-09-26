@@ -7,10 +7,20 @@ import {
   boundedSummary,
   ensureBoundedSuccess,
   ensureCompleted,
+  layerProvideSource,
   withEffectConsumer,
 } from '../../lib/effect-consumer-harness.ts';
 import { packWorkspacePackage } from '../../lib/packed-consumer-harness.ts';
-import { createTempDir, fail, printLine, removeTempDir } from '../../lib/script-runtime.ts';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import {
+  createTempDir,
+  fail,
+  isObjectRecord,
+  printLine,
+  removeTempDir,
+} from '../../lib/script-runtime.ts';
 import { canonicalVersions, effectIntegrationVersions } from '../../lib/tool-versions.ts';
 import { assertTsconfigPackedArtifact } from './artifact-assertions.ts';
 import { tsconfigPackageDir } from './package.ts';
@@ -19,16 +29,6 @@ import { readmeTscOverrideEntry, readmeTscOverrideSnippet } from './readme-snipp
 const versions = effectIntegrationVersions();
 const effectCompilerOptions = { plugins: [readmeTscOverrideEntry()] };
 
-const provideSource = `import * as Context from 'effect/Context'
-import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
-
-class Config extends Context.Service<Config>()('Config', { make: Effect.succeed({}) }) {
-  static Default = Layer.effect(this, this.make)
-}
-
-export const program = Effect.void.pipe(Effect.provide(Config.Default))
-`;
 const clockSource = 'export const now = Date.now()\n';
 const cleanSource = 'export const answer: number = 42\n';
 const wrapperBody = `  Effect.gen(function* () {
@@ -108,10 +108,10 @@ const writeProject = (
 
 const readmeProjectFiles = {
   'clock.ts': clockSource,
-  'program.ts': provideSource,
+  'program.ts': layerProvideSource,
   'server.ts': 'export const bunVersion: string = Bun.version\n',
   ...wrapperSources,
-  ...Object.fromEntries(testScopedFiles.map((file) => [file, provideSource])),
+  ...Object.fromEntries(testScopedFiles.map((file) => [file, layerProvideSource])),
 };
 
 const assertUnpatchedIsSilent = async (consumer: EffectConsumer): Promise<void> => {
@@ -123,7 +123,7 @@ const assertUnpatchedIsSilent = async (consumer: EffectConsumer): Promise<void> 
     fail(`Unpatched TypeScript already reports a patched version: ${version.stdout.trim()}`);
   }
   const project = writeProject(consumer, 'unpatched', readmeTscOverrideSnippet(), {
-    'program.ts': provideSource,
+    'program.ts': layerProvideSource,
   });
   const result = await tsc(consumer, project);
   // An unpatched tsc ignores the plugin entirely, which is why the README tells consumers to
@@ -226,6 +226,79 @@ const assertExitBehavior = async (consumer: EffectConsumer): Promise<void> => {
   ensureBoundedSuccess(browser, 'clean browser project extending effect-tsc.json');
 };
 
+const readmeEntryRecord = (): Record<string, unknown> => {
+  const entry = readmeTscOverrideEntry();
+  return isObjectRecord(entry) ? entry : fail('The tsconfig README has no Effect override entry.');
+};
+
+const shownOptions = async (
+  consumer: EffectConsumer,
+  project: string,
+): Promise<Record<string, unknown>> => {
+  const shown = ensureBoundedSuccess(
+    await consumer.exec('pnpm', ['exec', 'tsc', '--showConfig', '-p', project]),
+    `tsc --showConfig -p ${project}`,
+  );
+  const parsed: unknown = JSON.parse(shown.stdout);
+  const options = isObjectRecord(parsed) ? parsed['compilerOptions'] : globalThis.undefined;
+  return isObjectRecord(options) ? options : fail(`${project} showed no compilerOptions.`);
+};
+
+// The overlay is options-only, so extending an environment config first and the overlay last keeps
+// that environment's lib, JSX, and types settings.
+const assertEnvironmentPreserved = async (consumer: EffectConsumer): Promise<void> => {
+  const server = await shownOptions(consumer, 'readme/tsconfig.json');
+  const browser = await shownOptions(consumer, 'browser/tsconfig.json');
+  const lib = (options: Record<string, unknown>): string =>
+    Array.isArray(options['lib']) ? options['lib'].join(',').toLowerCase() : '';
+  if (JSON.stringify(server['types']) !== JSON.stringify(['bun-types'])) {
+    fail(`The server composition lost its Bun types: ${JSON.stringify(server['types'])}`);
+  }
+  if (browser['jsx'] !== 'react-jsx' || !lib(browser).includes('dom')) {
+    fail(
+      `The browser composition lost its JSX or DOM settings: jsx ${String(browser['jsx'])}, lib ${lib(browser)}`,
+    );
+  }
+};
+
+// The tsc route is a typecheck, not a second linter: this consumer installs no oxlint at all.
+const assertNoOxlintRoute = (consumer: EffectConsumer): void => {
+  if (existsSync(join(consumer.dir, 'node_modules', '.bin', 'oxlint'))) {
+    fail('The tsc-route consumer must not install an oxlint reporting route.');
+  }
+};
+
+// effectFn decides which wrapper shapes effect-fn-opportunity reports. A consumer entry restoring
+// the upstream default, ['span'], leaves only the Effect.withSpan wrapper; the overlay's three
+// variants, inherited through `extends`, report all three (asserted on the README project).
+const assertEffectFnSensitivity = async (consumer: EffectConsumer): Promise<void> => {
+  const defaults = effectDiagnostics(
+    await tsc(
+      consumer,
+      writeProject(
+        consumer,
+        'fn-default',
+        {
+          extends: ['@mplibunao/tsconfig/base.json', '@mplibunao/tsconfig/effect-tsc.json'],
+          compilerOptions: {
+            plugins: [{ ...readmeEntryRecord(), effectFn: ['span'] }],
+          },
+          include: ['src'],
+        },
+        wrapperSources,
+      ),
+    ),
+  );
+  expectCodes(defaults, 'fn-default/src/wrappers/declaration.ts', [], 'default effectFn');
+  expectCodes(defaults, 'fn-default/src/wrappers/parameter.ts', [], 'default effectFn');
+  expectCodes(
+    defaults,
+    'fn-default/src/wrappers/spanned.ts',
+    ['effectFnOpportunity'],
+    'default effectFn',
+  );
+};
+
 // Without the consumer entry, the overlay's severities apply but test files still report,
 // because tsgo resolves an extended config's override globs from that config's own folder.
 const assertOverlayScopeControls = async (consumer: EffectConsumer): Promise<void> => {
@@ -239,7 +312,7 @@ const assertOverlayScopeControls = async (consumer: EffectConsumer): Promise<voi
           extends: ['@mplibunao/tsconfig/base.json', '@mplibunao/tsconfig/effect-tsc.json'],
           include: ['src'],
         },
-        { 'program.ts': provideSource, 'provide.test.ts': provideSource },
+        { 'program.ts': layerProvideSource, 'provide.test.ts': layerProvideSource },
       ),
     ),
   );
@@ -261,10 +334,12 @@ const assertOverlayScopeControls = async (consumer: EffectConsumer): Promise<voi
           compilerOptions: { plugins: [{ name: 'unrelated-typescript-plugin' }] },
           include: ['src'],
         },
-        { 'program.ts': provideSource },
+        { 'program.ts': layerProvideSource },
       ),
     ),
   );
+  // tsgo's merge hook carries the overlay's Effect entry across `extends`, so a consumer plugins
+  // array that names only another plugin keeps the overlay's Effect settings.
   expectCodes(
     otherPlugins,
     'other-plugins/src/program.ts',
@@ -283,7 +358,7 @@ const assertOverlayScopeControls = async (consumer: EffectConsumer): Promise<voi
         consumer,
         'monorepo/packages/app',
         { extends: '../../tsconfig.effect.json', include: ['src'] },
-        { 'program.ts': provideSource, 'program.test.ts': provideSource },
+        { 'program.ts': layerProvideSource, 'program.test.ts': layerProvideSource },
       ),
     ),
   );
@@ -313,7 +388,10 @@ try {
       await patchTwice(consumer);
       await assertReadmeProject(consumer);
       await assertExitBehavior(consumer);
+      await assertEnvironmentPreserved(consumer);
+      await assertEffectFnSensitivity(consumer);
       await assertOverlayScopeControls(consumer);
+      assertNoOxlintRoute(consumer);
     },
   );
   printLine('tsc-route Effect packed consumer smoke passed');

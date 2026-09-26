@@ -35,6 +35,7 @@ import {
   assertDiagnosticLine,
   runOxlintOnSource,
 } from '../packages/oxlint-standards/real-engine.ts';
+import { runReferenceCorpusReplay } from './reference-corpus-replay.ts';
 
 const effectImportGatedRules = new Set(
   ruleManifest
@@ -3740,7 +3741,10 @@ export const runFixtureReplay = (): void => {
   buildOxlintStandards();
   runAllPresetReplays();
   const replayCaseCount = runSuitesCases();
-  printLine(`fixture replay passed: ${replaySuites.length} suites, ${replayCaseCount} cases`);
+  const corpusVariantCount = runReferenceCorpusReplay();
+  printLine(
+    `fixture replay passed: ${replaySuites.length} suites, ${replayCaseCount} cases, ${corpusVariantCount} reference-corpus variants`,
+  );
 };
 
 const [, entrypointPath] = process.argv;

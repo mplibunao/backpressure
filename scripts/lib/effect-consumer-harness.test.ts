@@ -1,4 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -9,6 +12,7 @@ import {
   patchArgs,
   routeDependencies,
   runBounded,
+  withInterruptScope,
 } from './effect-consumer-harness.ts';
 import type { EffectIntegrationVersions } from './tool-versions.ts';
 
@@ -35,13 +39,14 @@ const rootWorkspace = [
   'trustPolicy: no-downgrade',
 ].join('\n');
 
-const isAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+// A killed process stays in the process table as a zombie until its new parent reaps it, and
+// `process.kill(pid, 0)` succeeds on a zombie. Under load that window outlasts the runner's close
+// event, so liveness is read from the process state and a zombie counts as dead.
+const isRunning = (pid: number): boolean => {
+  const state = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], {
+    encoding: 'utf8',
+  }).stdout.trim();
+  return state !== '' && !state.startsWith('Z');
 };
 
 describe('consumer workspace', () => {
@@ -107,11 +112,13 @@ describe('route setup', () => {
 
 describe('bounded subprocesses', () => {
   it('kills the whole process group on timeout and reports the run as incomplete', async () => {
-    const result = await runBounded('sh', ['-c', 'sleep 30 & echo $!; wait'], tmpdir(), 300);
+    const result = await runBounded('sh', ['-c', 'sleep 30 & echo $!; wait'], tmpdir(), {
+      timeoutMs: 300,
+    });
     const grandchild = Number(result.stdout.trim());
     expect(result.timedOut).toBe(true);
     expect(grandchild).toBeGreaterThan(0);
-    expect(isAlive(grandchild)).toBe(false);
+    expect(isRunning(grandchild)).toBe(false);
     expect(() => ensureCompleted(result, 'sleeper')).toThrow(/incomplete: timed out/u);
   });
 
@@ -133,5 +140,35 @@ describe('bounded subprocesses', () => {
     expect(() => ensureCompleted(result, 'self-killed')).toThrow(
       /self-killed is incomplete: terminated by SIGTERM/u,
     );
+  });
+
+  it('kills the running process group when this process is interrupted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'backpressure-interrupt-'));
+    const pidFile = join(dir, 'pid');
+    const savedExitCode = process.exitCode;
+    try {
+      const outcome = await withInterruptScope(async () => {
+        const pending = runBounded('sh', ['-c', `sleep 30 & echo $! > ${pidFile}; wait`], dir, {
+          timeoutMs: 60_000,
+        });
+        // Wait for the grandchild to exist before interrupting, instead of guessing a delay.
+        while (!existsSync(pidFile) || readFileSync(pidFile, 'utf8').trim() === '') {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        process.emit('SIGINT');
+        const result = await pending;
+        // The interrupt marker lives only inside the scope, where real callers check results.
+        expect(() => ensureCompleted(result, 'interrupted sleeper')).toThrow(
+          /interrupted sleeper is incomplete: interrupted/u,
+        );
+        return result;
+      });
+      expect(outcome.timedOut).toBe(false);
+      expect(isRunning(Number(readFileSync(pidFile, 'utf8').trim()))).toBe(false);
+      expect(process.exitCode).toBe(130);
+    } finally {
+      process.exitCode = savedExitCode;
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 });
