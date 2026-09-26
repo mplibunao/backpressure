@@ -20,19 +20,19 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
-| WI-01 | Record ownership and initialize the execution ledger | S | DONE (local, not pushed) | `15fce6c` |
-| WI-02 | Establish pinned inputs and the isolated toolchain foundation | L | DONE (local, not pushed); Renovate app activation waits on MP | `c863fa5` |
-| WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | DONE (local, not pushed) | `ec4f4f8` |
-| WI-04 | Narrow composition and error contracts | L | DONE (local, not pushed) | `9c12bcc` |
-| WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (local, not pushed) | `eaff7e4` |
-| WI-06 | Activate the full Effect config and both package surfaces | L | DONE (local, not pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
+| WI-01 | Record ownership and initialize the execution ledger | S | DONE (pushed) | `15fce6c` |
+| WI-02 | Establish pinned inputs and the isolated toolchain foundation | L | DONE (pushed); Renovate app active (onboarding PR #5) | `c863fa5` |
+| WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | DONE (pushed) | `ec4f4f8` |
+| WI-04 | Narrow composition and error contracts | L | DONE (pushed) | `9c12bcc` |
+| WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (pushed) | `eaff7e4` |
+| WI-06 | Activate the full Effect config and both package surfaces | L | DONE (pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
 | WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | WAITING for the upstream release | |
-| WI-11 | Rule list with its generated page and local viewer | M | DONE (local, not pushed) | `b848cb5` |
-| WI-07 | Install all six durable gates | L | DONE (local, not pushed) | `671fcb9` |
-| WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (local, not pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) | `dfff7d9` |
-| WI-09 | Complete consumer guidance, records, and changesets | M | DONE (local, not pushed) | `be8b5fa` |
-| WI-10 | Run acceptance and classify the remaining blocker accurately | S | in-scope verification complete / full acceptance blocked (local, not pushed): external introspection `config.schema_violation`; executor typed coverage 1,355 of 1,922 files (open MP question) | `c927ae0` |
+| WI-11 | Rule list with its generated page and local viewer | M | DONE (pushed) | `b848cb5` |
+| WI-07 | Install all six durable gates | L | DONE (pushed) | `671fcb9` |
+| WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) because five executor tsconfigs are invalid under TypeScript 6 and 7 alike, so MP did not accept it | `dfff7d9` |
+| WI-09 | Complete consumer guidance, records, and changesets | M | DONE (pushed) | `be8b5fa` |
+| WI-10 | Run acceptance and classify the remaining blocker accurately | S | in-scope verification complete / full acceptance blocked (pushed): external introspection `config.schema_violation`; executor typed coverage 1,355 of 1,922 files (open MP question) | `c927ae0` |
 
 ## Per-item detail
 
@@ -872,10 +872,11 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 
 ### WI-08: Measure the two apps and finalize conditional delegation (JSON decision DONE; full typed coverage BLOCKED)
 
+- **MP decision (2026-09-26):** accept partial coverage only if an old version causes it. TypeScript 6.0.2 rejects the same five configs (`TS5096` in `apps/cloud`, `apps/local`, `apps/desktop`, `packages/app`; `TS5069` at the root), so the gap comes from executor's own config, not a version gap, and this part stays blocked.
 - **Blocked part:** the Done when's complete typed coverage is not met, so this part stays blocked until MP amends the G2/WI-08 contract or a later executor snapshot lints cleanly under TypeScript 7. The JSON decision, the custom-rule counts, and the comparisons are complete.
 - **Limitation:** executor's typed coverage is partial, 1,355 of 1,922 script files. TypeScript 7 rejects the configs of five executor projects (the root `tsconfig.json`, `apps/cloud`, `apps/local`, `apps/desktop`, and `packages/app`), and the linter skips their files. Executor's Effect `4.0.0-beta.59` is also below tsgo 0.45.0's supported range (`^4.0.0-beta.107`). No decision depends on the missing files: the JSON rule ships `off` either way, and missing evidence could never enable it.
 - **Report:** [`docs/reports/effect-v4-app-audit-2026-09-25.md`](../../reports/effect-v4-app-audit-2026-09-25.md) holds the before/after tables, coverage, fingerprints, the JSON review of every hit, and the pipe and `Effect.fn` comparisons. The alignment record gained an "After-change run" subsection under its app evidence.
-- **App copies:** `git clone --local` of each source checkout into the session scratchpad (`apps/t3code`, `apps/executor`), detached at `53456bc0129f` and `480b390eedd1`. Installs were frozen with lifecycle scripts off: `corepack pnpm@11.10.0 install --frozen-lockfile --ignore-scripts` (exit 0) and `bun install --frozen-lockfile --ignore-scripts` (exit 0). Both clones stayed clean in `git status`. The copies use 5.7 GB and 3.8 GB; free disk went from 52 GB to 41 GB, including package-manager caches. The source checkouts were only read. Executor's untracked set changed during the session (it showed `docs/investigations/` instead of `docs/.agents/`); none of it is tracked, so the snapshot is unaffected.
+- **App copies (deleted 2026-09-26 with MP's OK):** `git clone --local` of each source checkout into the session scratchpad (`apps/t3code`, `apps/executor`), detached at `53456bc0129f` and `480b390eedd1`. Installs were frozen with lifecycle scripts off: `corepack pnpm@11.10.0 install --frozen-lockfile --ignore-scripts` (exit 0) and `bun install --frozen-lockfile --ignore-scripts` (exit 0). Both clones stayed clean in `git status`. The copies use 5.7 GB and 3.8 GB; free disk went from 52 GB to 41 GB, including package-manager caches. The source checkouts were only read. Executor's untracked set changed during the session (it showed `docs/investigations/` instead of `docs/.agents/`); none of it is tracked, so the snapshot is unaffected.
 - **Why every pass ran on the copies:** neither source checkout has `node_modules`, and the audit reads each app's installed Effect even in AST mode.
 - **Selection:** the recorded run's scope and exclusions, passed as globs. Executor selects 1,940 files, matching the recorded count. t3code selects 3,841, one fewer than the recorded 3,842, and no reading of the recorded policy over the tracked files gives 3,842. The typed passes also exclude `.astro`/`.vue`/`.svelte` components and every file no engine-accepted project lists: 3,802 t3code files and 1,355 executor files remain.
 - **Audit defects found on the real apps, fixed:**
