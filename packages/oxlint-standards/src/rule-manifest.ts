@@ -1581,7 +1581,7 @@ export const ruleManifest = [
     testSource: 'scenario-only',
     gating: 'effect-callee',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'A named function whose only job is to return Effect.gen; it overlaps effecttsgo/effect-fn-opportunity, which on the patched oxlint route reports these wrappers only when the nearest tsconfig.json has no extends.',
+    note: 'A named function whose only job is to return Effect.gen; it overlaps effecttsgo/effect-fn-opportunity on purpose and, unlike it, reports without a TypeScript project (ADR-007).',
   }),
   sourceRule({
     name: 'no-barrel-import',

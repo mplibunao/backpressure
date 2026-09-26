@@ -2135,9 +2135,8 @@ const catalogRules: Record<string, Rule> = {
       type: 'problem',
     },
   },
-  // Overlaps effecttsgo/effect-fn-opportunity on purpose: under a consumer tsconfig that uses
-  // `extends`, the patched oxlint route runs that rule on upstream-default options, which skip
-  // these wrappers. This AST check reports them without a TypeScript project.
+  // Overlaps effecttsgo/effect-fn-opportunity on purpose (ADR-007): this AST check reports the plain
+  // wrappers without a TypeScript project, where the type-aware rule cannot run.
   'prefer-effect-fn': {
     create(context) {
       let effectNames = new Set<string>();

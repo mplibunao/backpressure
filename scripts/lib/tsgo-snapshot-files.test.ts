@@ -4,11 +4,16 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { stableJson } from './stable-json.ts';
-import { createTempDir, removeTempDir, repoRoot } from './script-runtime.ts';
+import { createTempDir, readText, removeTempDir, repoRoot } from './script-runtime.ts';
+import { readCatalogVersion } from './tool-versions.ts';
 import { parseTsgoSnapshot, type TsgoSnapshot } from './tsgo-snapshot.ts';
 import { readRetainedTsgoSnapshot, replaceTsgoSnapshot } from './tsgo-snapshot-files.ts';
 
-const pinnedDir = join(repoRoot, 'scripts', 'references', 'tsgo', '0.45.0');
+const pinnedVersion = readCatalogVersion(
+  readText(join(repoRoot, 'pnpm-workspace.yaml')),
+  '@effect/tsgo',
+);
+const pinnedDir = join(repoRoot, 'scripts', 'references', 'tsgo', pinnedVersion);
 const current = parseTsgoSnapshot(readFileSync(join(pinnedDir, 'metadata.json'), 'utf8'));
 const licenseText = readFileSync(join(pinnedDir, 'LICENSE'), 'utf8');
 const oldVersion = '0.44.0';
@@ -45,11 +50,11 @@ afterEach(() => {
 describe('tsgo snapshot replacement', () => {
   it('writes the new snapshot, then prunes only superseded snapshot directories', () => {
     expect(replace(identity)).toEqual([oldVersion]);
-    expect(readdirSync(referencesDir).toSorted()).toEqual(['0.45.0', 'SENTINEL.md', 'notes']);
+    expect(readdirSync(referencesDir).toSorted()).toEqual([pinnedVersion, 'SENTINEL.md', 'notes']);
     expect(readFileSync(join(referencesDir, 'SENTINEL.md'), 'utf8')).toBe('not a snapshot\n');
     expect(existsSync(join(referencesDir, 'notes', 'todo.txt'))).toBe(true);
-    const written = readFileSync(join(referencesDir, '0.45.0', 'metadata.json'), 'utf8');
-    expect(parseTsgoSnapshot(written).package.version).toBe('0.45.0');
+    const written = readFileSync(join(referencesDir, pinnedVersion, 'metadata.json'), 'utf8');
+    expect(parseTsgoSnapshot(written).package.version).toBe(pinnedVersion);
   });
 
   it('keeps directories that do not validate as snapshots', () => {
@@ -61,7 +66,7 @@ describe('tsgo snapshot replacement', () => {
     expect(readdirSync(referencesDir).toSorted()).toEqual([
       '0.42.0',
       '0.43.0',
-      '0.45.0',
+      pinnedVersion,
       'SENTINEL.md',
       'notes',
     ]);
@@ -101,7 +106,8 @@ describe('tsgo snapshot replacement', () => {
   });
 
   it('leaves the old snapshot in place when the formatter changes the content', () => {
-    const corruptingFormat = (text: string): string => text.replace('"0.45.0"', '"0.45.1"');
+    const corruptingFormat = (text: string): string =>
+      text.replace(`"${pinnedVersion}"`, '"9.9.9"');
     expect(() => replace(corruptingFormat)).toThrow(/no longer matches|tag/u);
     expect(readdirSync(referencesDir).toSorted()).toEqual([oldVersion, 'SENTINEL.md', 'notes']);
   });
@@ -115,12 +121,12 @@ describe('tsgo snapshot replacement', () => {
         snapshot: current,
       }),
     ).toThrow(/LICENSE text does not match/u);
-    expect(existsSync(join(referencesDir, '0.45.0'))).toBe(false);
+    expect(existsSync(join(referencesDir, pinnedVersion))).toBe(false);
   });
 });
 
 describe('retained tsgo snapshot', () => {
-  const versionDir = (): string => join(referencesDir, '0.45.0');
+  const versionDir = (): string => join(referencesDir, pinnedVersion);
 
   // Occupying the LICENSE temp path with a directory makes the second replacement fail after the
   // metadata rename has already landed, which is the torn state an interrupted capture leaves.
@@ -130,7 +136,9 @@ describe('retained tsgo snapshot', () => {
 
   it('accepts a complete replacement', () => {
     replace(identity);
-    expect(readRetainedTsgoSnapshot(referencesDir, '0.45.0').package.version).toBe('0.45.0');
+    expect(readRetainedTsgoSnapshot(referencesDir, pinnedVersion).package.version).toBe(
+      pinnedVersion,
+    );
   });
 
   it('rejects new metadata beside a missing LICENSE', () => {
@@ -139,7 +147,7 @@ describe('retained tsgo snapshot', () => {
     expect(existsSync(join(versionDir(), 'metadata.json'))).toBe(true);
     expect(existsSync(join(versionDir(), 'LICENSE'))).toBe(false);
     expect(existsSync(join(referencesDir, oldVersion))).toBe(true);
-    expect(() => readRetainedTsgoSnapshot(referencesDir, '0.45.0')).toThrow(
+    expect(() => readRetainedTsgoSnapshot(referencesDir, pinnedVersion)).toThrow(
       /needs metadata\.json and LICENSE/u,
     );
   });
@@ -150,7 +158,7 @@ describe('retained tsgo snapshot', () => {
     blockLicenseReplacement();
     expect(() => replace(identity)).toThrow(/EISDIR/u);
     expect(readFileSync(join(versionDir(), 'LICENSE'), 'utf8')).toBe('stale license\n');
-    expect(() => readRetainedTsgoSnapshot(referencesDir, '0.45.0')).toThrow(
+    expect(() => readRetainedTsgoSnapshot(referencesDir, pinnedVersion)).toThrow(
       /does not match the LICENSE hash/u,
     );
   });

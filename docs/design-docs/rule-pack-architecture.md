@@ -4,7 +4,7 @@ Status: current-state design for the catalog after the Effect v4 alignment. [ADR
 
 ## Purpose
 
-`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The catalog has 44 custom rules (22 linteffect ports and 22 reimplementations of executor, recon, or linteffect ideas), the built-in oxlint settings of its config fragments, and 113 delegated `@effect/tsgo` checks that the Effect preset configures. `src/rule-manifest.ts` is the source of truth for these counts, and the generated `docs/references/rules.md` lists what each preset turns on.
+`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The catalog has 44 custom rules (22 linteffect ports and 22 reimplementations of executor, recon, or linteffect ideas), the built-in oxlint settings of its config fragments, and 116 delegated `@effect/tsgo` checks that the Effect preset configures. `src/rule-manifest.ts` is the source of truth for these counts, and the generated `docs/references/rules.md` lists what each preset turns on.
 
 ## Source model
 

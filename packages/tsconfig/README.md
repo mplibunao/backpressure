@@ -28,20 +28,20 @@ Pick exactly one route and extend only its overlay:
 | Default: patched oxlint | `effect.json` | `oxlint` or `vp lint` with the full `effectPreset` | The oxlint config |
 | Fallback: patched TypeScript 7 | `effect-tsc.json` | `tsc` during your normal typecheck | The overlay |
 
-Both overlays share the same plugin options, generated from one graded policy. The default overlay sets `diagnostics: false`, so your editor does not repeat what oxlint reports. It also carries no severity map. The fallback overlay sets every one of the 113 `@effect/tsgo` diagnostics explicitly, and both errors and warnings fail the typecheck.
+Both overlays share the same plugin options, generated from one graded policy. The default overlay sets `diagnostics: false`, so your editor does not repeat what oxlint reports. It also carries no severity map. The fallback overlay sets every one of the 116 `@effect/tsgo` diagnostics explicitly, and both errors and warnings fail the typecheck.
 
 ### Tested versions
 
 | Package | Default route | Fallback route |
 | --- | --- | --- |
-| `@effect/tsgo` | `0.45.0` | `0.45.0` |
+| `@effect/tsgo` | `0.46.1` | `0.46.1` |
 | `typescript` | `6.0.2` | `7.0.2` |
 | `vite-plus` | `0.3.2` | not used |
 | `oxlint` | `1.82.0` | not used |
 | `oxlint-tsgolint` | `7.0.2001` | not used |
 | `effect` | `4.0.0-rc.115` | `4.0.0-rc.115` |
 
-`@effect/tsgo` 0.45.0 also supports `vite-plus` 0.3.1 with oxlint 1.81.0; the table lists the pair this repository tests. It patches only the exact targets it supports. `vite-plus` 0.3.3 (oxlint 1.83.0) and the `1.0.0-rc` releases (oxlint 1.85.0) are not supported: the patch fails, and oxlint then reports `Unknown plugin: 'effecttsgo'`. Upgrade `@effect/tsgo` and `vite-plus` together.
+`@effect/tsgo` 0.46.1 also supports `vite-plus` 0.3.3 with oxlint 1.83.0, and the `vite-plus` `1.0.0-rc` releases with oxlint 1.85.0; the table lists the pair this repository tests, and the `1.0.0-rc` releases are not tested here yet. It patches only the exact targets it supports. `vite-plus` 0.3.1 (oxlint 1.81.0) is not supported: the patch fails, and oxlint then reports `Unknown plugin: 'effecttsgo'`. Upgrade `@effect/tsgo` and `vite-plus` together.
 
 ### Default route: patched oxlint
 
@@ -65,7 +65,7 @@ The patched linter loads each tsconfig with TypeScript 7's rules, even when your
 ### Fallback route: patched TypeScript 7
 
 1. Install `@effect/tsgo` and `typescript` at the versions above.
-2. Patch the compiler: run `effect-tsgo patch` in `prepare`, or after every install when you use `--ignore-scripts`. Check the result with `tsc --version`, which prints a version ending in `+effect-tsgo.0.45.0`. An unpatched `tsc` ignores the plugin and reports no Effect diagnostics at all.
+2. Patch the compiler: run `effect-tsgo patch` in `prepare`, or after every install when you use `--ignore-scripts`. Check the result with `tsc --version`, which prints a version ending in `+effect-tsgo.0.46.1`. An unpatched `tsc` ignores the plugin and reports no Effect diagnostics at all.
 3. Extend the overlay and add the test-file override in your own tsconfig:
 
 ```json
@@ -138,4 +138,4 @@ Keep the entry name `@effect/language-service`; `@effect/tsgo` reads its setting
 
 On the fallback route, the patched `tsc` merges the Effect entry across `extends` key by key. An entry you add, like the override above, changes only the keys it sets, and a `plugins` array that has no Effect entry still keeps the overlay's Effect settings. Standard `tsconfig` rules still apply to any other TypeScript plugins: a `plugins` array in your tsconfig replaces the inherited array.
 
-On the default route, the patched oxlint reads the Effect settings from the `tsconfig.json` nearest each linted file. When that file uses `extends`, oxlint runs with upstream's default Effect settings instead, so the overlay's `effectFn` and other options do not reach it. With the default `effectFn`, `effect-fn-opportunity` reports only wrappers piped into `Effect.withSpan`. The lint package's `prefer-effect-fn` rule reports the plain `(...) => Effect.gen(...)` wrappers that it misses there.
+On the default route, the patched oxlint reads the Effect settings from the `tsconfig.json` nearest each linted file and from the files it extends, so the overlay's `effectFn` and other options apply. With the overlay's `effectFn`, `effect-fn-opportunity` reports plain `(...) => Effect.gen(...)` wrappers as well as wrappers piped into `Effect.withSpan`.

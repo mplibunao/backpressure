@@ -9,6 +9,7 @@ import {
   ensureCompleted,
   layerProvideSource,
   withEffectConsumer,
+  wrapperSourcesIn,
 } from '../../lib/effect-consumer-harness.ts';
 import { packWorkspacePackage } from '../../lib/packed-consumer-harness.ts';
 import { existsSync } from 'node:fs';
@@ -31,18 +32,7 @@ const effectCompilerOptions = { plugins: [readmeTscOverrideEntry()] };
 
 const clockSource = 'export const now = Date.now()\n';
 const cleanSource = 'export const answer: number = 42\n';
-const wrapperBody = `  Effect.gen(function* () {
-    const value = yield* Effect.succeed(n)
-    return value + 1
-  })`;
-// effect-fn-opportunity reports a wrapper only when an enabled effectFn fix variant applies to it.
-// Upstream's default, ['span'], covers only the Effect.withSpan form; the overlay's inferred and
-// suggested spans cover the other two.
-const wrapperSources = {
-  'wrappers/declaration.ts': `import * as Effect from 'effect/Effect'\n\nexport function addOne(n: number) {\n  return${wrapperBody.slice(1)}\n}\n`,
-  'wrappers/parameter.ts': `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}\n`,
-  'wrappers/spanned.ts': `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}.pipe(Effect.withSpan('addOne'))\n`,
-};
+const wrapperSources = wrapperSourcesIn('wrappers');
 const testScopedFiles = [
   'provide.test.ts',
   'provide-spec.ts',

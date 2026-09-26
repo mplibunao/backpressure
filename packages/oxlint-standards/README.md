@@ -92,24 +92,24 @@ The unqualified `react` preset name is reserved for a future stack-neutral React
 
 ## Effect setup
 
-`effectPreset` delegates type-aware Effect checks to [`@effect/tsgo`](https://github.com/Effect-TS/tsgo), which patches oxlint so its `effecttsgo/*` rules report next to this package's rules. The preset sets all 113 of them explicitly, so none depends on upstream defaults. An unpatched oxlint rejects the preset with `Unknown plugin: 'effecttsgo'`, so a missing patch fails the lint instead of passing silently.
+`effectPreset` delegates type-aware Effect checks to [`@effect/tsgo`](https://github.com/Effect-TS/tsgo), which patches oxlint so its `effecttsgo/*` rules report next to this package's rules. The preset sets all 116 of them explicitly, so none depends on upstream defaults. An unpatched oxlint rejects the preset with `Unknown plugin: 'effecttsgo'`, so a missing patch fails the lint instead of passing silently.
 
 Pick one route. Using both reports every Effect diagnostic twice.
 
 ### Supported versions
 
-`@effect/tsgo` patches only the exact tool versions it supports. For `@effect/tsgo` 0.45.0:
+`@effect/tsgo` patches only the exact tool versions it supports. For `@effect/tsgo` 0.46.1:
 
 | Package | Default route (patched oxlint) | Fallback route (patched TypeScript) |
 | --- | --- | --- |
-| `@effect/tsgo` | `0.45.0` | `0.45.0` |
-| `vite-plus` | `0.3.1` or `0.3.2` | not used |
-| `oxlint` | `1.81.0` or `1.82.0`, the versions those `vite-plus` releases bundle | not used |
+| `@effect/tsgo` | `0.46.1` | `0.46.1` |
+| `vite-plus` | `0.3.2` or `0.3.3`; tested with `0.3.2` | not used |
+| `oxlint` | `1.82.0` or `1.83.0`, the versions those `vite-plus` releases bundle | not used |
 | `oxlint-tsgolint` | `7.0.2001` | not used |
 | `typescript` | your project's version; tested with `6.0.2` | `7.0.2` |
 | `effect` | a v4 release that `@effect/tsgo` accepts; tested with `4.0.0-rc.115` | same |
 
-This repository's integration tests run `vite-plus` 0.3.2 with oxlint 1.82.0. `vite-plus` 0.3.3 (oxlint 1.83.0) and the `1.0.0-rc` releases (oxlint 1.85.0) are not supported by `@effect/tsgo` 0.45.0: the patch fails, and linting then fails with `Unknown plugin: 'effecttsgo'`. Upgrade `@effect/tsgo` and `vite-plus` together.
+This repository's integration tests run `vite-plus` 0.3.2 with oxlint 1.82.0. `@effect/tsgo` 0.46.1 also supports the `vite-plus` `1.0.0-rc` releases (oxlint `1.85.0` with oxlint-tsgolint `7.0.2002` or `7.0.2003`), which this package has not tested yet. It does not support `vite-plus` 0.3.1 (oxlint 1.81.0): the patch fails, and linting then fails with `Unknown plugin: 'effecttsgo'`. Upgrade `@effect/tsgo` and `vite-plus` together.
 
 ### Default route: patched oxlint
 
@@ -154,7 +154,7 @@ How the patched oxlint finds your TypeScript settings:
 
 - It takes each file's TypeScript project from the nearest `tsconfig.json`, the way an editor does. The `--tsconfig` flag does not change that choice.
 - When it cannot load that tsconfig, oxlint reports `typescript(tsconfig-error)` and that project's files get no `effecttsgo` diagnostics. Two causes are options that TypeScript 7 rejects and a missing `types` package: `server.json` needs `bun-types` installed. Fix the tsconfig until the error goes away.
-- `@effect/tsgo` 0.45.0 reads the Effect plugin options only from a nearest `tsconfig.json` that has no `extends` (upstream issue Effect-TS/tsgo#766). With the setup above, it runs with upstream's default options instead of the overlay's. One visible effect: `effecttsgo/effect-fn-opportunity` reports only wrappers piped into `Effect.withSpan`, and this package's `prefer-effect-fn` reports the plain `(...) => Effect.gen(...)` wrappers.
+- It reads the Effect plugin options from that `tsconfig.json` and the files it extends, so the overlay's options apply with the setup above. With them, `effecttsgo/effect-fn-opportunity` reports plain `(...) => Effect.gen(...)` wrappers as well as wrappers piped into `Effect.withSpan`. This package's `prefer-effect-fn` also reports the plain wrappers, so each of those gets both diagnostics.
 
 To check the setup, add this file temporarily and run `vp lint`:
 
@@ -183,7 +183,7 @@ Expect `effecttsgo(strict-effect-provide)` on the `Effect.provide` line and `eff
 For a project that does not lint with oxlint:
 
 1. Install `@effect/tsgo`, `typescript` 7.0.2, and `@mplibunao/tsconfig`.
-2. Run `effect-tsgo patch` in `prepare`, or after every install when you use `--ignore-scripts`. `tsc --version` then ends in `+effect-tsgo.0.45.0`.
+2. Run `effect-tsgo patch` in `prepare`, or after every install when you use `--ignore-scripts`. `tsc --version` then ends in `+effect-tsgo.0.46.1`.
 3. Extend `@mplibunao/tsconfig/effect-tsc.json` last, and add the test-file override entry from the `@mplibunao/tsconfig` README to your own tsconfig.
 
 Your normal typecheck then reports the `@effect/tsgo` checks, and both errors and warnings fail it. This route runs no linter, so it does not apply this package's own rules.
@@ -253,7 +253,7 @@ The Effect rules enforce part of a house style. Lint cannot check every point, s
 This release is breaking for Effect consumers.
 
 - `effectPreset` is now a full config that requires `@effect/tsgo` and the patch. Compose the whole object; a config that copies only its `rules` misses the plugin and options.
-- `@effect/tsgo` 0.45.0 is a new optional peer dependency. Consumers that do not use `effectPreset` do not need it, and the `oxlint` peer range stays `^1.58.0`.
+- `@effect/tsgo` 0.46.1 is a new optional peer dependency. Consumers that do not use `effectPreset` do not need it, and the `oxlint` peer range stays `^1.58.0`.
 - `lspOwnedChecks` is removed; `tsgoOwnedChecks` lists the delegated `effecttsgo/*` rule IDs. Rule metadata drops `effectVersionSensitivity`. The language-service values `lsp`, `LSP-delegated`, and `LSP` become the domain `tsgo`, the disposition `tsgo-delegated`, and the source ownership `@effect/tsgo`.
 - New exports: `effectTsgoConfig`, `effectBoundaryRules`, `tsgoOwnedChecks`, and the types `EffectPresetConfig`, `EffectTsgoConfig`, and `TsgoRuleId`.
 - These 26 rules are removed from the plugin. Delete any setting that names one of them, including `off` settings. Where an `@effect/tsgo` check replaces a rule, the preset ships that check at `error`:
@@ -286,7 +286,7 @@ v0 targets Effect v4 identifiers and conventions: gen-first logic, named `Effect
 The catalog currently records:
 
 - 44 custom rules: 22 ported from linteffect v0.0.6 and 22 reimplemented from executor, recon, t3code, effect-smol, and linteffect ideas. `effectPreset` holds 36 of them, `effectReactPreset` 3, `generalPreset` 4, and `boundariesPreset` 1.
-- 113 `@effect/tsgo` checks at their pinned 0.45.0 settings, with 44 at `error` and 64 at `warn`. The other 5 are `off`, including `prefer-schema-over-json`.
+- 116 `@effect/tsgo` checks at their pinned 0.46.1 settings, with 44 at `error` and 67 at `warn`. The other 5 are `off`, including `prefer-schema-over-json`.
 - 50 linteffect source rules represented for inventory, of which 27 are dropped.
 - 29 dropped rules in total, 10 of them with an `@effect/tsgo` replacement.
 - 135 built-in oxlint rule settings across the config fragments, including `no-nested-ternary` in `generalPreset`.

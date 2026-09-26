@@ -205,9 +205,9 @@ export const assertSeverityOwnership = async (consumer: EffectConsumer): Promise
   }
 };
 
-// The patched engine ignores Effect options reached through `extends`, so the shipped setup cannot
-// show that `diagnostics: false` is harmless. This control inlines the installed plugin entry, with
-// that option, in a tsconfig.json that has no `extends`.
+// An independent control for `diagnostics: false`: it inlines the installed plugin entry, with that
+// option, in a tsconfig.json that has no `extends`, so the result does not depend on how the engine
+// inherits Effect options and shows the option leaves oxlint-route diagnostics on.
 export const assertInlineDiagnosticsOption = async (consumer: EffectConsumer): Promise<void> => {
   const entry = installedOverlayEntry(consumer);
   const base = installedTsconfig(consumer, 'base.json')['compilerOptions'];

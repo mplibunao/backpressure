@@ -353,8 +353,8 @@ export const assertOxlintDistArtifact = (): void => {
     }
 
     const tsgoRuleIds = Object.keys(entry.effectTsgoConfig?.rules ?? {});
-    if (tsgoRuleIds.length !== 113 || !tsgoRuleIds.every((ruleId) => ruleId.startsWith('effecttsgo/'))) {
-      throw new Error('effectTsgoConfig did not set all 113 effecttsgo rules');
+    if (tsgoRuleIds.length !== 116 || !tsgoRuleIds.every((ruleId) => ruleId.startsWith('effecttsgo/'))) {
+      throw new Error('effectTsgoConfig did not set all 116 effecttsgo rules');
     }
 
     if (JSON.stringify(entry.tsgoOwnedChecks) !== JSON.stringify(tsgoRuleIds)) {

@@ -236,7 +236,7 @@ describe('delegated tsgo identity', () => {
   it('keeps the graded totals, including the explicit offs', () => {
     const count = (severity: string) =>
       tsgoRows.filter((entry) => entry.severity === severity).length;
-    expect([count('error'), count('warning'), count('off')]).toStrictEqual([44, 64, 5]);
+    expect([count('error'), count('warning'), count('off')]).toStrictEqual([44, 67, 5]);
     expect(
       tsgoRows.filter((entry) => entry.severity === 'off').map((entry) => entry.name),
     ).toStrictEqual([

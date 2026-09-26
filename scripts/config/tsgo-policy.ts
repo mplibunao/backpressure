@@ -35,9 +35,9 @@ const inEffectGlobal = {
 const styleOff = { category: 'style', rationaleClass: 'style', severity: 'off' } as const;
 
 export const tsgoPolicy = {
-  pinnedVersion: '0.45.0',
+  pinnedVersion: '0.46.1',
   // A tsgo bump that adds, removes, or re-categorizes rules fails generation until re-triaged.
-  expectedCategoryCounts: { antipattern: 20, correctness: 21, 'effect-native': 22, style: 50 },
+  expectedCategoryCounts: { antipattern: 20, correctness: 21, 'effect-native': 22, style: 53 },
   categoryDefaults: {
     antipattern: {
       rationaleClass: 'correctness',
@@ -78,7 +78,7 @@ export const tsgoPolicy = {
     'effect-fn-opportunity': {
       ...genFirstError,
       reason:
-        'Gen-first policy: reusable generator functions use Effect.fn; replaces the custom prefer-effect-fn at its error floor.',
+        'Gen-first policy: reusable generator functions use Effect.fn; ships at error beside the overlapping custom prefer-effect-fn.',
     },
     'nested-effect-gen-yield': {
       ...genFirstError,

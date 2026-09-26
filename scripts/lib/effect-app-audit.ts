@@ -477,7 +477,7 @@ export const canaryProblems = (
   ];
 };
 
-// tsgo 0.45.0 is developed against effect ^4.0.0-beta.107: later 4.0.0 betas, every 4.0.0 release
+// tsgo 0.46.1 is developed against effect ^4.0.0-beta.107: later 4.0.0 betas, every 4.0.0 release
 // candidate, and 4.x releases. The audit records where each app sits; it does not refuse to run.
 const minimumTsgoBeta = 107;
 

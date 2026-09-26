@@ -6,7 +6,7 @@
   },
   "package": {
     "name": "@effect/tsgo",
-    "version": "0.45.0"
+    "version": "0.46.1"
   },
   "rules": [
     {
@@ -218,6 +218,46 @@
       },
       "ruleName": "effecttsgo/catch-die-to-or-die",
       "supportedEffect": ["v3", "v4"]
+    },
+    {
+      "category": "style",
+      "codes": [377131],
+      "defaultSeverity": "suggestion",
+      "description": "Suggests Effect.catchTag instead of Effect.catchIf with a direct _tag equality predicate",
+      "diagnosticName": "catchIfTagToCatchTag",
+      "fixable": true,
+      "preview": {
+        "diagnostics": [
+          {
+            "end": 277,
+            "start": 263,
+            "text": "Effect.catchTag expresses tagged error recovery more directly than Effect.catchIf with a `_tag` equality predicate. effect(catchIfTagToCatchTag)"
+          }
+        ],
+        "sourceText": "import { Data, Effect } from \"effect\"\n\nclass NotFound extends Data.TaggedError(\"NotFound\")<{}> {}\nclass Timeout extends Data.TaggedError(\"Timeout\")<{}> {}\n\ndeclare const program: Effect.Effect<string, NotFound | Timeout>\n\nexport const recovered = program.pipe(\n  Effect.catchIf(\n    (error) => error._tag === \"NotFound\",\n    () => Effect.succeed(\"guest\")\n  )\n)\n"
+      },
+      "ruleName": "effecttsgo/catch-if-tag-to-catch-tag",
+      "supportedEffect": ["v3", "v4"]
+    },
+    {
+      "category": "style",
+      "codes": [377133],
+      "defaultSeverity": "suggestion",
+      "description": "Suggests Effect.tapError for catch handlers that sequence an effect and then re-fail the original error",
+      "diagnosticName": "catchRefailToTapError",
+      "fixable": false,
+      "preview": {
+        "diagnostics": [
+          {
+            "end": 173,
+            "start": 161,
+            "text": "Use Effect.tapError to observe the error and preserve the original failure without having to re-fail it. effect(catchRefailToTapError)"
+          }
+        ],
+        "sourceText": "import { Effect } from \"effect\"\n\ndeclare const save: Effect.Effect<void, Error>\ndeclare const rollback: Effect.Effect<void>\n\nexport const program = save.pipe(\n  Effect.catch(error => rollback.pipe(Effect.andThen(Effect.fail(error))))\n)\n"
+      },
+      "ruleName": "effecttsgo/catch-refail-to-tap-error",
+      "supportedEffect": ["v4"]
     },
     {
       "category": "style",
@@ -640,6 +680,26 @@
     },
     {
       "category": "style",
+      "codes": [377132],
+      "defaultSeverity": "suggestion",
+      "description": "Suggests using Effect.andThen instead of Effect.flatMap when a zero-parameter callback returns an existing Effect value",
+      "diagnosticName": "flatMapIgnoredParamToAndThen",
+      "fixable": true,
+      "preview": {
+        "diagnostics": [
+          {
+            "end": 154,
+            "start": 140,
+            "text": "`Effect.andThen` expresses this sequencing more directly than `Effect.flatMap` with a zero-parameter callback. effect(flatMapIgnoredParamToAndThen)"
+          }
+        ],
+        "sourceText": "import { Effect } from \"effect\"\n\nconst first = Effect.succeed(1)\nconst second = Effect.succeed(\"second\")\n\nexport const program = first.pipe(Effect.flatMap(() => second))\n"
+      },
+      "ruleName": "effecttsgo/flat-map-ignored-param-to-and-then",
+      "supportedEffect": ["v3", "v4"]
+    },
+    {
+      "category": "style",
       "codes": [377100],
       "defaultSeverity": "suggestion",
       "description": "Suggests using Effect.map instead of Effect.flatMap when the callback only wraps its result with Effect.succeed",
@@ -968,12 +1028,12 @@
       "preview": {
         "diagnostics": [
           {
-            "end": 180,
-            "start": 159,
+            "end": 175,
+            "start": 154,
             "text": "This code uses `instanceof` with an Effect Schema type. `Schema.is` is the schema-aware runtime check for this case. effect(instanceOfSchema)"
           }
         ],
-        "sourceText": "import { Schema } from \"effect\"\n\nclass User extends Schema.Class<User>(\"User\")({ name: Schema.String }) {}\ndeclare const value: unknown\nexport const preview = value instanceof User\n"
+        "sourceText": "import { Schema as S } from \"effect\"\n\nclass User extends S.Class<User>(\"User\")({ name: S.String }) {}\ndeclare const value: unknown\nexport const preview = value instanceof User\n"
       },
       "ruleName": "effecttsgo/instance-of-schema",
       "supportedEffect": ["v3", "v4"]
@@ -2326,19 +2386,19 @@
   ],
   "schemaVersion": 1,
   "source": {
-    "commit": "54bbc1e7f0ffe7bb555642312168a88741667c6f",
+    "commit": "f1a7cad0292d9d315e7f87694f127f605711d55e",
     "files": {
       "LICENSE": "48d26995fd8ea3a59b3766359052819a77d40b241ce5bcf77f12462c5435618b",
-      "README.md": "ad061f04c995e2ccb99288d8ceecd2335aa0ea7f5b1f5320193a6369ee7a9549",
-      "_packages/tsgo/src/metadata.json": "1b77d4e6800bdb6b77e3a71514aa526a45d127d2e6943dcddfa004fe98d7e518",
-      "oxlint-schema.json": "e11c9c2242856c961e675ff217e680a09eba460f1593e1445630556e997458cb"
+      "README.md": "6e956b95702af10f16486edf09729282f0bf07d7012e34ba0c4e17fa9062130b",
+      "_packages/tsgo/src/metadata.json": "48c8da6ce0623b0cba187b80617ddc7cc2386a08c348661ab46db236e6329a3c",
+      "oxlint-schema.json": "e229b9b0a0df2695665243f5850a35e64dff77ef6ea3591cc61389981e7fea4b"
     },
     "repository": "https://github.com/Effect-TS/tsgo",
-    "tag": "@effect/tsgo@0.45.0"
+    "tag": "@effect/tsgo@0.46.1"
   },
   "supportedTargets": {
-    "oxlint": ["1.81.0", "1.82.0"],
-    "oxlint-tsgolint": ["7.0.2001"],
-    "typescript": ["7.0.2", "7.1.0-dev.20260909.1"]
+    "oxlint": ["1.82.0", "1.83.0", "1.84.0", "1.85.0"],
+    "oxlint-tsgolint": ["7.0.2001", "7.0.2002", "7.0.2003"],
+    "typescript": ["7.0.2", "7.1.0-dev.20260924.1"]
   }
 }

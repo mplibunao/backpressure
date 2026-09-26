@@ -27,8 +27,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (pushed) | `eaff7e4` |
 | WI-06 | Activate the full Effect config and both package surfaces | L | DONE (pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
-| WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | WAITING for the upstream release | |
-| WI-14 | Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure | M | DONE (uncommitted) | |
+| WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | DONE (uncommitted) | |
+| WI-14 | Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure | M | DONE (pushed) | `63e5a65` |
 | WI-11 | Rule list with its generated page and local viewer | M | DONE (pushed) | `b848cb5` |
 | WI-07 | Install all six durable gates | L | DONE (pushed) | `671fcb9` |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) because five executor tsconfigs are invalid under TypeScript 6 and 7 alike, so MP did not accept it | `dfff7d9` |
@@ -994,13 +994,86 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 - **State:** the first pass matched tsgo on the 14-shape probe corpus, and the full check chain passed after a typecheck fix. The orchestrator had recorded VERIFY iteration 1 as passed before reading the gate output; iteration 2 records that correction and the typecheck failure. REVIEW iteration 1 found four valid defects: async and generator outer functions reported, object getters reported, parameter references resolved by name, and no recognition of imported `pipe(...)`. The agent was cancelled mid-fix.
 - **MP decision (2026-09-26):** park it. Upstream merged the `extends` fix (Effect-TS/tsgo#768, closing Effect-TS/tsgo#766), so tsgo covers these shapes once the pin moves. The work sits in the git stash entry whose message starts with `prefer-effect-fn parity extension (parked`. Nothing from it is committed.
 
-### WI-13: Bump @effect/tsgo to the first release containing the extends fix (WAITING)
+### WI-13: Bump @effect/tsgo to the first release containing the extends fix (DONE, uncommitted)
 
-- **Trigger:** the first `@effect/tsgo` release that contains Effect-TS/tsgo#768. 0.46.0 predates the merge.
-- **MP decisions (2026-09-26):**
-  - That release may enter before the seven-day `minimumReleaseAge` window closes, through exact-version `minimumReleaseAgeExclude` entries for `@effect/tsgo` and its platform binary packages, in both the root workspace and the copied consumer settings. The window stays for every other package.
-  - The restored `prefer-effect-fn` stays until this bump proves that `effect-fn-opportunity` reports the plain wrappers under `extends`. Removal needs MP's explicit OK after he sees that evidence.
-- **Scope:** pin the release; regenerate the tsgo policy and grade every new check; update the supported oxlint, oxlint-tsgolint, and vite-plus matrix (tsgo `main` supports oxlint 1.81.0 to 1.83.0, and vite-plus `1.0.0-rc.1` bundles oxlint 1.85.0, which no tsgo release supports yet); show that the oxlint-route smoke's wrapper split flips; update BP-TD-014.
+- **Release:** `@effect/tsgo` 0.46.1, published 2026-09-26T13:14Z. Tag `@effect/tsgo@0.46.1` resolves to `f1a7cad0292d9d315e7f87694f127f605711d55e`, and `command git merge-base --is-ancestor 7611be0 @effect/tsgo@0.46.1` succeeds, so it contains Effect-TS/tsgo#768. Its tagged `_packages/tsgo/upstream.json` and README list TypeScript 7.0.2 (plus `7.1.0-dev.20260924.1`), oxlint-tsgolint `7.0.2001` to `7.0.2003`, and oxlint 1.82.0 to 1.85.0. oxlint 1.81.0, and with it `vite-plus` 0.3.1, is no longer supported.
+- **Effect support:** the tagged package still develops against `effect` `^4.0.0-beta.107`, unchanged from 0.45.0, and every new rule lists v4 in `supportedEffect`. The `4.0.0-rc.115` pin stays inside that range.
+- **Build:**
+  - The catalog, the root dev dependency, and both packages' optional peers pin exactly `0.46.1`. `pnpm-lock.yaml` changes only `@effect/tsgo` and its seven platform packages.
+  - The root `pnpm-workspace.yaml` adds `minimumReleaseAgeExclude` with exactly eight entries: `@effect/tsgo@0.46.1` and `@effect/tsgo-{darwin-arm64,darwin-x64,linux-arm,linux-arm64,linux-x64,win32-arm64,win32-x64}@0.46.1`. `minimumReleaseAge: 10080` and the other safeguards are unchanged.
+  - `scripts/lib/effect-consumer-harness.ts` copies `minimumReleaseAgeExclude` into each isolated consumer when the root declares it. A new test covers the copy; emptying the copied-key list fails exactly that test, and the file was restored by checksum.
+  - `scripts/config/effect-toolchain.json` carries no tsgo version (the catalog owns it), so only its unsupported-oxlint control moved, from 1.83.0 (now supported) to 1.81.0 (dropped by 0.46.1; published 2026-09-01). The other integration pins stay: `vite-plus` 0.3.2, oxlint 1.82.0, oxlint-tsgolint `7.0.2001`, TypeScript 7.0.2 for the tsc route, and `effect` 4.0.0-rc.115.
+- **Release-age controls:** a scratch script wrote the harness's own copied workspace settings into three throwaway consumers. The copy holds `minimumReleaseAge: 10080`, the other four safeguards, and only the eight exclusions. `@effect/tsgo@0.46.1` installed (exit 0). `@effect/tsgo@0.46.0` (published 2026-09-25) failed with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, naming its platform packages, so the exclusions are exact-version only. `vite-plus@1.0.0-rc.1` failed the same way on its young dependencies. `pnpm install` at the root exited 0.
+- **Snapshot:** `bun scripts/checks/generate-effect-policy.ts --capture /Users/mp/references/effect-ts/tsgo` captured 116 rules from the tag and pruned the 0.45.0 directory. An independent `command git show f1a7cad…:<path> | shasum -a 256` matched all four recorded hashes (`LICENSE`, `README.md`, `_packages/tsgo/src/metadata.json`, `oxlint-schema.json`). The installed-package cross-check in `pnpm gen:effect-policy` passed. The reference checkout stayed clean.
+- **Rule diff 0.45.0 to 0.46.1:** the release adds three rules. Every existing rule keeps its name, category, and default severity. The only other metadata change is `instanceOfSchema`'s preview example. Category counts are now 21 correctness, 20 antipattern, 53 style, and 22 effect-native, so `expectedCategoryCounts.style` moved from 50 to 53 with the pinned version.
+- **Grades** (each takes the style category default, so the policy needs no named exception):
+
+  | Rule | Grade | Reason |
+  | --- | --- | --- |
+  | `effecttsgo/catch-if-tag-to-catch-tag` | warn (style) | A simplification hint for a `catchIf` whose predicate is a direct `_tag` equality; `no-manual-tag-check` already fails the same predicate at error. |
+  | `effecttsgo/catch-refail-to-tap-error` | warn (style) | The handler already keeps the original failure, so `tapError` is a clearer spelling, not a hidden failure path. |
+  | `effecttsgo/flat-map-ignored-param-to-and-then` | warn (style) | `Effect.andThen` versus `Effect.flatMap(() => existing)` is a readability hint with identical behavior. |
+
+  Of the 116 rules, 44 now ship at error and 67 at warn, and 5 stay off. Upstream's new `strict` preset is not adopted; the policy still lists every rule explicitly.
+- **Overlap with the AST rules (ADR-007):** the built plugin (root oxlint 1.58.0, the 36 custom `effectPreset` rules) and a patched 0.46.1 harness consumer (the same custom rules plus the three new tsgo rules) ran over each new rule's upstream preview and nearby variants.
+
+  | Snippet | Custom rules | New tsgo rules |
+  | --- | --- | --- |
+  | `catchIf((error) => error._tag === 'NotFound', …)` (upstream preview) | `no-manual-tag-check` (error, on the predicate) | `catch-if-tag-to-catch-tag` (warn, on the call) |
+  | `catch((error) => rollback.pipe(Effect.andThen(Effect.fail(error))))` (upstream preview) | none | `catch-refail-to-tap-error` |
+  | The same re-fail written in `Effect.gen` | none | none |
+  | `catch((error) => rollback.pipe(Effect.flatMap(() => Effect.fail(error))))` | `no-pipe-ladder` (on the nested flatMap) | `catch-refail-to-tap-error` (on the catch) |
+  | `catch(() => rollback.pipe(Effect.andThen(Effect.fail(new Timeout()))))` | `no-discarded-failure` | none |
+  | `first.pipe(Effect.flatMap(() => second))` and `Effect.flatMap(first, () => second)` | none | `flat-map-ignored-param-to-and-then` |
+  | `flatMap((n) => second.pipe(Effect.flatMap(() => Effect.succeed(n))))` | `no-pipe-ladder` | none |
+
+  No rule pair reports the same defect. The only overlap is `no-manual-tag-check` beside `catch-if-tag-to-catch-tag`, which ADR-007 allows: the AST rule is stricter, since it fails every hand-written `_tag` comparison at error, and it fires without a TypeScript project. `no-discarded-failure` and `catch-refail-to-tap-error` split cleanly, because a handler that re-fails its error reads it. Where `no-pipe-ladder` and a tsgo rule both report one statement, they name different problems with different fixes. Neither rule changed.
+- **Extends fix evidence:**
+  - Before the bump, the unchanged oxlint-route smoke at 0.45.0 exited 0, which asserts the old split.
+  - After the pin moved, and before the smoke changed (`command git diff --quiet` on it succeeded), `pnpm smoke:effect-oxlint-packed-consumer` exited 1 by design. Every earlier step passed, including the 1.81.0 unsupported control: `error: src/wrappers/declaration.ts reported [@mplibunao/oxlint-standards(prefer-effect-fn), effecttsgo(effect-fn-opportunity)], expected [@mplibunao/oxlint-standards(prefer-effect-fn)]. … drop prefer-effect-fn again (BP-TD-014).`
+  - The smoke now asserts that under the shipped setup both plain wrappers report `prefer-effect-fn` and `effect-fn-opportunity`, and the `Effect.withSpan` wrapper reports `effect-fn-opportunity`. It prints that split and still requires the inline no-extends control to report `effect-fn-opportunity` on all three.
+  - A scratch probe ran patched oxlint 1.82.0 with the same packed tarballs, enabling only the two wrapper rules, once per tsgo version. The first list uses a tsconfig that extends `base.json` and `effect.json`; the second inlines the overlay's plugin entry without `extends`.
+
+    | Wrapper | 0.45.0, extends | 0.46.1, extends | Inline control, both versions |
+    | --- | --- | --- | --- |
+    | `declaration.ts` (function declaration) | `prefer-effect-fn` 3:8 | `effect-fn-opportunity` 3:17, `prefer-effect-fn` 3:8 | `effect-fn-opportunity` 3:17, `prefer-effect-fn` 3:8 |
+    | `parameter.ts` (plain arrow) | `prefer-effect-fn` 3:23 | `effect-fn-opportunity` 3:14, `prefer-effect-fn` 3:23 | `effect-fn-opportunity` 3:14, `prefer-effect-fn` 3:23 |
+    | `spanned.ts` (`Effect.withSpan` arrow) | `effect-fn-opportunity` 3:14 | `effect-fn-opportunity` 3:14 | `effect-fn-opportunity` 3:14 |
+
+  - The tsc route passed unchanged: `tsc --version` ends in `+effect-tsgo.0.46.1`, all three wrappers report `effectFnOpportunity` through `extends`, and the `effectFn: ['span']` control leaves only the spanned wrapper.
+  - `prefer-effect-fn` is unchanged. It stays active at `error` with no `replacedBy` edge.
+- **Docs:** both package READMEs give the 0.46.1 matrix: `vite-plus` 0.3.2 or 0.3.3, tested with 0.3.2; the `1.0.0-rc` releases (oxlint 1.85.0 with oxlint-tsgolint `7.0.2002` or `7.0.2003`) supported but not tested here, because they are younger than the release-age window; 0.3.1 unsupported. They also state that the oxlint route reads the Effect options through `extends`, and give the 116-rule counts. Both changesets, `NOTICE.md`, the rule-pack architecture count, the audit's effect-range comment, the regenerated `docs/references/rules.md`, and the build plan's §3.3 overlap paragraph, G6 fn-option row, and Appendix A tsgo facts now say 0.46.1. The `prefer-effect-fn` manifest note, its catalog comment, the `effect-fn-opportunity` policy reason, and the inline `diagnostics: false` probe comment now give the current reasons: the custom rule overlaps on purpose and fires without a TypeScript project, and the probe is an independent control. The app audit report gained a 0.46.1 addendum. The plan's WI-02-era build instructions keep 0.45.0 as the version that step built.
+- **Records:** BP-TD-017 moved to `done/` with a resolution. BP-TD-014 stays open: it records that the fix shipped in 0.46.1, with the per-wrapper evidence, and that removing `prefer-effect-fn` waits for MP. Both were edited by hand because `introspection` still stops on `config.schema_violation`.
+- **Judgment calls:**
+  - **Optional exclusion copy:** the harness copies `minimumReleaseAgeExclude` only when present, unlike the five required safeguards. A missing list only makes the window stricter, and the root can drop the entries once 0.46.1 ages past the window without breaking the smokes.
+  - **Grades at the category default:** none of the three rules hides a failure path or breaks a scope, and the policy's only style errors are the four gen-first rules.
+  - **Plan history:** the plan's build instructions record what WI-02 built, so they keep 0.45.0; only statements of current behavior and current support changed.
+- **App audit on 0.46.1:** the typed `shipped` pass of `scripts/checks/effect-app-audit.ts` re-ran on both WI-08 snapshots, with the same exclusions and the same per-file exact excludes for files no accepted project covers. The apps ran on fresh `git clone --local` copies in the session scratchpad, detached at `53456bc0129f` and `480b390eedd1`. The installs were `corepack pnpm@11.10.0 install --frozen-lockfile --ignore-scripts` and `bun install --frozen-lockfile --ignore-scripts`, both exit 0, and both copies and both source checkouts stayed clean. Both audit runs exited 0 with no canary problems. They linted the same files as WI-08: t3code 3,802 selected in unchanged projects; executor 1,355, where the only coverage difference is the temporary consumer path inside one recorded listing error. 206 rules were enabled, against 202 before: the three new tsgo rules plus `no-discarded-failure`. The run reported rules that exist only in 0.46.1, so it used the 0.46.1 engine.
+
+  | Rule | t3code (source / test) | executor |
+  | --- | --- | --- |
+  | `catch-if-tag-to-catch-tag` | 0 | 0 |
+  | `catch-refail-to-tap-error` | 1 / 0 | 0 |
+  | `flat-map-ignored-param-to-and-then` | 2 / 0 | 0 |
+
+  - **Every hit is a true positive with a one-line fix:**
+    - t3code `apps/server/src/provider/acp/AcpSessionRuntime.ts:693`, `Effect.flatMap(() => getStartedState)`, where `getStartedState` is an existing Effect, becomes `Effect.andThen(getStartedState)`.
+    - t3code `apps/server/src/telemetry/AnalyticsService.ts:197`, `Effect.sleep(1000).pipe(Effect.flatMap(() => flush))`, becomes `Effect.andThen(flush)`.
+    - t3code `apps/server/src/telemetry/AnalyticsService.ts:174`, `Effect.catch((error) => Ref.update(bufferRef, …).pipe(Effect.flatMap(() => Effect.fail(error))))`, restores a buffer and re-fails the same error, which is `Effect.tapError`'s job. `no-pipe-ladder` also reports the nested flatMap at line 176; one `tapError` rewrite clears both.
+  - **Recommendation: keep all three at `warn`.** Under `--max-warnings 0` they add three blocking warnings to t3code and none to executor, each a real simplification.
+  - **Other counts:** no other tsgo rule count changed in either app. The only other differences are custom rules from the WI-14 rework: `no-pipe-ladder` fell from 382 / 31 to 77 / 0 (t3code) and from 37 / 6 to 12 / 4 (executor), and `no-discarded-failure` reports 146 / 5 and 145 / 15. Totals moved from 18,646 to 18,464 (t3code) and from 9,386 to 9,519 (executor), and those rule differences account for the totals exactly.
+  - **Wrapper overlap on the apps:** unchanged, because the audit applies each app's own plugin options and neither app sets `effectFn`, so tsgo's default `["span"]` applies with or without the `extends` fix. `effect-fn-opportunity` and `prefer-effect-fn` counts are identical to WI-08.
+- **Checks:**
+  - `pnpm install` (root): exit 0. `pnpm effect-policy:check`: exit 0. `pnpm versions:check`: exit 0.
+  - The check chain without `introspection check` (the `check` script with ` && pnpm introspection:check` removed, run through `/bin/sh -c`): exit 0 on the final tree. It ran 2,674 tests in 34 files, 44 replay suites with 470 cases and 37 corpus variants, and 408 viewer rules. The inventory reports `delegated: 116`, lint reported 0 warnings and 0 errors, and the packages pack 10 (tsconfig) and 9 (lint) allowed files. Two earlier runs stopped: one at lint on `max-statements` in the harness change, fixed by extracting `copiedSettings`; one at prose, where Vale read bare `7.0.2002` and `7.0.2003` as dates, fixed by code-formatting them.
+  - `pnpm check:effect-integration`: exit 0 on both routes; the only later change to its scripts was a whitespace-only `vp fmt` pass. The oxlint route printed the shipped split above, the 1.81.0 control failed to patch, and the tsc route passed on `+effect-tsgo.0.46.1`.
+  - `pnpm prose` and `pnpm durable:refs`: exit 0, with no Vale alerts in 61 files; `vp fmt --check` and `command git diff --check` also passed.
+  - `introspection:check` was left out by instruction; WI-10 records its external schema failure.
+  - **After the review fixes** (current-state text and the app audit): `pnpm gen:effect-policy` and `pnpm gen:rules-page` regenerated the reason and note text. The check chain without `introspection check` exited 0 with the same counts as above. `pnpm prose` (no alerts in 61 files), `pnpm durable:refs`, `vp fmt --check`, and `command git diff --check` exited 0. One earlier chain run stopped at prose on a bare `7.0.2001` in the report addendum, fixed by code-formatting it. `check:effect-integration` was not re-run, because the fixes change only descriptive text that neither smoke reads.
+- **Orchestrator review:** iteration 1 found two items. The `prefer-effect-fn` note, comment, and probe text still described the fixed `extends` bug. The app audit had not measured the three new rules. Both were fixed above. Iteration 2 found no blocking issue and one wording fix: BP-TD-017's done-when no longer says `effect-toolchain.json` pins tsgo, since the catalog owns that version.
+- **Refactor cycle 1:** the three wrapper fixtures moved to `wrapperSourcesIn(dir)` in `scripts/lib/effect-consumer-harness.ts`, so both route smokes lint the same wrapper sources, and the oxlint smoke's `wrapperCoverage` became `missingTsgoWrapperFiles`, which names what it returns. The check chain without `introspection check` and `pnpm check:effect-integration` both exited 0 afterward.
+- **Commits:** recorded in the status table.
+- **Action item for MP:** decide whether to drop `prefer-effect-fn` now that `effect-fn-opportunity` reports every wrapper shape under the shipped setup (evidence above). Keeping it leaves two error diagnostics on each plain wrapper on the oxlint route; its one standalone advantage is that it fires without a TypeScript project. Dropping it means restoring the `replacedBy` edge to `effecttsgo/effect-fn-opportunity` and its replacement floor (BP-TD-014 "Done when").
 
 ### WI-14: Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure (DONE, uncommitted)
 

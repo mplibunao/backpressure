@@ -52,8 +52,8 @@ const isTestFileOverride = (override: TsgoTestFileOverride): boolean =>
   hasOnlyKnownRules(override.rules);
 
 // Validates the narrowly typed fragment against the pinned rule set before it is exposed as an
-// `OxlintConfig`. Every one of the 113 rules must carry an explicit setting so that a category the
-// consumer enables cannot revive a rule this package set off.
+// `OxlintConfig`. Every pinned rule must carry an explicit setting so that a category the consumer
+// enables cannot revive a rule this package set off.
 export const isPatchedEngineConfig = (
   fragment: PatchedTsgoFragment,
 ): fragment is EffectTsgoConfig =>

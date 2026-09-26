@@ -8,6 +8,6 @@
     "vite-plus": "0.3.2"
   },
   "controls": {
-    "unsupportedOxlint": "1.83.0"
+    "unsupportedOxlint": "1.81.0"
   }
 }

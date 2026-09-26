@@ -18,4 +18,4 @@ The software is provided "as is", without warranty of any kind, express or impli
 
 ## Retained `@effect/tsgo` metadata
 
-`scripts/references/tsgo/0.45.0/metadata.json` retains rule metadata from `@effect/tsgo` 0.45.0: rule names, categories, descriptions, and example snippets. The generated `docs/references/rules.md` reproduces those descriptions and examples. `@effect/tsgo` is MIT licensed, Copyright (c) 2026 Effect, and its license text is kept beside the snapshot in `scripts/references/tsgo/0.45.0/LICENSE`. No `@effect/tsgo` rule logic is copied, and the published packages carry only its rule names and option keys.
+`scripts/references/tsgo/0.46.1/metadata.json` retains rule metadata from `@effect/tsgo` 0.46.1: rule names, categories, descriptions, and example snippets. The generated `docs/references/rules.md` reproduces those descriptions and examples. `@effect/tsgo` is MIT licensed, Copyright (c) 2026 Effect, and its license text is kept beside the snapshot in `scripts/references/tsgo/0.46.1/LICENSE`. No `@effect/tsgo` rule logic is copied, and the published packages carry only its rule names and option keys.

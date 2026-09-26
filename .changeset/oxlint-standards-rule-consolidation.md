@@ -8,11 +8,11 @@ The package now builds with tsdown as a single-entry ESM bundle with bundled dec
 
 Adopting repos that lint with the base config will see the new error-level rules fire on existing code, so plan a cleanup pass when upgrading.
 
-**Breaking: the Effect preset now requires `@effect/tsgo`.** Type-aware Effect checks move from the recommended `@effect/language-service` setup to `@effect/tsgo`, which patches oxlint so its `effecttsgo/*` rules report in the same lint run. The preset configures all 113 of them and enables 108. `effectPreset` is now a full config: besides this package's rules and the `no-shadow` and `require-yield` carve-outs, it carries the `effecttsgo` plugin, `options.typeAware`, an explicit severity for every `@effect/tsgo` rule, and a test-file override. Compose the whole object with `composeLintConfigs`; copying only its `rules` loses the rest.
+**Breaking: the Effect preset now requires `@effect/tsgo`.** Type-aware Effect checks move from the recommended `@effect/language-service` setup to `@effect/tsgo`, which patches oxlint so its `effecttsgo/*` rules report in the same lint run. The preset configures all 116 of them and enables 111. `effectPreset` is now a full config: besides this package's rules and the `no-shadow` and `require-yield` carve-outs, it carries the `effecttsgo` plugin, `options.typeAware`, an explicit severity for every `@effect/tsgo` rule, and a test-file override. Compose the whole object with `composeLintConfigs`; copying only its `rules` loses the rest.
 
 Effect consumers must now:
 
-- Install `@effect/tsgo` `0.45.0`, a new optional peer dependency, with a supported toolchain: `vite-plus` `0.3.1` or `0.3.2`, which bundle oxlint `1.81.0` or `1.82.0`, and oxlint-tsgolint `7.0.2001`. `vite-plus` `0.3.3` and the `1.0.0-rc` releases are not supported yet.
+- Install `@effect/tsgo` `0.46.1`, a new optional peer dependency, with a supported toolchain: `vite-plus` `0.3.2` or `0.3.3`, which bundle oxlint `1.82.0` or `1.83.0` with oxlint-tsgolint `7.0.2001`. `@effect/tsgo` `0.46.1` also supports the `vite-plus` `1.0.0-rc` releases (oxlint `1.85.0`), which this package has not tested yet.
 - Run `effect-tsgo patch --no-typescript --oxlint` from `prepare`, or after every install when installing with `--ignore-scripts`.
 - Extend `@mplibunao/tsconfig/effect.json` last in each tsconfig that covers Effect code.
 

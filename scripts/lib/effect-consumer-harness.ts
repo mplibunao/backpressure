@@ -66,6 +66,19 @@ class Config extends Context.Service<Config>()('Config', { make: Effect.succeed(
 export const program = Effect.void.pipe(Effect.provide(Config.Default))
 `;
 
+const wrapperBody = `  Effect.gen(function* () {
+    const value = yield* Effect.succeed(n)
+    return value + 1
+  })`;
+// effect-fn-opportunity reports a wrapper only when an enabled effectFn fix variant applies to it.
+// Upstream's default, ['span'], covers only the Effect.withSpan form; the overlay's inferred and
+// suggested spans cover the other two, which are the shapes prefer-effect-fn also catches.
+export const wrapperSourcesIn = (dir: string): Readonly<Record<string, string>> => ({
+  [`${dir}/declaration.ts`]: `import * as Effect from 'effect/Effect'\n\nexport function addOne(n: number) {\n  return${wrapperBody.slice(1)}\n}\n`,
+  [`${dir}/parameter.ts`]: `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}\n`,
+  [`${dir}/spanned.ts`]: `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}.pipe(Effect.withSpan('addOne'))\n`,
+});
+
 // Settings copied from the root workspace: a temp directory outside the repo inherits none of them,
 // and dropping them would silently weaken the release-age and trust safeguards.
 const copiedWorkspaceSettings = [
@@ -75,6 +88,9 @@ const copiedWorkspaceSettings = [
   'strictDepBuilds',
   'trustPolicy',
 ] as const;
+// Copied when present so a consumer installs exactly what the root may install. Absence is safe: it
+// only keeps the release-age window in force for every package.
+const optionalCopiedWorkspaceSettings = ['minimumReleaseAgeExclude'] as const;
 const installTimeoutMs = 600_000;
 const commandTimeoutMs = 180_000;
 const summaryLength = 4_000;
@@ -82,6 +98,19 @@ const interruptExitCode = 130;
 const inheritedConfigPrefixes = ['npm_config_', 'pnpm_config_'];
 const activeProcessGroups = new Set<number>();
 let interrupted = false;
+
+const copiedSettings = (root: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+  const settings: Record<string, unknown> = {};
+  for (const key of copiedWorkspaceSettings) {
+    settings[key] = key in root ? root[key] : fail(`Root pnpm-workspace.yaml lacks ${key}.`);
+  }
+  for (const key of optionalCopiedWorkspaceSettings) {
+    if (key in root) {
+      settings[key] = root[key];
+    }
+  }
+  return settings;
+};
 
 export const consumerWorkspaceYaml = (rootWorkspace: string, storeDir: string): string => {
   // `toJS()` keeps the last of two duplicate keys, so a second `minimumReleaseAge: 0` would
@@ -96,11 +125,7 @@ export const consumerWorkspaceYaml = (rootWorkspace: string, storeDir: string): 
   if (!isObjectRecord(parsed)) {
     return fail('Root pnpm-workspace.yaml must be a mapping.');
   }
-  const settings: Record<string, unknown> = { packageImportMethod: 'copy', storeDir };
-  for (const key of copiedWorkspaceSettings) {
-    settings[key] = key in parsed ? parsed[key] : fail(`Root pnpm-workspace.yaml lacks ${key}.`);
-  }
-  return stringify(settings);
+  return stringify({ packageImportMethod: 'copy', storeDir, ...copiedSettings(parsed) });
 };
 
 export const routeDependencies = (

@@ -12,6 +12,7 @@ import {
   ensureCompleted,
   layerProvideSource,
   withEffectConsumer,
+  wrapperSourcesIn,
 } from '../../lib/effect-consumer-harness.ts';
 import { packWorkspacePackage } from '../../lib/packed-consumer-harness.ts';
 import {
@@ -63,18 +64,7 @@ export const read = Effect.gen(function* () {
   return yield* Effect.succeed(at)
 })
 `;
-const wrapperBody = `  Effect.gen(function* () {
-    const value = yield* Effect.succeed(n)
-    return value + 1
-  })`;
-// effect-fn-opportunity reports a wrapper only when an enabled effectFn fix variant applies to it.
-// Upstream's default, ['span'], covers only the Effect.withSpan form; the overlay's inferred and
-// suggested spans cover the other two, which are the shapes the dropped prefer-effect-fn caught.
-const wrapperSources = {
-  'src/wrappers/declaration.ts': `import * as Effect from 'effect/Effect'\n\nexport function addOne(n: number) {\n  return${wrapperBody.slice(1)}\n}\n`,
-  'src/wrappers/parameter.ts': `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}\n`,
-  'src/wrappers/spanned.ts': `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}.pipe(Effect.withSpan('addOne'))\n`,
-};
+const wrapperSources = wrapperSourcesIn('src/wrappers');
 const testScopedFiles = [
   'src/provide.test.ts',
   'src/provide-spec.ts',
@@ -182,7 +172,7 @@ const assertWarningExit = async (consumer: EffectConsumer): Promise<void> => {
   }
 };
 
-const wrapperCoverage = async (
+const missingTsgoWrapperFiles = async (
   consumer: EffectConsumer,
   dir: string,
 ): Promise<readonly string[]> => {
@@ -215,13 +205,15 @@ const writeInlineOptionsControl = (consumer: EffectConsumer): void => {
 };
 
 // Under the shipped setup (a tsconfig.json extending the base config and effect.json), the patched
-// engine runs effect-fn-opportunity on upstream-default options, which report only the
-// Effect.withSpan wrapper. prefer-effect-fn covers the other two, so together every wrapper
-// reports. The exact per-file split also trips when upstream starts keeping the options through
-// `extends`, which is the signal to drop prefer-effect-fn again (BP-TD-014).
+// engine reads the overlay's effectFn through `extends`, so effect-fn-opportunity reports every
+// wrapper shape. prefer-effect-fn stays active beside it on the two plain wrappers; ADR-007 allows
+// that overlap, and BP-TD-014 owns whether to drop the custom rule.
 const shippedWrapperCodes: Readonly<Record<string, readonly string[]>> = {
-  'src/wrappers/declaration.ts': [customCode('prefer-effect-fn')],
-  'src/wrappers/parameter.ts': [customCode('prefer-effect-fn')],
+  'src/wrappers/declaration.ts': [
+    customCode('prefer-effect-fn'),
+    tsgoCode('effect-fn-opportunity'),
+  ],
+  'src/wrappers/parameter.ts': [customCode('prefer-effect-fn'), tsgoCode('effect-fn-opportunity')],
   'src/wrappers/spanned.ts': [tsgoCode('effect-fn-opportunity')],
 };
 const wrapperRuleCodes = new Set([
@@ -241,15 +233,16 @@ const assertShippedWrapperSplit = async (consumer: EffectConsumer): Promise<void
     }
     if (actual.toSorted().join() !== [...expected].toSorted().join()) {
       fail(
-        `${file} reported [${actual.join(', ')}], expected [${expected.join(', ')}]. The split assumes the patched oxlint engine applies upstream-default Effect options when the discovered tsconfig.json uses \`extends\`. If effect-fn-opportunity now reports the plain wrappers, upstream keeps the options through \`extends\`: drop prefer-effect-fn again (BP-TD-014).`,
+        `${file} reported [${actual.join(', ')}], expected [${expected.join(', ')}]. A missing effect-fn-opportunity means the patched oxlint engine no longer reads the overlay's effectFn through \`extends\`; a missing prefer-effect-fn means the custom rule stopped reporting a plain wrapper.`,
       );
     }
+    printLine(`shipped setup, ${file}: ${actual.toSorted().join(', ')}`);
   }
 };
 
 const assertWrapperCoverage = async (consumer: EffectConsumer): Promise<void> => {
   writeInlineOptionsControl(consumer);
-  const controlMissing = await wrapperCoverage(consumer, 'inline-control');
+  const controlMissing = await missingTsgoWrapperFiles(consumer, 'inline-control');
   if (controlMissing.length > 0) {
     fail(
       `The inline-options control did not report effect-fn-opportunity on ${controlMissing.join(', ')}.`,

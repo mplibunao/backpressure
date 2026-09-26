@@ -215,6 +215,19 @@ The two checks target different code. tsgo reports data-first nesting that could
 
 `prefer-effect-fn` reports 324 wrappers in t3code and 339 in the executor typed selection; `effecttsgo/effect-fn-opportunity` reports 2 and 1, with no shared line. The apps leave `effectFn` at tsgo's default `["span"]`, which reports only `Effect.withSpan` wrappers, and tsgo 0.45.0 drops Effect options inherited through `extends` (Effect-TS/tsgo#766). Under both, the custom rule remains the only check that reports plain `Effect.gen` wrappers in these apps.
 
+## Addendum: `@effect/tsgo` 0.46.1 (2026-09-27)
+
+The typed shipped pass re-ran on the same snapshots, selection, and exclusions after the pin moved to 0.46.1, on patched oxlint `1.82.0` with oxlint-tsgolint `7.0.2001`. Both runs linted the same files as above, and the typed canary reported in each.
+
+| | t3code | executor |
+| --- | --- | --- |
+| Diagnostics | 18,464 | 9,519 |
+| `catch-if-tag-to-catch-tag` (warn, new) | 0 | 0 |
+| `catch-refail-to-tap-error` (warn, new) | 1 | 0 |
+| `flat-map-ignored-param-to-and-then` (warn, new) | 2 | 0 |
+
+All three t3code hits are real simplifications: `Effect.flatMap(() => getStartedState)` at `apps/server/src/provider/acp/AcpSessionRuntime.ts:693`, `Effect.sleep(1000).pipe(Effect.flatMap(() => flush))` at `apps/server/src/telemetry/AnalyticsService.ts:197`, and a `catch` that restores a buffer and re-fails the same error at `AnalyticsService.ts:174`, which `Effect.tapError` expresses directly. No other tsgo rule count changed in either app. The other total changes come from custom rules reworked after this report: `no-pipe-ladder` now reports 77 / 0 (t3code) and 12 / 4 (executor) as source / test, and the new `no-discarded-failure` reports 146 / 5 and 145 / 15. The `Effect.fn` numbers above are unchanged, because the apps still leave `effectFn` at its default.
+
 ## Reproducing
 
 Clone each app at its revision outside the source checkout and install with its own lockfile, frozen, without lifecycle scripts. Then run from the backpressure root, once per app for the typed modes, because exclusions apply to every named app:

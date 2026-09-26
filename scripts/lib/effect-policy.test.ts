@@ -58,9 +58,9 @@ const snapshotRules = (record: Record<string, unknown>): Array<Record<string, un
 
 describe('tsgo grading', () => {
   it('produces the decided totals with the JSON rule off', () => {
-    expect(rows).toHaveLength(113);
+    expect(rows).toHaveLength(116);
     expect(namesWith('error')).toHaveLength(44);
-    expect(namesWith('warn')).toHaveLength(64);
+    expect(namesWith('warn')).toHaveLength(67);
     expect(namesWith('off')).toEqual([
       'catch-die-to-or-die',
       'deterministic-keys',
@@ -259,7 +259,7 @@ describe('tsgo projections', () => {
   it('gives the tsc route every severity in upstream spelling and no inert override', () => {
     const plugin = pluginOf(tscRouteTsconfig(rows, tsgoPolicy));
     const severities = plugin['diagnosticSeverity'] as Record<string, string>;
-    expect(Object.keys(severities)).toHaveLength(113);
+    expect(Object.keys(severities)).toHaveLength(116);
     expect(new Set(Object.values(severities))).toEqual(new Set(['error', 'off', 'warning']));
     expect(severities['duplicatePackage']).toBe('warning');
     expect(plugin['ignoreEffectWarningsInTscExitCode']).toBe(false);

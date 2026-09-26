@@ -10,7 +10,7 @@ type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-09-26T04:52:16Z
-updated_at: 2026-09-26T07:30:00Z
+updated_at: 2026-09-26T23:12:29Z
 tags:
   - record/tech-debt
   - repo/backpressure
@@ -40,9 +40,18 @@ The TypeScript 7.0.2 route patched by `effect-tsgo patch` keeps the options thro
 
 The fix belongs to upstream's tsgolint integration, and the backpressure landing group cannot wait for an upstream release. The restored AST rule keeps the error floor for the wrappers it catches without a TypeScript project.
 
+## Fix shipped
+
+The fix shipped in `@effect/tsgo` 0.46.1 (Effect-TS/tsgo#768, published 2026-09-26), and the pin moved to it. Under a consumer `tsconfig.json` that extends `base.json` and `effect.json` on the default route, `effect-fn-opportunity` now reports all three wrapper shapes. `prefer-effect-fn` stays active and still reports the two plain wrappers, so each of those gets both diagnostics; ADR-007 allows that overlap. A probe on patched oxlint 1.82.0 with the same packed tarballs gave these results under that setup:
+
+- 0.45.0: `declaration.ts:3:8` and `parameter.ts:3:23` report only `prefer-effect-fn`; `spanned.ts:3:14` reports only `effect-fn-opportunity`.
+- 0.46.1: `declaration.ts` reports `effect-fn-opportunity` at 3:17 and `prefer-effect-fn` at 3:8; `parameter.ts` reports `effect-fn-opportunity` at 3:14 and `prefer-effect-fn` at 3:23; `spanned.ts:3:14` reports `effect-fn-opportunity`. This matches the inline no-extends control on both versions.
+
+`scripts/packages/oxlint-standards/smoke-effect-packed-consumer.ts` asserts that split. The Effect rules v4 progress ledger's entry for the `@effect/tsgo` bump has the commands and the failing run of the previous smoke.
+
 ## Revisit trigger
 
-Upstream merged the fix in Effect-TS/tsgo#768 on 2026-09-26, after the 0.46.0 release. Revisit when the first `@effect/tsgo` release with the fix is published; MP allows that release in before the seven-day `minimumReleaseAge` window closes, through exact-version exclusions. Also revisit on every `@effect/tsgo` bump. `scripts/packages/oxlint-standards/smoke-effect-packed-consumer.ts` asserts the current behavior: under the shipped setup, `effect-fn-opportunity` reports only the `Effect.withSpan` wrapper. It fails with a message naming this record when tsgo starts reporting the plain wrappers.
+Waiting on MP: removing `prefer-effect-fn` needs his explicit OK after he sees the evidence above. Also revisit on every `@effect/tsgo` bump, since the smoke fails if `effect-fn-opportunity` stops reporting a wrapper under `extends`.
 
 ## Done when
 

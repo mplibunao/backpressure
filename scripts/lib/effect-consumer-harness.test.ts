@@ -18,12 +18,12 @@ import type { EffectIntegrationVersions } from './tool-versions.ts';
 
 const versions: EffectIntegrationVersions = {
   effect: '4.0.0-rc.115',
-  effectTsgo: '0.45.0',
+  effectTsgo: '0.46.1',
   oxlint: '1.82.0',
   oxlintTsgolint: '7.0.2001',
   tscRouteTypescript: '7.0.2',
   typescript: '6.0.2',
-  unsupportedOxlint: '1.83.0',
+  unsupportedOxlint: '1.81.0',
   vitePlus: '0.3.2',
 };
 
@@ -66,6 +66,17 @@ describe('consumer workspace', () => {
     });
   });
 
+  it('copies the exact-version release-age exclusions when the root declares them', () => {
+    const exclusions = ['@effect/tsgo@0.46.1', '@effect/tsgo-darwin-arm64@0.46.1'];
+    const withExclusions = `${rootWorkspace}\nminimumReleaseAgeExclude:\n${exclusions.map((entry) => `  - '${entry}'`).join('\n')}`;
+    const settings = parse(consumerWorkspaceYaml(withExclusions, '/tmp/store')) as Record<
+      string,
+      unknown
+    >;
+    expect(settings['minimumReleaseAgeExclude']).toEqual(exclusions);
+    expect(settings['minimumReleaseAge']).toBe(10_080);
+  });
+
   it('rejects a duplicated safety key instead of copying one of its values', () => {
     const duplicated = `${rootWorkspace}\nminimumReleaseAge: 0`;
     expect(() => consumerWorkspaceYaml(duplicated, '/tmp/store')).toThrow(
@@ -82,7 +93,7 @@ describe('consumer workspace', () => {
 describe('route setup', () => {
   it('installs only the packages each route needs', () => {
     expect(routeDependencies('oxlint', versions)).toEqual([
-      '@effect/tsgo@0.45.0',
+      '@effect/tsgo@0.46.1',
       'effect@4.0.0-rc.115',
       'oxlint@1.82.0',
       'oxlint-tsgolint@7.0.2001',
@@ -90,11 +101,11 @@ describe('route setup', () => {
       'typescript@6.0.2',
     ]);
     expect(routeDependencies('tsc', versions)).toEqual([
-      '@effect/tsgo@0.45.0',
+      '@effect/tsgo@0.46.1',
       'effect@4.0.0-rc.115',
       'typescript@7.0.2',
     ]);
-    expect(routeDependencies('unsupported-oxlint', versions)).toContain('oxlint@1.83.0');
+    expect(routeDependencies('unsupported-oxlint', versions)).toContain('oxlint@1.81.0');
     expect(routeDependencies('unsupported-oxlint', versions)).not.toContain('vite-plus@0.3.2');
   });
 

@@ -3,7 +3,7 @@ packages:
 blockExoticSubdeps: true
 catalog:
   '@changesets/cli': 2.31.0
-  '@effect/tsgo': 0.45.0
+  '@effect/tsgo': 0.46.1
   '@oxlint/plugins': 1.58.0
   '@stryker-mutator/core': 9.6.1
   '@stryker-mutator/vitest-runner': 9.6.1
@@ -20,6 +20,17 @@ catalogMode: strict
 cleanupUnusedCatalogs: true
 dangerouslyAllowAllBuilds: false
 minimumReleaseAge: 10080
+# Exact-version exceptions to the release-age window, each an explicit MP decision. Only the named
+# versions skip the wait; every other version of these packages still waits the full window.
+minimumReleaseAgeExclude:
+  - '@effect/tsgo@0.46.1'
+  - '@effect/tsgo-darwin-arm64@0.46.1'
+  - '@effect/tsgo-darwin-x64@0.46.1'
+  - '@effect/tsgo-linux-arm@0.46.1'
+  - '@effect/tsgo-linux-arm64@0.46.1'
+  - '@effect/tsgo-linux-x64@0.46.1'
+  - '@effect/tsgo-win32-arm64@0.46.1'
+  - '@effect/tsgo-win32-x64@0.46.1'
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeStrict: true
 overrides:
