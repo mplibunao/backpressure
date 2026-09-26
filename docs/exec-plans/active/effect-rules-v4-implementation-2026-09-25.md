@@ -1,6 +1,6 @@
 # Effect rules v4 alignment: build plan
 
-- Status: ready to build. No code change or verification from this plan has run yet.
+- Status: in-scope verification complete / full acceptance blocked. The external introspection `config.schema_violation` still stops `pnpm check`, and executor's typed app audit covers 1,355 of 1,922 files (an open MP question). The plan remains active.
 - Date: 2026-09-25.
 - Target branch: `lint/oxlint-standards-consolidation`.
 - Decision baseline: `effect-rules-v4-alignment-2026-09-25.md`, identified by the scaffold as commit `42c77c6`.

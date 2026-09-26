@@ -31,8 +31,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-11 | Rule list with its generated page and local viewer | M | DONE (local, not pushed) | `b848cb5` |
 | WI-07 | Install all six durable gates | L | DONE (local, not pushed) | `671fcb9` |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (local, not pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) | `dfff7d9` |
-| WI-09 | Complete consumer guidance, records, and changesets | M | DONE (uncommitted) | |
-| WI-10 | Run acceptance and classify the remaining blocker accurately | S | PENDING | |
+| WI-09 | Complete consumer guidance, records, and changesets | M | DONE (local, not pushed) | `be8b5fa` |
+| WI-10 | Run acceptance and classify the remaining blocker accurately | S | in-scope verification complete / full acceptance blocked: external introspection `config.schema_violation`; executor typed coverage 1,355 of 1,922 files (open MP question) | |
 
 ## Per-item detail
 
@@ -949,6 +949,42 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 - **Review iteration 2 and refactor cycle 1:** the `no-arrow-ladder` note now describes an immediately invoked inline function whose body or parameters contain another one, as the visitor checks (page regenerated; `rules-page:check`, `test`, and `prose` exited 0). The refactor keeps the complete house style only in the package README, reduces `effect-house-style.md` to a pointer, replaces the stale artifact inventories in `release-readiness.md` with links to the package manifests and artifact-assertion scripts, and points the glossary's config-loading note at the README. Cycle 2 trims the root README's package blurbs to links and fixes the preset-shape overview in the package README. Afterwards `pnpm prose`, `pnpm durable:refs`, and the `check` chain without `introspection:check` (2497 tests) exited 0.
 - **Commits:** none. The orchestrator commits.
 - **Action items for MP:** none.
+
+### WI-10: Final acceptance (in-scope verification complete / full acceptance blocked)
+
+- **Revision and route:** `be8b5fa` on `lint/oxlint-standards-consolidation`, from `/Users/mp/Projects/personal/backpressure`. The plan remains active. No change was staged, committed, or pushed.
+- **Evidence directory:** `/private/tmp/claude-501/-Users-mp-Projects-personal-backpressure/cb9f46b7-f8e9-4290-8e97-f30127e28448/scratchpad/wi10/`. Log names below are relative to this directory; `version-route.log` records the revision, cwd, and tool pins. Route R means the root checkout with pnpm 11.4.0, Bun 1.3.11, Node 24.21.0, oxlint 1.58.0, TypeScript 6.0.2, vite-plus 0.1.15, and `@effect/tsgo` 0.45.0. Route I starts at the root but installs isolated packed consumers with Effect 4.0.0-rc.115, oxlint 1.82.0, oxlint-tsgolint `7.0.2001`, and vite-plus 0.3.2; its oxlint-route consumer uses TypeScript `6.0.2` and its patched-tsc consumer uses TypeScript `7.0.2`. Exit statuses below are the process results, not inferred from a test count.
+
+| Command | Cwd/route | Exit | Log |
+| --- | --- | ---: | --- |
+| `pnpm check` (unmodified) | Root/R | 1 | `pnpm-check.log` |
+| `pnpm durable:refs` | Root/R | 0 | `durable-refs.log` |
+| `pnpm effect-policy:check` | Root/R | 0 | `effect-policy-check.log` |
+| `pnpm build` | Root/R | 0 | `build.log` |
+| `/bin/sh -c "pnpm run lint"` | Root/R | 0 | `lint.log` |
+| `pnpm versions:check` | Root/R | 0 | `versions-check.log` |
+| `pnpm typecheck` | Root/R | 0 | `typecheck.log` |
+| `pnpm test` | Root/R | 0 | `test.log` |
+| `pnpm check-release-workflow` | Root/R | 0 | `check-release-workflow.log` |
+| `pnpm changesets:check` | Root/R | 0 | `changesets-check.log` |
+| `SKIP_BUILD=true pnpm inventory:rules` | Root/R | 0 | `inventory-rules.log` |
+| `pnpm rules-page:check` | Root/R | 0 | `rules-page-check-direct.log` |
+| `pnpm smoke:rules-viewer` | Root/R | 0 | `smoke-rules-viewer-direct.log` |
+| `SKIP_BUILD=true pnpm fixture:replay` | Root/R | 0 | `fixture-replay.log` |
+| `SKIP_BUILD=true pnpm smoke:oxlint-packed-consumer` | Root/R | 0 | `smoke-oxlint-packed-consumer.log` |
+| `pnpm smoke:tsconfig-packed-consumer` | Root/R | 0 | `smoke-tsconfig-packed-consumer.log` |
+| `pnpm -r --if-present pack:dry-run:no-build` | Root/R | 0 | `pack-dry-run-no-build.log` |
+| `pnpm introspection:check` | Root/R | 1 | `introspection-check.log` |
+| `pnpm prose` (independent) | Root/R | 0 | `prose.log` |
+| `pnpm check:effect-integration` | Root/I | 0 | `effect-integration.log` |
+| `RULES_VIEWER_PORT=0 pnpm rules:view` (start, HTTP requests, stop) | Root/R | 0 | `rules-view-session.log`, `rules-view-server.log` |
+| `command git diff --stat dfff7d9..be8b5fa -- packages/oxlint-standards/src scripts` (with source and policy comparisons) | Root/R | 0 | `v4-behavior.log` |
+
+- **Aggregate stopping point:** `pnpm check` passed every command through both package allowlists, then exited 1 at `introspection check` before running prose. Its exact error is `config.schema_violation: config TOML failed JSON Schema validation`, matching the intake baseline at `42c77c6`. The independent check reproduced it. `introspection-cause.log` shows the repo's `[records.list]`, the installed CLI bundle's `records` schema with only `root` and `additionalProperties: false`, and the sibling source schema that accepts `list`. This is the same external stale-build blocker, not a new failure in the rule work. `pnpm prose` passed independently with no alerts in 60 files. The command logs also report 2,497 passing tests in 34 files, 43 fixture suites with 444 cases and 37 corpus variants, 404 viewer rules, and both packed integration routes passing. The short viewer run returned HTTP 200 for the page and 404-rule JSON, then stopped; a subsequent connection was refused.
+- **V1-V3: passed.** The command table above records the results and logs for the [plan's verification methods](./effect-rules-v4-implementation-2026-09-25.md#four-task-specific-verification-methods).
+- **V4 (prior app evidence applies to this revision):** `command git diff --stat dfff7d9..be8b5fa -- packages/oxlint-standards/src scripts` shows only 43 replacements of `note` text in `rule-manifest.ts`. A zero-context diff check found every changed source line is a `note` field. The rule catalog, Effect preset, manifest selection, rule messages, tsgo config and generated policy, policy source, and supported matrix have identical Git object IDs at both revisions (`v4-behavior.log`). Rule behavior is unchanged, so the reviewed [WI-08 app audit](../../reports/effect-v4-app-audit-2026-09-25.md) supplies V4 at `be8b5fa`; no app rerun was needed. Its AST passes covered 3,841 t3code and 1,940 executor files. Its typed executor coverage remains partial at 1,355 of 1,922 files.
+- **After the evidence write:** `pnpm prose` passed with no alerts in 60 files (`prose-after-docs.log`); `pnpm durable:refs` and `vp fmt --check` passed (`durable-refs-after-docs.log`, `fmt-after-docs.log`), and `command git diff --check` exited 0. `pnpm introspection:check` still exited 1 with the same schema error (`introspection-check-after-docs.log`).
+- **Open items:** full acceptance remains blocked by the external introspection schema failure and executor's incomplete typed coverage, which needs an MP decision on the G2 contract or a later cleanly lintable snapshot. WI-12 remains parked in the untouched stash. WI-13 waits for an `@effect/tsgo` release containing #768. Renovate app activation waits on MP. Nothing was pushed.
 
 ### WI-12: Extend prefer-effect-fn to tsgo shape parity (PARKED)
 
