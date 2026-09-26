@@ -27,10 +27,11 @@ import {
 } from './utils/caught-values.js';
 import {
   collectEffectCompositionFacts,
+  firstLadderContinuation,
   isDataFirstTransformingNesting,
   isEffectLadder,
+  isEffectStepCallback,
   isFlatMapLadderShape,
-  isNestedEffectPipeline,
   type EffectCompositionFacts,
 } from './utils/effect-composition.js';
 import {
@@ -42,6 +43,11 @@ import {
   visitSynchronousBody,
 } from './utils/effect-context.js';
 import { schemaCodecFactoryMembers } from './utils/effect-identifiers.js';
+import {
+  blanketRecoveryHandler,
+  isBlindHandler,
+  isRecordedFirst,
+} from './utils/effect-recovery.js';
 import {
   collectOwnershipFacts,
   containsAnyBoundNamespaceCall,
@@ -1483,15 +1489,22 @@ const catalogRules: Record<string, Rule> = {
   'no-pipe-ladder': {
     create(context) {
       let facts: EffectCompositionFacts | null = null;
+      // Each step callback is one ladder at most, reported at its first inner continuation.
+      const checkStepCallback = (node: NodeLike): void => {
+        const continuation =
+          facts !== null && isEffectStepCallback(facts, node)
+            ? firstLadderContinuation(facts, node)
+            : null;
+        if (continuation !== null) {
+          context.report({ message: message('no-pipe-ladder'), node: continuation });
+        }
+      };
       return {
         Program(node: ESTree.Program) {
           facts = collectEffectCompositionFacts(context, node);
         },
-        CallExpression(node: NodeLike) {
-          if (facts !== null && isNestedEffectPipeline(facts, node)) {
-            context.report({ message: message('no-pipe-ladder'), node });
-          }
-        },
+        ArrowFunctionExpression: checkStepCallback,
+        FunctionExpression: checkStepCallback,
       };
     },
     meta: {
@@ -2026,6 +2039,31 @@ const catalogRules: Record<string, Rule> = {
     },
     meta: {
       docs: { description: message('no-string-error-channel'), recommended: 'error' },
+      type: 'problem',
+    },
+  },
+  'no-discarded-failure': {
+    create(context) {
+      let facts: EffectCompositionFacts | null = null;
+      return {
+        Program(node: ESTree.Program) {
+          facts = collectEffectCompositionFacts(context, node);
+        },
+        CallExpression(node: NodeLike) {
+          const handler = facts === null ? null : blanketRecoveryHandler(facts, node);
+          if (
+            facts !== null &&
+            handler !== null &&
+            isBlindHandler(handler) &&
+            !isRecordedFirst(facts, node)
+          ) {
+            context.report({ message: message('no-discarded-failure'), node });
+          }
+        },
+      };
+    },
+    meta: {
+      docs: { description: message('no-discarded-failure'), recommended: 'error' },
       type: 'problem',
     },
   },

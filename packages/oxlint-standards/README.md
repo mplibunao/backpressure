@@ -225,6 +225,7 @@ The Effect rules enforce part of a house style. Lint cannot check every point, s
   - Never fail with a string literal or template string.
   - Recover with `Effect.catchTag`, `Effect.catchTags`, `Match.tag`, or `Effect.catchReason` instead of comparing `_tag` by hand; reading `_tag` to log it is fine.
   - Keep an unknown caught value as a typed error's `cause`, or decode it; never guess through `.message`, `String(error)`, or a cast.
+  - A `catch`, `catchCause`, `mapError`, `match` `onFailure`, or `try` `catch` handler must read its error, such as by passing it on as `cause` or logging it; recording it first with `Effect.tapError` also counts. To absorb only some failures, name them with `Effect.catchTag`; to discard on purpose, use a named discard such as `Effect.orElseSucceed` or `Effect.ignore({ log: true })`.
 - **Defects, runners, and provision**
   - Reserve `Effect.die` and `Effect.orDie` for unrecoverable failures, such as bad configuration at app entry, each with an inline disable that says why.
   - Run Effects only at composition roots and in tests, never from inside Effect logic.
@@ -234,8 +235,8 @@ The Effect rules enforce part of a house style. Lint cannot check every point, s
   - Replace context with atom-react's `ScopedAtom`, which re-renders only the components that read a given atom.
   - `yield*` the v4 `Atom.get`, `set`, `update`, `modify`, and `refresh` Effects instead of wrapping them in `Effect.sync`; `AtomRegistry` instance methods stay synchronous.
 - **Pipelines**
-  - Do not nest Effect pipelines inside each other or inside transforming callbacks, and do not build inside-out towers like `Effect.map(Effect.flatMap(source, f), g)`. Use `Effect.gen` or pipe from the source.
-  - `Schedule`, `Layer`, and `Schema` pipes, runner and resource arguments, forked generators, ordinary `Effect.as`, `Effect.never`, and `Effect.sync` around a synchronous side effect are all fine.
+  - Do not put an inline `Effect.flatMap`, `andThen`, or `tap` callback inside another Effect callback, and do not build inside-out towers like `Effect.map(Effect.flatMap(source, f), g)`. `yield*` each step in one `Effect.gen` or `Effect.fn`, or pipe from the source.
+  - One-step or adornment-only handler bodies, a value `Effect.map` inside a callback, `Effect.all` items, `Schedule`, `Layer`, and `Schema` pipes, runner and resource arguments, forked generators, ordinary `Effect.as`, `Effect.never`, and `Effect.sync` around a synchronous side effect are all fine.
 - **Optional values and schemas**
   - Return `Option.none()` or `Effect.succeedNone` for an optional Effect result, not `null`; use `Option.fromNullishOr` and `Option.getOrNull` at nullable boundaries.
   - `Option.fromUndefinedOr` turns `null` into `Some(null)`; use `Option.fromNullishOr` when either can appear.
@@ -275,8 +276,8 @@ This release is breaking for Effect consumers.
 | `no-naked-object-state-update` | `JSON.stringify` and object spread are allowed; `no-json-parse` still reports `JSON.parse` |
 | `no-effect-never`, `no-effect-succeed-variable`, `no-effect-type-alias`, `no-effect-wrapper-alias`, `no-family-collection-read`, `no-manual-effect-channels`, `no-match-void-branch`, `no-return-in-arrow`, `no-return-in-callback`, `no-string-sentinel-const`, `no-string-sentinel-return`, `warn-effect-sync-wrapper` | Nothing; the shapes they flagged are allowed |
 
-- New rule: `no-string-error-channel` reports `Effect.fail` with a string argument.
-- Several kept rules changed what they report. `no-manual-tag-check`, `no-unknown-error-message`, `no-effect-call-in-effect-arg`, `no-effect-ladder`, `no-flatmap-ladder`, `no-effect-side-effect-wrapper`, `no-return-null`, `no-inline-schema-compile`, and `no-effect-escape-hatch` are narrowed. `no-pipe-ladder` now reports only Effect pipelines nested in other Effect pipelines or transforming callbacks, including some shapes it missed before. `no-fromnullable-nullish-coalesce`, `no-atom-registry-effect-sync`, and `no-effect-internal-tags` target v4 names. `no-react-state` no longer bans `useState`. `no-return-null` and `no-inline-schema-compile` are now warnings. The rules page says what each rule catches now.
+- New rules: `no-string-error-channel` reports `Effect.fail` with a string argument, and `no-discarded-failure` reports a blanket recovery handler that never reads its error unless a `tapError`, `tapCause`, or `tapDefect` recorded it first.
+- Several kept rules changed what they report. `no-manual-tag-check`, `no-unknown-error-message`, `no-effect-call-in-effect-arg`, `no-effect-ladder`, `no-flatmap-ladder`, `no-effect-side-effect-wrapper`, `no-return-null`, `no-inline-schema-compile`, and `no-effect-escape-hatch` are narrowed. `no-pipe-ladder` now reports an inline `Effect.flatMap`, `andThen`, or `tap` callback nested inside another Effect callback, once per outer callback; nested pipelines without such a callback are no longer reported. `no-fromnullable-nullish-coalesce`, `no-atom-registry-effect-sync`, and `no-effect-internal-tags` target v4 names. `no-react-state` no longer bans `useState`. `no-return-null` and `no-inline-schema-compile` are now warnings. The rules page says what each rule catches now.
 
 ## Catalog posture
 
@@ -284,7 +285,7 @@ v0 targets Effect v4 identifiers and conventions: gen-first logic, named `Effect
 
 The catalog currently records:
 
-- 43 custom rules: 23 ported from linteffect v0.0.6 and 20 reimplemented from executor, recon, t3code, and effect-smol ideas. `effectPreset` holds 35 of them, `effectReactPreset` 3, `generalPreset` 4, and `boundariesPreset` 1.
+- 44 custom rules: 22 ported from linteffect v0.0.6 and 22 reimplemented from executor, recon, t3code, effect-smol, and linteffect ideas. `effectPreset` holds 36 of them, `effectReactPreset` 3, `generalPreset` 4, and `boundariesPreset` 1.
 - 113 `@effect/tsgo` checks at their pinned 0.45.0 settings, with 44 at `error` and 64 at `warn`. The other 5 are `off`, including `prefer-schema-over-json`.
 - 50 linteffect source rules represented for inventory, of which 27 are dropped.
 - 29 dropped rules in total, 10 of them with an `@effect/tsgo` replacement.

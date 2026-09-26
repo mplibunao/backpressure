@@ -174,18 +174,3 @@ export const runsWhenReached = (node: NodeLike): boolean =>
 export const visitSynchronousBody = (fn: unknown, visit: (node: NodeLike) => void): void => {
   visitSelfAndDescendantsWhere(fn, (node) => node === fn || runsWhenReached(node), visit);
 };
-
-// The call that receives an inline function directly as one of its arguments. A function that is
-// assigned, returned, or wrapped first has no such call: its execution context is unknown here.
-export const directCallOfInlineFunction = (node: unknown): NodeLike | null => {
-  if (!isInlineFunction(node)) {
-    return null;
-  }
-
-  const parent = getNodeField(node, 'parent');
-  return isNodeLike(parent) &&
-    parent.type === 'CallExpression' &&
-    getCallExpressionArguments(parent).includes(node)
-    ? parent
-    : null;
-};

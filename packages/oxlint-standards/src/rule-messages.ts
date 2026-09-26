@@ -26,6 +26,10 @@ const explicitRuleMessages = new Map<string, string>([
     "Rule: no-cross-package-relative-imports. Why: a relative import into another workspace package bypasses that package's public exports. Fix: import the package by name through its package.json exports. Ref: executor.",
   ],
   [
+    'no-discarded-failure',
+    'Rule: no-discarded-failure. Why: a catch, catchCause, mapError, match, or try handler that never reads its error drops the cause and absorbs new failure types. Fix: name tags with Effect.catchTag/catchTags, pass the error as cause, or record it first with tapError or Effect.ignore({ log: true }). Ref: house style.',
+  ],
+  [
     'no-double-cast',
     'Rule: no-double-cast. Why: a cast through any or unknown hides an unsound type boundary. Fix: decode with Schema or narrow with a typed adapter, or put // lint-allow-double-cast: <reason> on the line above. Ref: executor.',
   ],
@@ -107,7 +111,7 @@ const explicitRuleMessages = new Map<string, string>([
   ],
   [
     'no-pipe-ladder',
-    'Rule: no-pipe-ladder. Why: an Effect pipeline nested in another Effect pipeline, or in a transforming callback such as Effect.flatMap, hides control flow like nested try/catch. Fix: flatten the nested logic into Effect.gen and yield* each step. Nested Schedule, Layer, and Schema pipes are fine. Ref: house style.',
+    'Rule: no-pipe-ladder. Why: an inline Effect.flatMap, andThen, or tap callback inside another Effect callback sequences steps by indentation, like nested .then or try/catch, hiding what runs when. Fix: yield* each step in one Effect.gen or Effect.fn; one-step handler bodies and Effect.all items are fine. Ref: house style.',
   ],
   [
     'no-promise-catch',

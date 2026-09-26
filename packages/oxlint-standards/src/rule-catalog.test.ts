@@ -1081,106 +1081,388 @@ run('no-flatmap-ladder', {
     withEffect('Effect.flatMap(program, f);'),
     withEffect('Effect.flatMap(program, () => Effect.flatMap(other, f));'),
     withEffect('let program = Effect.flatMap(program, () => Effect.flatMap(other, f));'),
+    // no-pipe-ladder reports a closure ladder at its inner continuation.
+    withEffect(
+      'const program = Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y)));',
+    ),
+    withEffect(
+      'function run() { return Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y))); }',
+    ),
     // The error-level owners report these shapes; the warning never replaces them.
     withEffect('const program = Effect.flatten(Effect.map(program, f));'),
     withEffect('function run() { return Effect.flatMap(Effect.flatMap(program, f), g); }'),
   ],
 });
 
+// The stress table of docs/analysis/effect-nesting-rules-first-principles.md, section 5: its own
+// S and D snippets, each checked against both rules with the table's L and D columns.
+const stressSnippets = {
+  S1: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.map((posts) => ({ user, posts })))));',
+  S2: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save({ user, posts })))));',
+  S3: 'Effect.flatMap(getUser, (user) => Effect.flatMap(fetchPosts(user.id), (posts) => save({ user, posts })));',
+  S4: 'pipe(getUser, Effect.flatMap((user) => pipe(fetchPosts(user.id), Effect.tap((posts) => log(posts)))));',
+  S5: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id)), Effect.tap((posts) => log(posts)), Effect.map((posts) => posts.length));',
+  S6: "Effect.gen(function* () { const posts = yield* fetchPosts(id).pipe(Effect.timeout('1 second'), Effect.mapError((cause) => new NotFound(cause))); return posts; });",
+  S7: "Effect.gen(function* () { return yield* getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.tap(() => log('done'))))); });",
+  S8: 'work.pipe(Effect.catch((error) => log(error).pipe(Effect.as(0))));',
+  S9: "work.pipe(Effect.catchTag('NotFound', (error) => log(error).pipe(Effect.andThen(Effect.succeed(0)))));",
+  S10: 'Effect.forEach(items, (item) => fetchPosts(item).pipe(Effect.map((posts) => posts.length)));',
+  S11: 'Effect.forEach(items, (item) => fetchPosts(item).pipe(Effect.flatMap((posts) => save({ item, posts }))));',
+  S12: "Effect.all([work.pipe(Effect.map(String)), work.pipe(Effect.mapError((cause) => new NotFound(cause)))], { concurrency: 'unbounded' });",
+  S13: 'getUser.pipe(Effect.flatMap((user) => Effect.gen(function* () { const posts = yield* fetchPosts(user.id); yield* save(posts); return posts; })));',
+  S14: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts).pipe(Effect.andThen(log(user)))))));',
+  S15: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap(save))));',
+  S16: 'getUser.pipe(Effect.flatMap((user) => Effect.all(items.map((item) => fetchPosts(item).pipe(Effect.flatMap((posts) => save({ user, posts })))))));',
+  D1: "work.pipe(Effect.catch(() => log('failed')));",
+  D2: 'work.pipe(Effect.catch(() => Effect.succeed(0)));',
+  D3: 'work.pipe(Effect.orElseSucceed(() => 0));',
+  D4: 'work.pipe(Effect.catch((error) => log(error).pipe(Effect.as(0))));',
+  D5: "work.pipe(Effect.catchTag('NotFound', () => Effect.succeed(0)));",
+  D6: 'work.pipe(Effect.tapError((error) => log(error)), Effect.catch(() => Effect.succeed(0)));',
+  D7: 'work.pipe(Effect.catchCause(() => Effect.void));',
+  D8: 'work.pipe(Effect.mapError(() => new NotFound()));',
+  D9: 'work.pipe(Effect.mapError((cause) => new NotFound(cause)));',
+  D10: "Effect.tryPromise({ try: () => fetch('x'), catch: () => new NotFound() });",
+  D11: 'work.pipe(Effect.match({ onFailure: () => null, onSuccess: (n) => n }));',
+  D12: 'work.pipe(Effect.catch((_) => Effect.succeed(0)));',
+  D13: 'work.pipe(Effect.catch(({ message }) => log(message)));',
+  D14: 'Effect.catch(Effect.tapError(work, (e) => log(e)), () => Effect.succeed(0));',
+} as const;
+type StressRow = keyof typeof stressSnippets;
+const stressRows = Object.keys(stressSnippets) as StressRow[];
+// The rows whose L or D column says "yes"; every other row is valid for that rule.
+const ladderRows: ReadonlySet<StressRow> = new Set(['S2', 'S3', 'S4', 'S7', 'S11', 'S14', 'S16']);
+const discardRows: ReadonlySet<StressRow> = new Set(['D1', 'D2', 'D7', 'D8', 'D10', 'D11', 'D12']);
+// S8 and D4 are the same snippet, and RuleTester rejects a repeated case.
+const stressCases = (reported: ReadonlySet<StressRow>, expected: boolean): string[] => [
+  ...new Set(
+    stressRows
+      .filter((row) => reported.has(row) === expected)
+      .map((row) => withEffectAndPipe(stressSnippets[row])),
+  ),
+];
+
+// Repo rows (R1 to R27) whose shape no stress snippet covers; R4 shares S12's shape.
 run('no-pipe-ladder', {
   invalid: [
-    withEffect('work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f), Effect.catch(g))));'),
-    withEffect('Effect.flatMap(work, (x) => other.pipe(Effect.map(f), Effect.catch(g)));'),
-    withEffectAndPipe('pipe(pipe(work, Effect.map(f)), Effect.catch(g));'),
-    // A qualifying pipeline inside another pipeline's step expression.
-    withEffect('work.pipe(Effect.zip(other.pipe(Effect.map(f))));'),
-    withEffect(
-      'work.pipe(Effect.flatMap((x) => { const next = other.pipe(Effect.map(f)); return next; }));',
-    ),
-    // Barrel, aliased, and Function-namespace bindings of pipe.
-    `${effectImport}import { pipe } from 'effect';\npipe(pipe(work, Effect.map(f)), Effect.catch(g));`,
-    `${effectImport}import { pipe as flow } from 'effect/Function';\nflow(flow(work, Effect.map(f)), Effect.catch(g));`,
-    `${effectImport}import * as Fn from 'effect/Function';\nFn.pipe(Fn.pipe(work, Effect.map(f)), Effect.catch(g));`,
-    `${effectImport}import { Function } from 'effect';\nFunction.pipe(Function.pipe(work, Effect.map(f)), Effect.catch(g));`,
-    // A chained inner segment is the same edge as its outer segment.
-    withEffect(
-      'work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f)).pipe(Effect.catch(g))));',
-    ),
-    // Each deeper pipeline is a distinct nesting edge.
+    ...stressCases(ladderRows, true),
+    // Inline andThen in its data-first spelling.
+    withEffect('Effect.forEach(items, (item) => Effect.andThen(load(item), (x) => save(x)));'),
+    // Each offending level of a pyramid reports once.
     {
       code: withEffect(
-        'first.pipe(Effect.flatMap(() => second.pipe(Effect.flatMap(() => third.pipe(Effect.map(f))))));',
+        'a.pipe(Effect.flatMap((x) => b.pipe(Effect.flatMap((y) => c.pipe(Effect.flatMap((z) => d(x, y, z)))))));',
       ),
       expectedErrors: 2,
     },
-    // A const pipe alias gets no exemption.
-    withEffectAndPipe('const run = pipe(pipe(Effect.succeed(1), Effect.map(f)), Effect.catch(g));'),
-    // A pipeline inside a conditional receiver is nested in the outer pipeline's source, not chained.
-    withEffect('(cond ? other.pipe(Effect.map(f)) : fallback).pipe(Effect.catch(recover));'),
-    // Inline callbacks in a catchTags or catchReasons handler map, in both layouts.
-    withEffect('Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });'),
-    withEffect('work.pipe(Effect.catchTags({ Failure: () => fallback.pipe(Effect.map(f)) }));'),
+    // A nested step callback is judged on its own: its ladder is not also the outer callback's.
     withEffect(
-      'work.pipe(Effect.catchTags({ Failure() { return fallback.pipe(Effect.map(f)); } }));',
+      'work.pipe(Effect.flatMap((x) => other(x).pipe(Effect.catch((e) => log(e).pipe(Effect.flatMap(() => fallback(x)))))));',
+    ),
+    // Two continuations in one callback are one ladder.
+    withEffect(
+      'Effect.flatMap((x) => a.pipe(Effect.tap((y) => f(y)), Effect.flatMap((z) => g(x, z))));',
+    ),
+    // R6: t3code apps/server/src/provider/Layers/CodexSessionRuntime.ts:2404.
+    withEffect(
+      'child.exitCode.pipe(Effect.flatMap((exitCode) => Ref.get(closedRef).pipe(Effect.flatMap((closed) => { if (closed) { return Effect.void; } return report(exitCode); }))));',
+    ),
+    // R8: t3code apps/server/src/provider/makeManagedServerProvider.ts:252.
+    withEffect(
+      'getRefreshInterval.pipe(Effect.flatMap((refreshInterval) => Effect.raceFirst(tick, change).pipe(Effect.flatMap((intervalElapsed) => refresh(intervalElapsed, refreshInterval)))));',
+    ),
+    // R9: t3code apps/desktop/src/app/DesktopObservability.ts:291 (also a discard).
+    withEffect(
+      'work.pipe(Effect.catch(() => refreshFileSize(fs, path).pipe(Effect.flatMap((size) => Ref.set(currentSize, size)))));',
+    ),
+    // R18: executor packages/core/api/src/observability.ts:107, a handler callback.
+    withEffect(
+      "work.pipe(Effect.catchTag('StorageError', (err) => resolveCapture.pipe(Effect.flatMap((c) => c.captureException(Cause.fail(err))), Effect.flatMap((traceId) => Effect.fail(new InternalError({ traceId }))))));",
+    ),
+    // R23: effect-solutions packages/website/scripts/generate-og/browser.ts:11, a release callback.
+    withEffect(
+      "Effect.acquireRelease(launch, (browser) => Effect.promise(() => browser.close()).pipe(Effect.tap(() => Console.log('Browser closed'))));",
+    ),
+    // R24: effect packages/effect/test/encoding/SchemaBinary.test.ts:312.
+    withEffect(
+      "Effect.forEach(values, (value) => encode(value).pipe(Effect.flatMap((bytes) => Effect.yieldNow.pipe(Effect.as(bytes)))), { concurrency: 'unbounded' });",
+    ),
+    // Other step members: tapError, acquireUseRelease, catchCause.
+    withEffect('work.pipe(Effect.tapError((e) => report(e).pipe(Effect.tap((id) => log(id)))));'),
+    withEffect(
+      'Effect.acquireUseRelease(open, (handle) => read(handle).pipe(Effect.flatMap((data) => parse(data))), close);',
     ),
     withEffect(
-      "Effect.catchReasons(work, 'AiError', { RateLimit: () => fallback.pipe(Effect.map(f)) });",
+      'work.pipe(Effect.catchCause((cause) => Effect.flatMap(Effect.log(cause), () => fallback)));',
+    ),
+    // Handler-object values of catchTags, catchReasons, matchEffect, and matchCauseEffect, in
+    // both layouts, method syntax, and through a satisfies wrapper.
+    withEffect(
+      'Effect.catchTags(work, { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) });',
     ),
     withEffect(
-      "work.pipe(Effect.catchReasons('AiError', { RateLimit: () => fallback.pipe(Effect.map(f)) }));",
+      'work.pipe(Effect.catchTags({ Failure(e) { return log(e).pipe(Effect.andThen(() => save(e))); } }));',
     ),
     withEffect(
-      'Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) } satisfies Handlers);',
+      'Effect.catchTags(work, { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) } satisfies Handlers);',
     ),
+    withEffect(
+      "Effect.catchReasons(work, 'AiError', { RateLimit: (r) => wait(r).pipe(Effect.flatMap(() => retry(r))) });",
+    ),
+    withEffect(
+      'work.pipe(Effect.matchEffect({ onFailure: (e) => log(e).pipe(Effect.flatMap(() => fallback)), onSuccess: Effect.succeed }));',
+    ),
+    withEffect(
+      'Effect.matchCauseEffect(work, { onFailure: Effect.failCause, onSuccess: (a) => save(a).pipe(Effect.tap((id) => log(id))) });',
+    ),
+    // Type assertions around either callback, and a computed tag key, are no escape.
+    withEffect(
+      'work.pipe(Effect.flatMap(((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(user, posts)))) as Handler));',
+    ),
+    withEffect(
+      'work.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap(((posts) => save(user, posts)) satisfies Next))));',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { [tag]: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) });',
+    ),
+    // Barrel and aliased Effect bindings.
+    "import { Effect as Fx } from 'effect';\nwork.pipe(Fx.flatMap((x) => other(x).pipe(Fx.flatMap((y) => save(x, y)))));",
   ],
   valid: [
-    // Without a runtime Effect binding no step is bound: no import, or type-only imports.
-    'work.pipe(Effect.flatMap(() => other.pipe(Effect.map(f))));',
-    "import type * as Effect from 'effect/Effect';\nwork.pipe(Effect.flatMap(() => other.pipe(Effect.map(f))));",
-    "import { type Effect } from 'effect';\nwork.pipe(Effect.flatMap(() => other.pipe(Effect.map(f))));",
+    ...stressCases(ladderRows, false),
+    // Without a runtime Effect binding no call is bound: no import, type-only imports, a shadow.
+    stressSnippets.S2,
+    `import type * as Effect from 'effect/Effect';\n${stressSnippets.S2}`,
+    `import { type Effect } from 'effect';\n${stressSnippets.S2}`,
+    withEffect(`const run = (Effect) => ${stressSnippets.S2}`),
+    // R19: executor packages/core/sdk/src/executor.ts:3215, a value map in a loop body.
+    withEffect(
+      'Effect.forEach(rows, (row) => describeAuthMethodsForRow(row).pipe(Effect.map((authMethods) => rowToIntegration(row, authMethods))));',
+    ),
+    // R1: t3code apps/server/src/serverRuntimeStartup.ts:161, a one-step handler.
+    withEffect(
+      "getCounts().pipe(Effect.catch((cause) => Effect.logWarning('failed', { cause }).pipe(Effect.as({ threadCount: 0, projectCount: 0 }))));",
+    ),
+    // R3: t3code scripts/sync-reference-repos.ts:240, and structural members around a continuation.
+    withEffect(
+      "Effect.all([collect(child.stdout), collect(child.stderr), child.exitCode.pipe(Effect.map(Number))], { concurrency: 'unbounded' });",
+    ),
+    withEffect('Effect.all([a.pipe(Effect.flatMap((x) => b(x)))]);'),
+    withEffect('Effect.forkChild(a.pipe(Effect.flatMap((x) => b(x))));'),
+    withEffect('Effect.scoped(a.pipe(Effect.flatMap((x) => b(x))));'),
+    // A generator frame holds its own continuations.
+    withEffect(
+      'getUser.pipe(Effect.flatMap((user) => Effect.gen(function* () { return yield* fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts))); })));',
+    ),
+    // R5 (t3code apps/server/src/provider/Layers/ProviderRegistry.ts:556) and R11 (t3code
+    // apps/server/src/desktopUpdate/DesktopAppUpdate.ts:92): opaque or value continuations.
+    withEffect(
+      'providerSource.refresh.pipe(Effect.flatMap((nextProvider) => correlate(providerSource, nextProvider).pipe(Effect.flatMap(syncProvider))));',
+    ),
+    withEffect(
+      'current.pipe(Effect.flatMap((previous) => previous === stage ? Effect.void : Ref.set(lastStage, stage).pipe(Effect.andThen(reportProgress(stage)))));',
+    ),
+    // R7 (t3code apps/server/src/pullRequest/PullRequestService.ts:2542): one closure, adornment.
+    withEffect(
+      'Effect.flatMap(Clock.currentTimeMillis, (now) => { const recorded = record(now); return revalidate(recorded).pipe(Effect.as(snapshot.value)); });',
+    ),
+    // R10 (t3code apps/server/src/provider/Layers/CodexAdapter.ts:2713): a flat finalizer.
+    withEffect(
+      'Effect.acquireRelease(Effect.void, () => stopAll().pipe(Effect.andThen(Queue.shutdown(q)), Effect.andThen(close), Effect.ignore));',
+    ),
+    // R15 (t3code apps/server/src/resourceTelemetry/NativeTelemetryClient.ts:758).
+    withEffect(
+      'Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Ref.update(state, markUnavailable).pipe(Effect.andThen(publishHealth)));',
+    ),
+    // Shapes the pipeline-nesting contract used to report: a one-step pipeline in a callback, a
+    // pipeline in argument position, nested standalone pipes, adornment-only handler-map values,
+    // and a pipeline in a conditional receiver.
+    withEffect('work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f), Effect.catch(g))));'),
+    withEffect('work.pipe(Effect.zip(other.pipe(Effect.map(f))));'),
+    withEffectAndPipe('pipe(pipe(work, Effect.map(f)), Effect.catch(g));'),
+    withEffect('Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });'),
+    withEffect('(cond ? other.pipe(Effect.map(f)) : fallback).pipe(Effect.catch(recover));'),
     `${effectImport}import * as Schedule from 'effect/Schedule';\nEffect.retry(work, Schedule.exponential('1 second').pipe(Schedule.both(Schedule.recurs(3))));`,
-    "import * as Layer from 'effect/Layer';\nLive.pipe(Layer.provide(Base.pipe(Layer.provide(Config))));",
-    "import * as Schema from 'effect/Schema';\nSchema.Struct({ name: Schema.String.pipe(Schema.minLength(1)) }).pipe(Schema.brand('User'));",
+    // A continuation outside any step callback, including inside a non-Effect callback.
+    withEffect('a.pipe(Effect.flatMap((x) => b(x)));'),
+    withEffect('items.map((item) => load(item).pipe(Effect.flatMap((x) => save(x))));'),
+    // Members outside the step set own no ladder: map transforms a value, sync runs no effect,
+    // and match handlers return values.
+    withEffect('work.pipe(Effect.map((x) => other(x).pipe(Effect.flatMap((y) => save(y)))));'),
+    withEffect('Effect.sync(() => a.pipe(Effect.flatMap((x) => b(x))));'),
     withEffect(
-      'Effect.gen(function* () { const user = yield* load.pipe(Effect.map(f), Effect.catch(g)); return user; });',
+      'Effect.match(work, { onFailure: (e) => log(e).pipe(Effect.flatMap(() => fallback)), onSuccess: f });',
     ),
-    // A generator passed to Effect.gen is its own scope, even inside a transforming callback.
+    // Function declarations, class bodies, and generator methods stop the search.
     withEffect(
-      'work.pipe(Effect.flatMap(() => Effect.gen(function* () { return yield* other.pipe(Effect.map(f)); })));',
-    ),
-    withEffect('const program = work.pipe(Effect.map(f), Effect.catch(g));'),
-    // Chained pipes belong to effecttsgo/unnecessary-pipe-chain.
-    withEffect('work.pipe(Effect.map(f)).pipe(Effect.catch(g));'),
-    // Direct receiver chains stay chains through a non-qualifying segment or a type assertion.
-    withEffect('work.pipe(Effect.map(f)).pipe(g).pipe(Effect.catch(h));'),
-    withEffect('(work.pipe(Effect.map(f)) as Work).pipe(Effect.catch(g));'),
-    // Opaque or bare-member steps do not make a pipeline Effect control flow.
-    withEffectAndPipe('pipe(pipe(work, f), g);'),
-    withEffect('work.pipe(Effect.flatMap(() => other.pipe(Effect.asVoid)));'),
-    // An unbound or locally shadowed pipe is not the Effect pipe.
-    withEffect('pipe(pipe(work, Effect.map(f)), Effect.catch(g));'),
-    withEffectAndPipe('const run = (pipe) => pipe(pipe(work, Effect.map(f)), Effect.catch(g));'),
-    // Resource callbacks and unrelated function declarations stop relationship discovery.
-    withEffect('Effect.acquireRelease(open, (handle) => close(handle).pipe(Effect.map(f)));'),
-    withEffect(
-      'work.pipe(Effect.flatMap(() => { function helper() { return other.pipe(Effect.map(f)); } return helper(); }));',
-    ),
-    // Only a verified handler-map position is followed: not an unrelated object, a nested object,
-    // a getter, the options slot, or another member's options object.
-    withEffect('const handlers = { Failure: () => fallback.pipe(Effect.map(f)) };'),
-    withEffect(
-      'Effect.catchTags(work, { Failure: { nested: () => fallback.pipe(Effect.map(f)) } });',
+      'work.pipe(Effect.flatMap(() => { function helper() { return a.pipe(Effect.flatMap((x) => b(x))); } return helper(); }));',
     ),
     withEffect(
-      'Effect.catchTags(work, { get Failure() { return fallback.pipe(Effect.map(f)); } });',
-    ),
-    withEffect('Effect.catchTags(work, handlers, { log: () => fallback.pipe(Effect.map(f)) });'),
-    withEffect(
-      'Effect.match(work, { onFailure: () => fallback.pipe(Effect.map(f)), onSuccess: g });',
+      'work.pipe(Effect.flatMap(() => new (class { run() { return a.pipe(Effect.flatMap((x) => b(x))); } })().run()));',
     ),
     withEffect(
-      'const run = (Effect) => Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });',
+      'Effect.catchTags(work, { *Failure() { return yield* a.pipe(Effect.flatMap((x) => b(x))); } });',
     ),
+    // Only a verified handler-object position is followed: not an unrelated object, a nested
+    // object, or a getter.
+    withEffect(
+      'const handlers = { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) };',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { Failure: { nested: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) } });',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { get Failure() { return log(e).pipe(Effect.flatMap((id) => save(id))); } });',
+    ),
+  ],
+});
+
+// The report sits on the inner continuation, not on the outer step call.
+ruleTester.run('no-pipe-ladder location', requireRule('no-pipe-ladder'), {
+  invalid: [
+    {
+      code: withEffect(
+        'getUser.pipe(\n  Effect.flatMap((user) =>\n    fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(user, posts))),\n  ),\n);',
+      ),
+      // oxlint's RuleTester columns are zero-based.
+      errors: [{ column: 29, line: 4, message: ruleMessage('no-pipe-ladder') }],
+    },
+  ],
+  valid: [],
+});
+
+run('no-discarded-failure', {
+  invalid: [
+    ...stressCases(discardRows, true),
+    // R9: t3code apps/desktop/src/app/DesktopObservability.ts:291 (also a ladder).
+    withEffect(
+      'work.pipe(Effect.catch(() => refreshFileSize(fs, path).pipe(Effect.flatMap((size) => Ref.set(currentSize, size)))));',
+    ),
+    // R12: t3code packages/client-runtime/src/authorization/service.ts:204.
+    withEffect(
+      "proof.pipe(Effect.mapError(() => new ConnectionBlockedError({ reason: 'configuration', detail: 'Could not create the websocket authorization proof.' })));",
+    ),
+    // R14: t3code scripts/mock-update-server.ts:63; R21: effect-solutions update-notifier.ts:40.
+    withEffect('Effect.try({ try: () => decodeURIComponent(rawPath), catch: () => null });'),
+    withEffect("Effect.tryPromise({ try: () => readFile(file, 'utf8'), catch: () => null });"),
+    // R16: executor registry.ts:135; R17: executor executor.ts:3147.
+    withEffect('fs.stat(cacheFile).pipe(Effect.catch(() => Effect.succeed(undefined)));'),
+    withEffect('listSources.pipe(Effect.catchCause(() => Effect.succeed([])));'),
+    // R20: executor hosted-http-client.ts:144 and R26: effect ai-docs 10_creating-effects.ts:61,
+    // content-free sources (accepted limitation D).
+    withEffect(
+      "Effect.try({ try: () => new URL(value), catch: () => new HostedOutboundRequestBlocked({ url: value, reason: 'URL is invalid' }) });",
+    ),
+    withEffect(
+      'Effect.fromNullishOr(header).pipe(Effect.mapError(() => new MissingWorkspaceId()));',
+    ),
+    // R22: effect-solutions packages/cli/src/cli.ts:197 as the table quotes it, without the
+    // tapError the real site has; R25: effect HttpServerRequest.test.ts:18.
+    withEffect('main.pipe(Effect.catch(() => Effect.sync(() => process.exit(1))));'),
+    withEffect('Effect.tryPromise({ try: () => webRequest.formData(), catch: () => undefined });'),
+    // R27: effect ai-docs 01_error-handling.ts:29, only the final blanket catch reports.
+    withEffect(
+      "loadPort('invalid').pipe(Effect.catchTag('ReservedPortError', (_) => Effect.succeed(3000)), Effect.catch((_) => Effect.succeed(3000)));",
+    ),
+    // Every blanket member and handler key, data-first layouts, and function syntax.
+    withEffect('Effect.catchDefect(work, () => Effect.succeed(0));'),
+    withEffect('work.pipe(Effect.catchEager(() => Effect.succeed(0)));'),
+    withEffect('Effect.mapError(work, () => new Failure());'),
+    withEffect('Effect.catch(work, function () { return fallback; });'),
+    withEffect('Effect.matchCause(work, { onFailure: () => 0, onSuccess: (n) => n });'),
+    withEffect(
+      'work.pipe(Effect.matchEffect({ onFailure: () => Effect.succeed(0), onSuccess: Effect.succeed }));',
+    ),
+    withEffect(
+      'work.pipe(Effect.matchCauseEffect({ onFailure: () => Effect.succeed(0), onSuccess: Effect.succeed }));',
+    ),
+    withEffect('Effect.matchEager(work, { onFailure: () => 0, onSuccess: (n) => n });'),
+    withEffect('work.pipe(Effect.mapBoth({ onFailure: () => new Failure(), onSuccess: f }));'),
+    withEffect('Effect.try({ try: work, catch() { return null; } });'),
+    withEffect("Effect.try({ try: work, 'catch': () => null });"),
+    withEffect('Effect.tryPromise({ try: work, catch: () => null } satisfies Options);'),
+    // A type assertion around the handler is no escape.
+    withEffect('work.pipe(Effect.catch((() => fallback) as RecoveryHandler));'),
+    withEffect('Effect.try({ try: work, catch: (() => null) satisfies Handler });'),
+    // The last definition of the handler property is the effective one.
+    withEffect('Effect.try({ try: work, catch: (cause) => wrap(cause), catch: () => null });'),
+    // A plain parameter the body never references is unread, including one with a default, one
+    // spelled only as an object key or member property, and beside a TypeScript this parameter.
+    withEffect('work.pipe(Effect.catch((error) => fallback));'),
+    withEffect('work.pipe(Effect.mapError((error = fallback) => new Failure()));'),
+    withEffect('work.pipe(Effect.mapError((error) => new Failure({ error: true })));'),
+    withEffect('work.pipe(Effect.mapError((cause) => new Failure({ detail: state.cause })));'),
+    withEffect('Effect.catch(work, function (this: Context) { return this.fallback; });'),
+    // A name inside type syntax reads nothing at runtime.
+    withEffect('work.pipe(Effect.mapError((cause) => ({}) as { cause?: string }));'),
+    withEffect('work.pipe(Effect.mapError((error) => new Failure() as Failure<typeof error>));'),
+    // A tap after the recovery, in an enclosing pipeline, or unbound records nothing first.
+    withEffect('work.pipe(Effect.catch(() => fallback), Effect.tapError(log));'),
+    withEffect(
+      'work.pipe(Effect.tapError(log), Effect.flatMap(() => other.pipe(Effect.catch(() => fallback))));',
+    ),
+    withEffect('work.pipe(tapError(log), Effect.catch(() => fallback));'),
+    // Barrel and aliased Effect bindings.
+    "import { Effect as Fx } from 'effect';\nwork.pipe(Fx.catch(() => Fx.succeed(0)));",
+  ],
+  valid: [
+    ...stressCases(discardRows, false),
+    // Without a runtime Effect binding no call is bound: no import, type-only imports, a shadow.
+    stressSnippets.D2,
+    `import type * as Effect from 'effect/Effect';\n${stressSnippets.D2}`,
+    `import { type Effect } from 'effect';\n${stressSnippets.D2}`,
+    withEffect(`const run = (Effect) => ${stressSnippets.D2}`),
+    // R13 (t3code apps/desktop/src/settings/DesktopAppSettings.ts:409) and the other named
+    // discards (accepted limitation C).
+    withEffect(
+      'decode(raw).pipe(Effect.map(normalize), Effect.orElseSucceed(() => defaultSettings));',
+    ),
+    withEffect(
+      'work.pipe(Effect.ignore, Effect.ignoreCause, Effect.option, Effect.result, Effect.exit);',
+    ),
+    // R1, R2 (t3code apps/server/src/auth/SessionStore.ts:589), and R15: the error is read.
+    withEffect(
+      "getCounts().pipe(Effect.catch((cause) => Effect.logWarning('failed', { cause }).pipe(Effect.as(0))));",
+    ),
+    withEffect(
+      "Effect.catchCause((cause) => Effect.logError('failed').pipe(Effect.annotateLogs({ sessionId, cause })));",
+    ),
+    withEffect(
+      'Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Ref.update(state, markUnavailable));',
+    ),
+    // The other tag- or predicate-scoped members.
+    withEffect('work.pipe(Effect.catchTags({ NotFound: () => Effect.succeed(0) }));'),
+    withEffect("work.pipe(Effect.catchReason('AiError', 'RateLimit', () => Effect.succeed(0)));"),
+    withEffect('work.pipe(Effect.catchIf(isRetryable, () => Effect.succeed(0)));'),
+    withEffect('work.pipe(Effect.catchFilter(filter, () => Effect.succeed(0)));'),
+    // Recorded first by the other failure taps, through a standalone pipe, and before a match.
+    withEffect(
+      'work.pipe(Effect.tapCause(log), Effect.map(f), Effect.catchCause(() => Effect.void));',
+    ),
+    withEffect('work.pipe(Effect.tapDefect(log), Effect.catchDefect(() => Effect.void));'),
+    withEffectAndPipe('pipe(work, Effect.tapError(log), Effect.catch(() => fallback));'),
+    withEffect(
+      'work.pipe(Effect.tapError((error) => Effect.logDebug(error)), Effect.match({ onFailure: () => undefined, onSuccess: (value) => value }));',
+    ),
+    // Rest, destructured, shorthand, and computed-member reads.
+    withEffect('work.pipe(Effect.catch((...failures) => fallback));'),
+    withEffect('work.pipe(Effect.catch(([first]) => log(first)));'),
+    withEffect('work.pipe(Effect.mapError((error) => new Failure({ error })));'),
+    withEffect('work.pipe(Effect.mapError((key) => new Failure(messages[key])));'),
+    withEffect('work.pipe(Effect.mapError((cause) => wrap(cause) as Failure));'),
+    // Name matching does not model shadowing (accepted limitation F).
+    withEffect('work.pipe(Effect.catch((e) => items.map((e) => e.id)));'),
+    // A named handler, a thunk-only tryPromise, and the onSuccess handler are out of reach.
+    withEffect('work.pipe(Effect.catch(handler));'),
+    withEffect("Effect.tryPromise(() => fetch('x'));"),
+    withEffect('work.pipe(Effect.match({ onFailure: (e) => e.message, onSuccess: () => 0 }));'),
+    // A later definition, spread, or runtime-computed key replaces or may replace the handler.
+    withEffect('Effect.try({ try: work, catch: () => null, catch: (cause) => wrap(cause) });'),
+    withEffect('Effect.try({ try: work, catch: () => null, ...overrides });'),
+    withEffect('Effect.try({ try: work, catch: () => null, [key]: other });'),
+    // Only a verified options object is followed: not an unrelated object or a getter.
+    withEffect('const options = { catch: () => null };'),
+    withEffect('Effect.try({ try: work, get catch() { return () => null; } });'),
   ],
 });
 
@@ -1444,6 +1726,12 @@ const ownershipEdgeExamples = new Map<string, string>([
   [
     'no-flatmap-ladder|no-effect-ladder',
     withEffect('const program = Effect.flatten(Effect.map(Effect.succeed(1), f));'),
+  ],
+  [
+    'no-flatmap-ladder|no-pipe-ladder',
+    withEffect(
+      'const program = Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y)));',
+    ),
   ],
   [
     'no-manual-tag-check|no-effect-internal-tags',

@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { NodeLike } from './ast.js';
-import {
-  directCallOfInlineFunction,
-  functionReturnNode,
-  isFunctionLike,
-} from './effect-context.js';
+import { functionReturnNode, isFunctionLike } from './effect-context.js';
 
 vi.setConfig({ testTimeout: 1000 });
 
@@ -107,38 +103,5 @@ describe('functionReturnNode()', () => {
         range: RANGE,
       }),
     ).toBe(expr);
-  });
-});
-
-// ── directCallOfInlineFunction ──────────────────────────────────────────────
-
-describe('directCallOfInlineFunction()', () => {
-  const withParent = <T extends object>(node: T, parent: unknown): T =>
-    Object.assign(node, { parent }) as T;
-
-  it('returns the call that receives an inline function as an argument', () => {
-    const callback = { type: 'ArrowFunctionExpression', params: [], range: RANGE };
-    const call = memberCall('Effect', 'flatMap', [callback]);
-    withParent(callback, call);
-    expect(directCallOfInlineFunction(callback)).toBe(call);
-  });
-
-  it('returns null when the inline function is the callee rather than an argument', () => {
-    const callee = { type: 'ArrowFunctionExpression', params: [], range: RANGE };
-    const call = { type: 'CallExpression', callee, arguments: [], range: RANGE };
-    withParent(callee, call);
-    expect(directCallOfInlineFunction(callee)).toBeNull();
-  });
-
-  it('returns null for a function declaration', () => {
-    const declaration = { type: 'FunctionDeclaration', id: id('run'), params: [], range: RANGE };
-    withParent(declaration, memberCall('Effect', 'flatMap', [declaration]));
-    expect(directCallOfInlineFunction(declaration)).toBeNull();
-  });
-
-  it('returns null for an inline function assigned before use', () => {
-    const callback = { type: 'ArrowFunctionExpression', params: [], range: RANGE };
-    withParent(callback, { type: 'VariableDeclarator', init: callback, range: RANGE });
-    expect(directCallOfInlineFunction(callback)).toBeNull();
   });
 });

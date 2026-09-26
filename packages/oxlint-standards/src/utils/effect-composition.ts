@@ -3,20 +3,18 @@ import type { Context, ESTree } from '@oxlint/plugins';
 import {
   getCallExpressionArguments,
   getNodeField,
-  getStaticMemberCall,
+  getStringLiteralValue,
   hasSpreadArgument,
   isIdentifierName,
   isNodeLike,
+  isStringLiteral,
   type NodeLike,
   peelTransparentExpression,
   staticMemberPropertyName,
   visitSelfAndDescendants,
+  visitSelfAndDescendantsWhere,
 } from './ast.js';
-import {
-  directCallOfInlineFunction,
-  isFunctionBoundary,
-  isInlineFunction,
-} from './effect-context.js';
+import { isInlineFunction } from './effect-context.js';
 import {
   effectReturnSignatures,
   type EffectReturnSignature,
@@ -34,8 +32,7 @@ const singleItemCount = 1;
 export interface EffectCompositionFacts {
   readonly context: Context;
   readonly effectNames: ReadonlySet<string>;
-  // Local names bound to `pipe` itself, and to namespaces that expose it as `.pipe`.
-  readonly functionNamespaceNames: ReadonlySet<string>;
+  // Local names bound to `pipe` itself; `Function.pipe(...)` is recognized as a member `.pipe`.
   readonly pipeNames: ReadonlySet<string>;
 }
 
@@ -45,7 +42,6 @@ export const collectEffectCompositionFacts = (
 ): EffectCompositionFacts => ({
   context,
   effectNames: collectImportNames(program, ['effect/Effect', 'effect'], 'Effect'),
-  functionNamespaceNames: collectImportNames(program, ['effect/Function', 'effect'], 'Function'),
   pipeNames: collectNamedImportNames(program, ['effect/Function', 'effect'], 'pipe'),
 });
 
@@ -83,9 +79,6 @@ export const boundEffectCallMember = (
   facts: EffectCompositionFacts,
   node: unknown,
 ): string | null => boundNamespaceCallMember(facts.context, node, facts.effectNames);
-
-export const isBoundEffectCall = (facts: EffectCompositionFacts, node: unknown): boolean =>
-  boundEffectCallMember(facts, node) !== null;
 
 interface ResolvedCall {
   readonly args: readonly unknown[];
@@ -226,9 +219,10 @@ export const isFlatMapLadderShape = (facts: EffectCompositionFacts, node: NodeLi
   );
 };
 
-// A standalone pipe's steps follow its source argument; a member pipe's steps are all of its
-// arguments, and its source is the receiver.
-const boundPipeSteps = (
+// The whole argument list of a pipe call: a member `.pipe(...)` on any receiver, including
+// `Function.pipe(...)`, or a bound standalone `pipe(source, ...steps)`, whose first argument is
+// the source.
+export const pipeArgumentList = (
   facts: EffectCompositionFacts,
   node: unknown,
 ): readonly unknown[] | null => {
@@ -236,58 +230,31 @@ const boundPipeSteps = (
     return null;
   }
 
-  const args = getCallExpressionArguments(node);
   const callee = getNodeField(node, 'callee');
-  const namespaceCall = getStaticMemberCall(node);
-  if (
-    (isIdentifierName(callee) &&
-      isNamespaceImportReference(facts.context, callee, facts.pipeNames)) ||
-    (namespaceCall !== null &&
-      namespaceCall.propertyName === 'pipe' &&
-      isNamespaceImportReference(facts.context, namespaceCall.object, facts.functionNamespaceNames))
-  ) {
-    return args.slice(singleItemCount);
-  }
-
-  return staticMemberPropertyName(callee) === 'pipe' ? args : null;
+  const isBoundStandalonePipe =
+    isIdentifierName(callee) && isNamespaceImportReference(facts.context, callee, facts.pipeNames);
+  return isBoundStandalonePipe || staticMemberPropertyName(callee) === 'pipe'
+    ? getCallExpressionArguments(node)
+    : null;
 };
 
-// Every step must be a direct bound Effect call; opaque identifiers, bare members, and other
-// modules' combinators (Schedule, Layer, Schema) do not make a pipeline Effect control flow.
-export const isQualifyingEffectPipeline = (
-  facts: EffectCompositionFacts,
-  node: unknown,
-): boolean => {
-  const steps = boundPipeSteps(facts, node);
-  return (
-    steps !== null && steps.length > 0 && steps.every((step) => isBoundEffectCall(facts, step))
-  );
-};
-
-// no-pipe-ladder: a qualifying pipeline embedded in another qualifying pipeline's source or step,
-// or inside an inline callback of an Effect transforming combinator. Discovery stops at any other
-// function boundary, so a generator passed to Effect.gen or a resource callback is its own scope.
-// The call continues `segment`'s receiver chain when its callee is `.pipe` on that exact segment,
-// looking through type assertions and parentheses only.
-const continuesReceiverChain = (call: NodeLike, segment: NodeLike): boolean => {
-  const callee = getNodeField(call, 'callee');
-  return (
-    staticMemberPropertyName(callee) === 'pipe' &&
-    peelTransparentExpression(getNodeField(callee, 'object')) === segment
-  );
-};
-
-// Where a handler-map member takes its object of per-tag callbacks, as `[argument index, argument
-// counts of the overload that puts the map there]`, read from the pinned `Effect.d.ts`:
-// `catchTags(cases, orElse?)` | `catchTags(self, cases, orElse?)` and
-// `catchReasons(errorTag, cases, orElse?)` | `catchReasons(self, errorTag, cases, orElse?)`.
-// At each listed index the other overload takes an Effect, a tag string, or a function, so an object
-// literal there is the map.
+// Where a member takes an object of callbacks, as `[argument index, argument counts of the overload
+// that puts the object there]`, read from the pinned `Effect.d.ts`:
+// `catchTags(cases, orElse?)` | `catchTags(self, cases, orElse?)`,
+// `catchReasons(errorTag, cases, orElse?)` | `catchReasons(self, errorTag, cases, orElse?)`,
+// `match*(options)` | `match*(self, options)` and the same for `mapBoth`, and `try(options)` /
+// `tryPromise(options)`. At each listed index the other overload takes an Effect, a tag string, or a
+// function, so an object literal there is the callback object.
 /* oxlint-disable no-magic-numbers -- the layouts are overload argument positions and counts. */
-const handlerMapLayouts: ReadonlyMap<
+type CallbackObjectLayout = ReadonlyArray<readonly [index: number, counts: readonly number[]]>;
+const optionsOrSelfThenOptions: CallbackObjectLayout = [
+  [0, [1]],
+  [1, [2]],
+];
+const callbackObjectLayouts: ReadonlyMap<string, CallbackObjectLayout> = new Map<
   string,
-  ReadonlyArray<readonly [index: number, counts: readonly number[]]>
-> = new Map([
+  CallbackObjectLayout
+>([
   [
     'catchTags',
     [
@@ -302,6 +269,14 @@ const handlerMapLayouts: ReadonlyMap<
       [2, [3, 4]],
     ],
   ],
+  ['mapBoth', optionsOrSelfThenOptions],
+  ['match', optionsOrSelfThenOptions],
+  ['matchCause', optionsOrSelfThenOptions],
+  ['matchCauseEffect', optionsOrSelfThenOptions],
+  ['matchEager', optionsOrSelfThenOptions],
+  ['matchEffect', optionsOrSelfThenOptions],
+  ['try', [[0, [1]]]],
+  ['tryPromise', [[0, [1]]]],
 ]);
 /* oxlint-enable no-magic-numbers */
 
@@ -315,77 +290,189 @@ const climbTransparentWrappers = (node: NodeLike): NodeLike => {
   return current;
 };
 
-// The object literal holding an inline function as a plain or method property value. Getters and
-// setters produce the value instead of being it.
-const objectHoldingInlineFunction = (node: NodeLike): NodeLike | null => {
-  const property = getNodeField(node, 'parent');
-  const object = getNodeField(property, 'parent');
-  return isInlineFunction(node) &&
-    isNodeLike(property) &&
+interface BoundCallbackObject {
+  readonly call: NodeLike;
+  readonly member: string;
+}
+
+// The bound Effect call that takes this object literal at a verified callback-object position.
+// Any other object, including one passed elsewhere to these members, is not followed.
+export const boundCallbackObjectCall = (
+  facts: EffectCompositionFacts,
+  object: unknown,
+): BoundCallbackObject | null => {
+  if (!isNodeLike(object) || object.type !== 'ObjectExpression') {
+    return null;
+  }
+  const argument = climbTransparentWrappers(object);
+  const call = getNodeField(argument, 'parent');
+  const member = boundEffectCallMember(facts, call);
+  const layouts = member === null ? globalThis.undefined : callbackObjectLayouts.get(member);
+  const args = isNodeLike(call) ? getCallExpressionArguments(call) : [];
+  const index = args.indexOf(argument);
+  const isCallbackObject =
+    !hasSpreadArgument(args) &&
+    (layouts ?? []).some(
+      ([objectIndex, counts]) => objectIndex === index && counts.includes(args.length),
+    );
+  return isCallbackObject && member !== null && isNodeLike(call) ? { call, member } : null;
+};
+
+const isGeneratorFunction = (node: NodeLike): boolean => getNodeField(node, 'generator') === true;
+
+export const isNonGeneratorInlineFunction = (node: unknown): node is NodeLike =>
+  isInlineFunction(node) && !isGeneratorFunction(node);
+
+// An inline, non-generator function, looking through type assertions and parentheses, which do
+// not change the runtime value.
+const inlineFunctionValue = (node: unknown): NodeLike | null => {
+  const value = peelTransparentExpression(node);
+  return isNonGeneratorInlineFunction(value) ? value : null;
+};
+
+// The plain or method property whose value is this node, looking through transparent wrappers.
+// Getters and setters produce the value instead of being it.
+const propertyHoldingValue = (node: NodeLike): NodeLike | null => {
+  const holder = climbTransparentWrappers(node);
+  const property = getNodeField(holder, 'parent');
+  return isNodeLike(property) &&
     property.type === 'Property' &&
-    getNodeField(property, 'value') === node &&
-    getNodeField(property, 'kind') === 'init' &&
-    isNodeLike(object) &&
-    object.type === 'ObjectExpression'
-    ? object
+    getNodeField(property, 'value') === holder &&
+    getNodeField(property, 'kind') === 'init'
+    ? property
     : null;
 };
 
-// The bound `Effect.catchTags` / `Effect.catchReasons` call whose handler map holds this inline
-// callback. Any other object, including one passed elsewhere to these members, is not followed.
-const handlerMapCallOfInlineFunction = (
+// A property's statically known key; a computed identifier key is a runtime value.
+const staticPropertyKey = (property: unknown): string | null => {
+  const key = getNodeField(property, 'key');
+  if (getNodeField(property, 'computed') === true) {
+    return isStringLiteral(key) ? getStringLiteralValue(key) : null;
+  }
+  return isIdentifierName(key) ? key.name : getStringLiteralValue(key);
+};
+
+// The inline function that is the effective value of the named property of a callback object.
+// The last definition wins, so the search runs right to left; a later spread or runtime-computed
+// key may redefine the property, which leaves the value unknown.
+export const callbackObjectProperty = (object: unknown, key: string): NodeLike | null => {
+  const properties = isNodeLike(object) ? getNodeField(object, 'properties') : null;
+  for (const property of Array.isArray(properties) ? properties.toReversed() : []) {
+    const propertyKey = isNodeLike(property) ? staticPropertyKey(property) : null;
+    if (propertyKey === null || propertyKey === key) {
+      return propertyKey === key && getNodeField(property, 'kind') === 'init'
+        ? inlineFunctionValue(getNodeField(property, 'value'))
+        : null;
+    }
+  }
+  return null;
+};
+
+// Members whose inline callback produces the next effect or handles a failure, so the callback is
+// a scope a reader carries. Structural members (`all`, `race*`, `scoped`, `ensuring`, `fork*`,
+// `run*`) take independent effects, not continuations, and are absent on purpose.
+const stepCallbackMembers: ReadonlySet<string> = new Set([
+  'acquireRelease',
+  'acquireUseRelease',
+  'andThen',
+  'catch',
+  'catchCause',
+  'catchCauseFilter',
+  'catchCauseIf',
+  'catchDefect',
+  'catchEager',
+  'catchFilter',
+  'catchIf',
+  'catchReason',
+  'catchTag',
+  'flatMap',
+  'forEach',
+  'tap',
+  'tapCause',
+  'tapDefect',
+  'tapError',
+]);
+
+// Members whose callback object holds step callbacks as its property values.
+const stepCallbackObjectMembers: ReadonlySet<string> = new Set([
+  'catchReasons',
+  'catchTags',
+  'matchCauseEffect',
+  'matchEffect',
+]);
+
+// An inline, non-generator function passed directly to a bound step member, or held as a property
+// value of a step member's verified callback object under any key, including a computed tag.
+// Type assertions and parentheses around the function do not change which call receives it.
+export const isEffectStepCallback = (facts: EffectCompositionFacts, node: unknown): boolean => {
+  if (!isNonGeneratorInlineFunction(node)) {
+    return false;
+  }
+  const holder = climbTransparentWrappers(node);
+  const call = getNodeField(holder, 'parent');
+  if (isNodeLike(call) && getCallExpressionArguments(call).includes(holder)) {
+    const member = boundEffectCallMember(facts, call);
+    return member !== null && stepCallbackMembers.has(member);
+  }
+  const property = propertyHoldingValue(node);
+  const owner =
+    property === null ? null : boundCallbackObjectCall(facts, getNodeField(property, 'parent'));
+  return owner !== null && stepCallbackObjectMembers.has(owner.member);
+};
+
+// `map` transforms a value without running an effect, and a named or value argument adds a step
+// but no closure, so only these members with an inline function continue inside a closure.
+const continuationMembers: ReadonlySet<string> = new Set(['andThen', 'flatMap', 'tap']);
+
+const isEffectContinuationClosure = (
   facts: EffectCompositionFacts,
-  node: NodeLike,
+  node: unknown,
+): node is NodeLike => {
+  const member = boundEffectCallMember(facts, node);
+  return (
+    member !== null &&
+    continuationMembers.has(member) &&
+    isNodeLike(node) &&
+    getCallExpressionArguments(node).some((argument) => inlineFunctionValue(argument) !== null)
+  );
+};
+
+// A generator body is a fresh linear scope, a declaration or class body is not evaluated in place,
+// and another step callback is judged on its own, so a pyramid reports each offending level once.
+const isLadderSearchBoundary = (facts: EffectCompositionFacts, node: NodeLike): boolean =>
+  node.type === 'FunctionDeclaration' ||
+  node.type === 'ClassDeclaration' ||
+  node.type === 'ClassExpression' ||
+  (node.type === 'FunctionExpression' && isGeneratorFunction(node)) ||
+  isEffectStepCallback(facts, node);
+
+// no-pipe-ladder: the first continuation closure in a step callback's body, or null. Non-Effect
+// callbacks such as an array `map` are searched through: they add a scope rather than reset one.
+export const firstLadderContinuation = (
+  facts: EffectCompositionFacts,
+  callback: NodeLike,
 ): NodeLike | null => {
-  const object = objectHoldingInlineFunction(node);
-  const argument = object === null ? null : climbTransparentWrappers(object);
-  const call = getNodeField(argument, 'parent');
-  const member = boundEffectCallMember(facts, call);
-  const layouts = member === null ? globalThis.undefined : handlerMapLayouts.get(member);
-  const args = isNodeLike(call) ? getCallExpressionArguments(call) : [];
-  const index = args.indexOf(argument);
-  const isHandlerMap =
-    !hasSpreadArgument(args) &&
-    (layouts ?? []).some(
-      ([mapIndex, counts]) => mapIndex === index && counts.includes(args.length),
+  let found: NodeLike | null = null;
+  visitSelfAndDescendantsWhere(
+    getNodeField(callback, 'body'),
+    (node) => found === null && !isLadderSearchBoundary(facts, node),
+    (node) => {
+      if (found === null && isEffectContinuationClosure(facts, node)) {
+        found = node;
+      }
+    },
+  );
+  return found;
+};
+
+// A call one of whose inline callbacks is a step callback holding a closure ladder: no-pipe-ladder
+// reports that nesting at the inner continuation.
+export const holdsClosureLadder = (facts: EffectCompositionFacts, node: NodeLike): boolean =>
+  getCallExpressionArguments(node).some((argument) => {
+    const callback = inlineFunctionValue(argument);
+    return (
+      callback !== null &&
+      isEffectStepCallback(facts, callback) &&
+      firstLadderContinuation(facts, callback) !== null
     );
-  return isHandlerMap && isNodeLike(call) ? call : null;
-};
-
-interface NestingWalk {
-  // The outermost call of the pipeline's own direct `.pipe().pipe()` chain seen so far.
-  readonly segment: NodeLike;
-  readonly edge: boolean | null;
-}
-
-// Decides the nesting edge at one ancestor, or leaves `edge` null to keep walking outward. Only a
-// direct receiver-chain segment is chaining; a pipeline inside any other receiver expression, such
-// as a conditional, is nested in that pipeline's source.
-const nestingEdgeAt = (
-  facts: EffectCompositionFacts,
-  ancestor: NodeLike,
-  segment: NodeLike,
-): NestingWalk => {
-  if (isFunctionBoundary(ancestor)) {
-    const call =
-      directCallOfInlineFunction(ancestor) ?? handlerMapCallOfInlineFunction(facts, ancestor);
-    return { edge: call !== null && isTransformingCombinatorCall(facts, call), segment };
-  }
-  if (ancestor.type === 'CallExpression' && continuesReceiverChain(ancestor, segment)) {
-    // The chain's outermost qualifying segment reports the edge once.
-    return isQualifyingEffectPipeline(facts, ancestor)
-      ? { edge: false, segment }
-      : { edge: null, segment: ancestor };
-  }
-  return { edge: isQualifyingEffectPipeline(facts, ancestor) ? true : null, segment };
-};
-
-export const isNestedEffectPipeline = (facts: EffectCompositionFacts, node: NodeLike): boolean => {
-  let walk: NestingWalk = { edge: null, segment: node };
-  let ancestor = isQualifyingEffectPipeline(facts, node) ? getNodeField(node, 'parent') : null;
-  while (walk.edge === null && isNodeLike(ancestor)) {
-    walk = nestingEdgeAt(facts, ancestor, walk.segment);
-    ancestor = getNodeField(ancestor, 'parent');
-  }
-  return walk.edge === true;
-};
+  });

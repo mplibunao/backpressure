@@ -835,179 +835,208 @@ export const replaySuites = [
       ),
     ],
   }),
+  // Case source: docs/analysis/effect-nesting-rules-first-principles.md, section 5 (S and R rows).
   suite({
     ruleName: 'no-pipe-ladder',
     requiredBranchIds: [
-      'valid.no-runtime-effect-binding',
-      'invalid.catch-tags-handler-map',
-      'invalid.catch-reasons-handler-map',
-      'valid.unverified-object-callbacks',
-      'invalid.conditional-receiver-nesting',
-      'valid.direct-receiver-chains',
       'no-pipe-ladder.invalid-reference',
       'no-pipe-ladder.valid-reference',
-      'invalid.pipeline-in-transforming-callback',
-      'invalid.pipeline-in-data-first-callback',
-      'invalid.bound-pipe-source-nesting',
-      'invalid.pipeline-in-step-expression',
-      'invalid.barrel-pipe-binding',
-      'invalid.function-namespace-pipe',
-      'invalid.chained-inner-segment-reports-once',
-      'invalid.distinct-deeper-edges',
-      'valid.schedule-pipe-in-retry',
-      'valid.layer-and-schema-pipes',
-      'valid.generator-tail',
-      'valid.generator-in-transforming-callback',
-      'valid.top-level-named-program',
-      'valid.chained-member-pipes',
-      'valid.opaque-steps',
-      'valid.unbound-or-shadowed-pipe',
-      'valid.resource-callback',
+      'invalid.continuation-spellings',
+      'invalid.reports-inner-continuation',
+      'invalid.ladder-in-generator',
+      'invalid.ladder-in-loop-body',
+      'invalid.three-deep-reports-once',
+      'invalid.each-offending-level',
+      'invalid.through-array-callback',
+      'invalid.handler-callbacks',
+      'invalid.handler-object-values',
+      'invalid.resource-callback',
+      'invalid.reference-repo-ladders',
+      'invalid.wrapped-callbacks-and-computed-tags',
+      'invalid.barrel-alias',
+      'valid.no-runtime-effect-binding',
+      'valid.value-map-in-callback',
+      'valid.flat-chain-and-adorned-step',
+      'valid.one-step-handlers',
+      'valid.structural-positions',
+      'valid.generator-frame',
+      'valid.opaque-continuation',
+      'valid.former-pipeline-nesting',
+      'valid.non-step-members',
+      'valid.search-boundaries',
+      'valid.unverified-callback-objects',
     ],
     invalid: [
       scenario(
-        'inline callbacks in a catchTags handler map nest a pipeline in both layouts',
+        'S2: a continuation inside a flatMap callback',
         withEffect(
-          'Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });\nwork.pipe(Effect.catchTags({ Failure: () => fallback.pipe(Effect.map(f)) }));\nwork.pipe(Effect.catchTags({ Failure() { return fallback.pipe(Effect.map(f)); } }));\nEffect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) } satisfies Handlers);\n',
+          'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save({ user, posts })))));\n',
         ),
-        { branchIds: ['invalid.catch-tags-handler-map'], expectedDiagnostics: 4 },
+        { branchIds: ['no-pipe-ladder.invalid-reference'] },
       ),
       scenario(
-        'inline callbacks in a catchReasons handler map nest a pipeline in both layouts',
+        'S3 and S4: data-first and standalone pipe spellings, and inline andThen',
+        withEffectAndPipe(
+          'Effect.flatMap(getUser, (user) => Effect.flatMap(fetchPosts(user.id), (posts) => save({ user, posts })));\npipe(getUser, Effect.flatMap((user) => pipe(fetchPosts(user.id), Effect.tap((posts) => log(posts)))));\nEffect.forEach(items, (item) => Effect.andThen(load(item), (x) => save(x)));\n',
+        ),
+        { branchIds: ['invalid.continuation-spellings'], expectedDiagnostics: 3 },
+      ),
+      scenario(
+        'the report sits on the inner continuation',
         withEffect(
-          "Effect.catchReasons(work, 'AiError', { RateLimit: () => fallback.pipe(Effect.map(f)) });\nwork.pipe(Effect.catchReasons('AiError', { RateLimit: () => fallback.pipe(Effect.map(f)) }));\n",
+          'getUser.pipe(\n  Effect.flatMap((user) =>\n    fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(user, posts))),\n  ),\n);\n',
         ),
-        { branchIds: ['invalid.catch-reasons-handler-map'], expectedDiagnostics: 2 },
+        { branchIds: ['invalid.reports-inner-continuation'], expectedLine: 4 },
       ),
       scenario(
-        'a pipeline inside a conditional receiver is nested in the outer source, not chained',
-        withEffect('(cond ? other.pipe(Effect.map(f)) : fallback).pipe(Effect.catch(recover));\n'),
-        { branchIds: ['invalid.conditional-receiver-nesting'] },
-      ),
-      scenario(
-        'inline callback of an Effect transforming combinator nests a qualifying pipeline',
+        'S7: a ladder inside a generator that could have held it',
         withEffect(
-          'work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f), Effect.catch(g))));\n',
+          "Effect.gen(function* () { return yield* getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.tap(() => log('done'))))); });\n",
         ),
-        {
-          branchIds: [
-            'invalid.pipeline-in-transforming-callback',
-            'no-pipe-ladder.invalid-reference',
-          ],
-        },
+        { branchIds: ['invalid.ladder-in-generator'] },
       ),
       scenario(
-        'data-first transforming callback nests a qualifying pipeline',
-        withEffect('Effect.flatMap(work, (x) => other.pipe(Effect.map(f), Effect.catch(g)));\n'),
-        { branchIds: ['invalid.pipeline-in-data-first-callback'] },
-      ),
-      scenario(
-        'bound standalone pipe whose source is a qualifying pipeline',
-        withEffectAndPipe('pipe(pipe(work, Effect.map(f)), Effect.catch(g));\n'),
-        { branchIds: ['invalid.bound-pipe-source-nesting'] },
-      ),
-      scenario(
-        'qualifying pipeline inside another pipeline step expression',
-        withEffect('work.pipe(Effect.zip(other.pipe(Effect.map(f))));\n'),
-        { branchIds: ['invalid.pipeline-in-step-expression'] },
-      ),
-      scenario(
-        'pipe bound through the effect barrel',
-        `${effectImportLine}import { pipe } from 'effect';\npipe(pipe(work, Effect.map(f)), Effect.catch(g));\n`,
-        { branchIds: ['invalid.barrel-pipe-binding'] },
-      ),
-      scenario(
-        'pipe bound through an effect/Function namespace alias',
-        `${effectImportLine}import * as Fn from 'effect/Function';\nFn.pipe(Fn.pipe(work, Effect.map(f)), Effect.catch(g));\n`,
-        { branchIds: ['invalid.function-namespace-pipe'] },
-      ),
-      scenario(
-        'a chained inner segment is the same edge as its outer segment',
+        'S11: a ladder in a forEach body',
         withEffect(
-          'work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f)).pipe(Effect.catch(g))));\n',
+          'Effect.forEach(items, (item) => fetchPosts(item).pipe(Effect.flatMap((posts) => save({ item, posts }))));\n',
         ),
-        { branchIds: ['invalid.chained-inner-segment-reports-once'] },
+        { branchIds: ['invalid.ladder-in-loop-body'] },
       ),
       scenario(
-        'each deeper pipeline is a distinct nesting edge',
+        'S14: three deep reports once because the middle body holds only an opaque andThen',
         withEffect(
-          'first.pipe(Effect.flatMap(() => second.pipe(Effect.flatMap(() => third.pipe(Effect.map(f))))));\n',
+          'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts).pipe(Effect.andThen(log(user)))))));\n',
         ),
-        { branchIds: ['invalid.distinct-deeper-edges'], expectedDiagnostics: 2 },
+        { branchIds: ['invalid.three-deep-reports-once'] },
+      ),
+      scenario(
+        'each offending level reports once: a pyramid, a nested handler judged on its own, and two continuations in one callback',
+        withEffect(
+          'a.pipe(Effect.flatMap((x) => b.pipe(Effect.flatMap((y) => c.pipe(Effect.flatMap((z) => d(x, y, z)))))));\nwork.pipe(Effect.flatMap((x) => other(x).pipe(Effect.catch((e) => log(e).pipe(Effect.flatMap(() => fallback(x)))))));\nEffect.flatMap((x) => a.pipe(Effect.tap((y) => f(y)), Effect.flatMap((z) => g(x, z))));\n',
+        ),
+        { branchIds: ['invalid.each-offending-level'], expectedDiagnostics: 4 },
+      ),
+      scenario(
+        'S16: an array callback adds a scope rather than resetting one',
+        withEffect(
+          'getUser.pipe(Effect.flatMap((user) => Effect.all(items.map((item) => fetchPosts(item).pipe(Effect.flatMap((posts) => save({ user, posts })))))));\n',
+        ),
+        { branchIds: ['invalid.through-array-callback'] },
+      ),
+      scenario(
+        'R18 and R9: continuations inside catchTag, catch, tapError, and catchCause handlers',
+        withEffect(
+          "work.pipe(Effect.catchTag('StorageError', (err) => resolveCapture.pipe(Effect.flatMap((c) => c.captureException(Cause.fail(err))), Effect.flatMap((traceId) => Effect.fail(new InternalError({ traceId }))))));\nwork.pipe(Effect.catch(() => refreshFileSize(fs, path).pipe(Effect.flatMap((size) => Ref.set(currentSize, size)))));\nwork.pipe(Effect.tapError((e) => report(e).pipe(Effect.tap((id) => log(id)))));\nwork.pipe(Effect.catchCause((cause) => Effect.flatMap(Effect.log(cause), () => fallback)));\n",
+        ),
+        { branchIds: ['invalid.handler-callbacks'], expectedDiagnostics: 4 },
+      ),
+      scenario(
+        'catchTags, catchReasons, matchEffect, and matchCauseEffect handler-object values',
+        withEffect(
+          "Effect.catchTags(work, { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) } satisfies Handlers);\nwork.pipe(Effect.catchTags({ Failure(e) { return log(e).pipe(Effect.andThen(() => save(e))); } }));\nEffect.catchReasons(work, 'AiError', { RateLimit: (r) => wait(r).pipe(Effect.flatMap(() => retry(r))) });\nwork.pipe(Effect.matchEffect({ onFailure: (e) => log(e).pipe(Effect.flatMap(() => fallback)), onSuccess: Effect.succeed }));\nEffect.matchCauseEffect(work, { onFailure: Effect.failCause, onSuccess: (a) => save(a).pipe(Effect.tap((id) => log(id))) });\n",
+        ),
+        { branchIds: ['invalid.handler-object-values'], expectedDiagnostics: 5 },
+      ),
+      scenario(
+        'R23: effect-solutions acquireRelease release callback, and an acquireUseRelease use callback',
+        withEffect(
+          "Effect.acquireRelease(launch, (browser) => Effect.promise(() => browser.close()).pipe(Effect.tap(() => Console.log('Browser closed'))));\nEffect.acquireUseRelease(open, (handle) => read(handle).pipe(Effect.flatMap((data) => parse(data))), close);\n",
+        ),
+        { branchIds: ['invalid.resource-callback'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'R6, R8, and R24: t3code and effect test ladders',
+        withEffect(
+          "child.exitCode.pipe(Effect.flatMap((exitCode) => Ref.get(closedRef).pipe(Effect.flatMap((closed) => { if (closed) { return Effect.void; } return report(exitCode); }))));\ngetRefreshInterval.pipe(Effect.flatMap((refreshInterval) => Effect.raceFirst(tick, change).pipe(Effect.flatMap((intervalElapsed) => refresh(intervalElapsed, refreshInterval)))));\nEffect.forEach(values, (value) => encode(value).pipe(Effect.flatMap((bytes) => Effect.yieldNow.pipe(Effect.as(bytes)))), { concurrency: 'unbounded' });\n",
+        ),
+        { branchIds: ['invalid.reference-repo-ladders'], expectedDiagnostics: 3 },
+      ),
+      scenario(
+        'type assertions around either callback, and a computed tag key, are no escape',
+        withEffect(
+          'work.pipe(Effect.flatMap(((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(user, posts)))) as Handler));\nwork.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap(((posts) => save(user, posts)) satisfies Next))));\nEffect.catchTags(work, { [tag]: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) });\n',
+        ),
+        { branchIds: ['invalid.wrapped-callbacks-and-computed-tags'], expectedDiagnostics: 3 },
+      ),
+      scenario(
+        'barrel alias binding',
+        "import { Effect as Fx } from 'effect';\nwork.pipe(Fx.flatMap((x) => other(x).pipe(Fx.flatMap((y) => save(x, y)))));\n",
+        { branchIds: ['invalid.barrel-alias'] },
       ),
     ],
     valid: [
       scenario(
-        'without a runtime Effect binding no step is bound: no import, or type-only imports',
-        "work.pipe(Effect.flatMap(() => other.pipe(Effect.map(f))));\nimport type * as Effect from 'effect/Effect';\nimport { type Effect as Fx } from 'effect';\nwork.pipe(Fx.flatMap(() => other.pipe(Fx.map(f))));\n",
+        'without a runtime Effect binding no call is bound: no import, type-only imports, or a shadow',
+        "getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts)))));\nimport type * as Effect from 'effect/Effect';\nimport { type Effect as Fx } from 'effect';\nwork.pipe(Fx.flatMap((x) => other(x).pipe(Fx.flatMap((y) => save(y)))));\n",
         { branchIds: ['valid.no-runtime-effect-binding'] },
       ),
       scenario(
-        'callbacks outside a verified handler-map position stop discovery',
+        'S1, S10, and R19: a value map inside a step callback',
         withEffect(
-          'const handlers = { Failure: () => fallback.pipe(Effect.map(f)) };\nEffect.catchTags(work, { Failure: { nested: () => fallback.pipe(Effect.map(f)) } });\nEffect.catchTags(work, { get Failure() { return fallback.pipe(Effect.map(f)); } });\nEffect.catchTags(work, handlers, { log: () => fallback.pipe(Effect.map(f)) });\nEffect.match(work, { onFailure: () => fallback.pipe(Effect.map(f)), onSuccess: g });\nconst run = (Effect) => Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });\n',
+          'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.map((posts) => ({ user, posts })))));\nEffect.forEach(items, (item) => fetchPosts(item).pipe(Effect.map((posts) => posts.length)));\nEffect.forEach(rows, (row) => describeAuthMethodsForRow(row).pipe(Effect.map((authMethods) => rowToIntegration(row, authMethods))));\n',
         ),
-        { branchIds: ['valid.unverified-object-callbacks'] },
+        { branchIds: ['valid.value-map-in-callback', 'no-pipe-ladder.valid-reference'] },
       ),
       scenario(
-        'direct receiver chains stay chains through a non-qualifying segment or a type assertion',
+        'S5 and S6: a flat chain and an adorned yield* step',
         withEffect(
-          'work.pipe(Effect.map(f)).pipe(g).pipe(Effect.catch(h));\n(work.pipe(Effect.map(f)) as Work).pipe(Effect.catch(g));\n',
+          "getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id)), Effect.tap((posts) => log(posts)), Effect.map((posts) => posts.length));\nEffect.gen(function* () { const posts = yield* fetchPosts(id).pipe(Effect.timeout('1 second'), Effect.mapError((cause) => new NotFound(cause))); return posts; });\n",
         ),
-        { branchIds: ['valid.direct-receiver-chains'] },
+        { branchIds: ['valid.flat-chain-and-adorned-step'] },
       ),
       scenario(
-        'effect-solutions: a Schedule pipe inside Effect.retry',
-        `${effectImportLine}import * as Schedule from 'effect/Schedule';\nEffect.retry(work, Schedule.exponential('1 second').pipe(Schedule.both(Schedule.recurs(3))));\n`,
-        { branchIds: ['valid.schedule-pipe-in-retry', 'no-pipe-ladder.valid-reference'] },
-      ),
-      scenario(
-        'nested Layer and Schema pipes',
-        "import * as Layer from 'effect/Layer';\nimport * as Schema from 'effect/Schema';\nLive.pipe(Layer.provide(Base.pipe(Layer.provide(Config))));\nSchema.Struct({ name: Schema.String.pipe(Schema.minLength(1)) }).pipe(Schema.brand('User'));\n",
-        { branchIds: ['valid.layer-and-schema-pipes'] },
-      ),
-      scenario(
-        'a flat Effect tail inside a generator',
+        'S8, S9, R1, R10, and R15: one-step handlers and flat finalizers',
         withEffect(
-          'Effect.gen(function* () { const user = yield* load.pipe(Effect.map(f), Effect.catch(g)); return user; });\n',
+          "work.pipe(Effect.catch((error) => log(error).pipe(Effect.as(0))));\nwork.pipe(Effect.catchTag('NotFound', (error) => log(error).pipe(Effect.andThen(Effect.succeed(0)))));\ngetCounts().pipe(Effect.catch((cause) => Effect.logWarning('failed', { cause }).pipe(Effect.as({ threadCount: 0, projectCount: 0 }))));\nEffect.acquireRelease(Effect.void, () => stopAll().pipe(Effect.andThen(Queue.shutdown(q)), Effect.andThen(close), Effect.ignore));\nEffect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Ref.update(state, markUnavailable).pipe(Effect.andThen(publishHealth)));\n",
         ),
-        { branchIds: ['valid.generator-tail'] },
+        { branchIds: ['valid.one-step-handlers'] },
       ),
       scenario(
-        'a generator passed to Effect.gen is its own scope inside a transforming callback',
+        'S12 and R3: structural positions, even around a continuation',
         withEffect(
-          'work.pipe(Effect.flatMap(() => Effect.gen(function* () { return yield* other.pipe(Effect.map(f)); })));\n',
+          "Effect.all([work.pipe(Effect.map(String)), work.pipe(Effect.mapError((cause) => new NotFound(cause)))], { concurrency: 'unbounded' });\nEffect.all([collect(child.stdout), collect(child.stderr), child.exitCode.pipe(Effect.map(Number))], { concurrency: 'unbounded' });\nEffect.all([a.pipe(Effect.flatMap((x) => b(x)))]);\nEffect.forkChild(a.pipe(Effect.flatMap((x) => b(x))));\nEffect.scoped(a.pipe(Effect.flatMap((x) => b(x))));\n",
         ),
-        { branchIds: ['valid.generator-in-transforming-callback'] },
+        { branchIds: ['valid.structural-positions'] },
       ),
       scenario(
-        'a returned top-level named program',
-        withEffect('const program = work.pipe(Effect.map(f), Effect.catch(g));\n'),
-        { branchIds: ['valid.top-level-named-program'] },
-      ),
-      scenario(
-        'chained member pipes belong to effecttsgo/unnecessary-pipe-chain',
-        withEffect('work.pipe(Effect.map(f)).pipe(Effect.catch(g));\n'),
-        { branchIds: ['valid.chained-member-pipes'] },
-      ),
-      scenario(
-        'opaque and bare-member steps are not Effect control flow',
-        withEffectAndPipe(
-          'pipe(pipe(work, f), g);\nwork.pipe(Effect.flatMap(() => other.pipe(Effect.asVoid)));\n',
-        ),
-        { branchIds: ['valid.opaque-steps'] },
-      ),
-      scenario(
-        'an unbound or locally shadowed pipe is not the Effect pipe',
+        'S13: a generator body is a fresh linear frame',
         withEffect(
-          'pipe(pipe(work, Effect.map(f)), Effect.catch(g));\nconst run = (pipe) => pipe(pipe(work, Effect.map(f)), Effect.catch(g));\n',
+          'getUser.pipe(Effect.flatMap((user) => Effect.gen(function* () { const posts = yield* fetchPosts(user.id); yield* save(posts); return posts; })));\ngetUser.pipe(Effect.flatMap((user) => Effect.gen(function* () { return yield* fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts))); })));\n',
         ),
-        { branchIds: ['valid.unbound-or-shadowed-pipe'] },
+        { branchIds: ['valid.generator-frame'] },
       ),
       scenario(
-        'a resource callback stops relationship discovery',
-        withEffect('Effect.acquireRelease(open, (handle) => close(handle).pipe(Effect.map(f)));\n'),
-        { branchIds: ['valid.resource-callback'] },
+        'S15, R5, R7, and R11: opaque or value continuations and a single closure',
+        withEffect(
+          'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap(save))));\nproviderSource.refresh.pipe(Effect.flatMap((nextProvider) => correlate(providerSource, nextProvider).pipe(Effect.flatMap(syncProvider))));\nEffect.flatMap(Clock.currentTimeMillis, (now) => { const recorded = record(now); return revalidate(recorded).pipe(Effect.as(snapshot.value)); });\ncurrent.pipe(Effect.flatMap((previous) => previous === stage ? Effect.void : Ref.set(lastStage, stage).pipe(Effect.andThen(reportProgress(stage)))));\n',
+        ),
+        { branchIds: ['valid.opaque-continuation'] },
+      ),
+      scenario(
+        'shapes the pipeline-nesting contract reported: one-step pipelines, argument positions, nested pipes, and adornment-only handler maps',
+        `${effectAndPipeImportLines}import * as Schedule from 'effect/Schedule';\nwork.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f), Effect.catch(g))));\nwork.pipe(Effect.zip(other.pipe(Effect.map(f))));\npipe(pipe(work, Effect.map(f)), Effect.catch(g));\nEffect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });\n(cond ? other.pipe(Effect.map(f)) : fallback).pipe(Effect.catch(recover));\nEffect.retry(work, Schedule.exponential('1 second').pipe(Schedule.both(Schedule.recurs(3))));\n`,
+        { branchIds: ['valid.former-pipeline-nesting'] },
+      ),
+      scenario(
+        'map, sync, match, and non-Effect callbacks own no ladder',
+        withEffect(
+          'a.pipe(Effect.flatMap((x) => b(x)));\nitems.map((item) => load(item).pipe(Effect.flatMap((x) => save(x))));\nwork.pipe(Effect.map((x) => other(x).pipe(Effect.flatMap((y) => save(y)))));\nEffect.sync(() => a.pipe(Effect.flatMap((x) => b(x))));\nEffect.match(work, { onFailure: (e) => log(e).pipe(Effect.flatMap(() => fallback)), onSuccess: f });\n',
+        ),
+        { branchIds: ['valid.non-step-members'] },
+      ),
+      scenario(
+        'function declarations, class bodies, and generator methods stop the search',
+        withEffect(
+          'work.pipe(Effect.flatMap(() => { function helper() { return a.pipe(Effect.flatMap((x) => b(x))); } return helper(); }));\nwork.pipe(Effect.flatMap(() => new (class { run() { return a.pipe(Effect.flatMap((x) => b(x))); } })().run()));\nEffect.catchTags(work, { *Failure() { return yield* a.pipe(Effect.flatMap((x) => b(x))); } });\n',
+        ),
+        { branchIds: ['valid.search-boundaries'] },
+      ),
+      scenario(
+        'callbacks outside a verified handler-object position are not step callbacks',
+        withEffect(
+          'const handlers = { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) };\nEffect.catchTags(work, { Failure: { nested: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) } });\nEffect.catchTags(work, { get Failure() { return log(e).pipe(Effect.flatMap((id) => save(id))); } });\n',
+        ),
+        { branchIds: ['valid.unverified-callback-objects'] },
       ),
     ],
   }),
@@ -1814,6 +1843,7 @@ export const replaySuites = [
       'valid.let-initializer-flatmap',
       'valid.error-owner-data-first-nesting',
       'valid.error-owner-ladder',
+      'valid.closure-ladder-owned-by-pipe-ladder',
     ],
     invalid: [
       scenario(
@@ -1846,6 +1876,13 @@ export const replaySuites = [
         'expression statement flatMap ladder is outside scope',
         withEffect('Effect.flatMap(program, () => Effect.flatMap(other, f));\n'),
         { branchIds: ['valid.expression-statement-flatmap', 'no-flatmap-ladder.valid-reference'] },
+      ),
+      scenario(
+        'no-pipe-ladder reports a closure ladder in a const initializer or return',
+        withEffect(
+          'const program = Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y)));\nfunction run() { return Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y))); }\n',
+        ),
+        { branchIds: ['valid.closure-ladder-owned-by-pipe-ladder'] },
       ),
       scenario(
         'let initializer flatMap ladder is outside scope',
@@ -2465,6 +2502,193 @@ export const replaySuites = [
         'a type-only Effect import',
         "import type * as Effect from 'effect/Effect';\nEffect.fail('boom');\n",
         { branchIds: ['valid.type-only-import'] },
+      ),
+    ],
+  }),
+  // Case source: docs/analysis/effect-nesting-rules-first-principles.md, section 5 (D and R rows).
+  suite({
+    ruleName: 'no-discarded-failure',
+    requiredBranchIds: [
+      'no-discarded-failure.invalid-reference',
+      'no-discarded-failure.valid-reference',
+      'invalid.blind-catch',
+      'invalid.blind-cause-recovery',
+      'invalid.blind-map-error',
+      'invalid.blind-try-handler',
+      'invalid.blind-on-failure',
+      'invalid.data-first-and-function-syntax',
+      'invalid.unread-plain-parameters',
+      'invalid.names-in-type-syntax',
+      'invalid.not-recorded-first',
+      'invalid.final-blanket-after-tag',
+      'invalid.wrapped-and-redefined-handlers',
+      'invalid.barrel-alias',
+      'valid.no-runtime-effect-binding',
+      'valid.named-discards',
+      'valid.error-read',
+      'valid.scoped-members',
+      'valid.recorded-first',
+      'valid.structured-reads',
+      'valid.name-match-shadowing',
+      'valid.out-of-reach',
+      'valid.replaced-handler-property',
+      'valid.unverified-options-objects',
+    ],
+    invalid: [
+      scenario(
+        'D2: a constant fallback over every failure',
+        withEffect('work.pipe(Effect.catch(() => Effect.succeed(0)));\n'),
+        { branchIds: ['no-discarded-failure.invalid-reference'] },
+      ),
+      scenario(
+        'D1, D12, R9, R16, and R22: blind catch handlers',
+        withEffect(
+          "work.pipe(Effect.catch(() => log('failed')));\nwork.pipe(Effect.catch((_) => Effect.succeed(0)));\nwork.pipe(Effect.catch(() => refreshFileSize(fs, path).pipe(Effect.flatMap((size) => Ref.set(currentSize, size)))));\nfs.stat(cacheFile).pipe(Effect.catch(() => Effect.succeed(undefined)));\nmain.pipe(Effect.catch(() => Effect.sync(() => process.exit(1))));\n",
+        ),
+        { branchIds: ['invalid.blind-catch'], expectedDiagnostics: 5 },
+      ),
+      scenario(
+        'D7 and R17: blind cause and defect recovery',
+        withEffect(
+          'work.pipe(Effect.catchCause(() => Effect.void));\nlistSources.pipe(Effect.catchCause(() => Effect.succeed([])));\nwork.pipe(Effect.catchDefect(() => Effect.succeed(0)));\nwork.pipe(Effect.catchEager(() => Effect.succeed(0)));\n',
+        ),
+        { branchIds: ['invalid.blind-cause-recovery'], expectedDiagnostics: 4 },
+      ),
+      scenario(
+        'D8, R12, and R26: blind mapError',
+        withEffect(
+          "work.pipe(Effect.mapError(() => new NotFound()));\nproof.pipe(Effect.mapError(() => new ConnectionBlockedError({ reason: 'configuration', detail: 'Could not create the websocket authorization proof.' })));\nEffect.fromNullishOr(header).pipe(Effect.mapError(() => new MissingWorkspaceId()));\n",
+        ),
+        { branchIds: ['invalid.blind-map-error'], expectedDiagnostics: 3 },
+      ),
+      scenario(
+        'D10, R14, R20, R21, and R25: blind try and tryPromise handlers in every property spelling',
+        withEffect(
+          "Effect.tryPromise({ try: () => fetch('x'), catch: () => new NotFound() });\nEffect.try({ try: () => decodeURIComponent(rawPath), catch: () => null });\nEffect.try({ try: () => new URL(value), catch: () => new HostedOutboundRequestBlocked({ url: value, reason: 'URL is invalid' }) });\nEffect.tryPromise({ try: () => readFile(file, 'utf8'), catch: () => null });\nEffect.tryPromise({ try: () => webRequest.formData(), catch: () => undefined });\nEffect.try({ try: work, catch() { return null; } });\nEffect.try({ try: work, 'catch': () => null });\nEffect.tryPromise({ try: work, catch: () => null } satisfies Options);\n",
+        ),
+        { branchIds: ['invalid.blind-try-handler'], expectedDiagnostics: 8 },
+      ),
+      scenario(
+        'D11: blind onFailure handlers of every match member and mapBoth',
+        withEffect(
+          'work.pipe(Effect.match({ onFailure: () => null, onSuccess: (n) => n }));\nEffect.matchCause(work, { onFailure: () => 0, onSuccess: (n) => n });\nwork.pipe(Effect.matchEffect({ onFailure: () => Effect.succeed(0), onSuccess: Effect.succeed }));\nwork.pipe(Effect.matchCauseEffect({ onFailure: () => Effect.succeed(0), onSuccess: Effect.succeed }));\nEffect.matchEager(work, { onFailure: () => 0, onSuccess: (n) => n });\nwork.pipe(Effect.mapBoth({ onFailure: () => new Failure(), onSuccess: f }));\n',
+        ),
+        { branchIds: ['invalid.blind-on-failure'], expectedDiagnostics: 6 },
+      ),
+      scenario(
+        'data-first layouts and function syntax',
+        withEffect(
+          'Effect.mapError(work, () => new Failure());\nEffect.catch(work, function () { return fallback; });\n',
+        ),
+        { branchIds: ['invalid.data-first-and-function-syntax'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'a plain parameter the body never references, including a default, a key-only spelling, and a this parameter',
+        withEffect(
+          'work.pipe(Effect.catch((error) => fallback));\nwork.pipe(Effect.mapError((error = fallback) => new Failure()));\nwork.pipe(Effect.mapError((error) => new Failure({ error: true })));\nwork.pipe(Effect.mapError((cause) => new Failure({ detail: state.cause })));\nEffect.catch(work, function (this: Context) { return this.fallback; });\n',
+        ),
+        { branchIds: ['invalid.unread-plain-parameters'], expectedDiagnostics: 5 },
+      ),
+      scenario(
+        'a name inside type syntax reads nothing at runtime',
+        withEffect(
+          'work.pipe(Effect.mapError((cause) => ({}) as { cause?: string }));\nwork.pipe(Effect.mapError((error) => new Failure() as Failure<typeof error>));\n',
+        ),
+        { branchIds: ['invalid.names-in-type-syntax'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'a tap after the recovery, in an enclosing pipeline, or unbound records nothing first',
+        withEffect(
+          'work.pipe(Effect.catch(() => fallback), Effect.tapError(log));\nwork.pipe(Effect.tapError(log), Effect.flatMap(() => other.pipe(Effect.catch(() => fallback))));\nwork.pipe(tapError(log), Effect.catch(() => fallback));\n',
+        ),
+        { branchIds: ['invalid.not-recorded-first'], expectedDiagnostics: 3 },
+      ),
+      scenario(
+        'R27: only the final blanket catch after a catchTag reports',
+        withEffect(
+          "loadPort('invalid').pipe(Effect.catchTag('ReservedPortError', (_) => Effect.succeed(3000)), Effect.catch((_) => Effect.succeed(3000)));\n",
+        ),
+        { branchIds: ['invalid.final-blanket-after-tag'] },
+      ),
+      scenario(
+        'a type assertion around the handler is no escape, and the last handler definition wins',
+        withEffect(
+          'work.pipe(Effect.catch((() => fallback) as RecoveryHandler));\nEffect.try({ try: work, catch: (() => null) satisfies Handler });\nEffect.try({ try: work, catch: (cause) => wrap(cause), catch: () => null });\n',
+        ),
+        { branchIds: ['invalid.wrapped-and-redefined-handlers'], expectedDiagnostics: 3 },
+      ),
+      scenario(
+        'barrel alias binding',
+        "import { Effect as Fx } from 'effect';\nwork.pipe(Fx.catch(() => Fx.succeed(0)));\n",
+        { branchIds: ['invalid.barrel-alias'] },
+      ),
+    ],
+    valid: [
+      scenario(
+        'non-Effect file, type-only imports, or a shadowing parameter bind no call',
+        "work.pipe(Effect.catch(() => Effect.succeed(0)));\nimport type * as Effect from 'effect/Effect';\nimport { type Effect as Fx } from 'effect';\nwork.pipe(Fx.catch(() => Fx.succeed(0)));\n",
+        { branchIds: ['valid.no-runtime-effect-binding'] },
+      ),
+      scenario(
+        'D3 and R13: named discards',
+        withEffect(
+          'work.pipe(Effect.orElseSucceed(() => 0));\ndecode(raw).pipe(Effect.map(normalize), Effect.orElseSucceed(() => defaultSettings));\nwork.pipe(Effect.ignore, Effect.ignoreCause, Effect.option, Effect.result, Effect.exit);\n',
+        ),
+        { branchIds: ['valid.named-discards'] },
+      ),
+      scenario(
+        'D4, D9, D13, R1, R2, and R15: the handler reads its error',
+        withEffect(
+          "work.pipe(Effect.catch((error) => log(error).pipe(Effect.as(0))));\nwork.pipe(Effect.mapError((cause) => new NotFound(cause)));\nwork.pipe(Effect.catch(({ message }) => log(message)));\ngetCounts().pipe(Effect.catch((cause) => Effect.logWarning('failed', { cause }).pipe(Effect.as(0))));\nEffect.catchCause((cause) => Effect.logError('failed').pipe(Effect.annotateLogs({ sessionId, cause })));\nEffect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Ref.update(state, markUnavailable));\n",
+        ),
+        { branchIds: ['valid.error-read'] },
+      ),
+      scenario(
+        'D5: tag- and predicate-scoped members state what they absorb',
+        withEffect(
+          "work.pipe(Effect.catchTag('NotFound', () => Effect.succeed(0)));\nwork.pipe(Effect.catchTags({ NotFound: () => Effect.succeed(0) }));\nwork.pipe(Effect.catchReason('AiError', 'RateLimit', () => Effect.succeed(0)));\nwork.pipe(Effect.catchIf(isRetryable, () => Effect.succeed(0)));\nwork.pipe(Effect.catchFilter(filter, () => Effect.succeed(0)));\n",
+        ),
+        { branchIds: ['valid.scoped-members'] },
+      ),
+      scenario(
+        'D6 and D14: recorded first by a failure tap in the pipe, a standalone pipe, or the data-first source',
+        withEffectAndPipe(
+          'work.pipe(Effect.tapError((error) => log(error)), Effect.catch(() => Effect.succeed(0)));\nEffect.catch(Effect.tapError(work, (e) => log(e)), () => Effect.succeed(0));\nwork.pipe(Effect.tapCause(log), Effect.map(f), Effect.catchCause(() => Effect.void));\nwork.pipe(Effect.tapDefect(log), Effect.catchDefect(() => Effect.void));\npipe(work, Effect.tapError(log), Effect.catch(() => fallback));\nwork.pipe(Effect.tapError((error) => Effect.logDebug(error)), Effect.match({ onFailure: () => undefined, onSuccess: (value) => value }));\n',
+        ),
+        { branchIds: ['valid.recorded-first', 'no-discarded-failure.valid-reference'] },
+      ),
+      scenario(
+        'rest, destructured, shorthand, and computed-member reads',
+        withEffect(
+          'work.pipe(Effect.catch((...failures) => fallback));\nwork.pipe(Effect.catch(([first]) => log(first)));\nwork.pipe(Effect.mapError((error) => new Failure({ error })));\nwork.pipe(Effect.mapError((key) => new Failure(messages[key])));\n',
+        ),
+        { branchIds: ['valid.structured-reads'] },
+      ),
+      scenario(
+        'name matching counts a same-named inner binding as a read',
+        withEffect('work.pipe(Effect.catch((e) => items.map((e) => e.id)));\n'),
+        { branchIds: ['valid.name-match-shadowing'] },
+      ),
+      scenario(
+        'a named handler, a thunk-only tryPromise, and an onSuccess handler are out of reach',
+        withEffect(
+          "work.pipe(Effect.catch(handler));\nEffect.tryPromise(() => fetch('x'));\nwork.pipe(Effect.match({ onFailure: (e) => e.message, onSuccess: () => 0 }));\n",
+        ),
+        { branchIds: ['valid.out-of-reach'] },
+      ),
+      scenario(
+        'a later definition, spread, or runtime-computed key replaces or may replace the handler',
+        withEffect(
+          'Effect.try({ try: work, catch: () => null, catch: (cause) => wrap(cause) });\nEffect.try({ try: work, catch: () => null, ...overrides });\nEffect.try({ try: work, catch: () => null, [key]: other });\n',
+        ),
+        { branchIds: ['valid.replaced-handler-property'] },
+      ),
+      scenario(
+        'only a verified options object is followed',
+        withEffect(
+          'const options = { catch: () => null };\nEffect.try({ try: work, get catch() { return () => null; } });\n',
+        ),
+        { branchIds: ['valid.unverified-options-objects'] },
       ),
     ],
   }),
@@ -3327,12 +3551,31 @@ const overlapLadderOwnershipCases = (): readonly PresetOwnershipCase[] => [
   },
   {
     label: 'preset duplicate-intent ownership: const flatMap with a nested flatMap callback',
-    nonOwners: ['no-effect-ladder', 'no-effect-call-in-effect-arg'],
+    nonOwners: ['no-effect-ladder', 'no-effect-call-in-effect-arg', 'no-pipe-ladder'],
     owner: 'no-flatmap-ladder',
     source: withEffect(
       'const program = Effect.flatMap(program, () => Effect.flatMap(other, f));\n',
     ),
     sourceFileName: 'callback-flatmap-ladder.ts',
+  },
+  {
+    label: 'preset duplicate-intent ownership: const flatMap holding a closure ladder',
+    nonOwners: ['no-flatmap-ladder', 'no-effect-call-in-effect-arg'],
+    owner: 'no-pipe-ladder',
+    source: withEffect(
+      'const program = Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y)));\n',
+    ),
+    sourceFileName: 'const-closure-ladder.ts',
+  },
+  {
+    label:
+      'preset duplicate-intent ownership: returned data-first flatMap holding a closure ladder',
+    nonOwners: ['no-flatmap-ladder', 'no-effect-call-in-effect-arg'],
+    owner: 'no-pipe-ladder',
+    source: withEffect(
+      'function run() { return Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y))); }\n',
+    ),
+    sourceFileName: 'returned-closure-ladder.ts',
   },
   {
     label: 'preset duplicate-intent ownership: flatMap-flatMap expression statement',
@@ -3401,11 +3644,11 @@ const overlapSideEffectOwnershipCases = (): readonly PresetOwnershipCase[] => [
     sourceFileName: 'effect-bind-nested-effect.ts',
   },
   {
-    label: 'preset duplicate-intent ownership: pipeline nested in a transforming callback',
+    label: 'preset duplicate-intent ownership: continuation nested in a flatMap callback',
     nonOwners: ['no-effect-call-in-effect-arg', 'no-flatmap-ladder'],
     owner: 'no-pipe-ladder',
     source: withEffect(
-      'work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f), Effect.catch(g))));\n',
+      'work.pipe(Effect.flatMap((x) => other(x).pipe(Effect.flatMap((y) => save(x, y)))));\n',
     ),
     sourceFileName: 'pipe-in-callback.ts',
   },
@@ -3479,11 +3722,11 @@ const overlapPipeAliasNestedCases = (): readonly PresetOwnershipCase[] => [
     sourceFileName: 'pipe-alias-escape-hatch.ts',
   },
   {
-    label: 'preset duplicate-intent ownership: const pipe ladder alias with Effect steps',
+    label: 'preset duplicate-intent ownership: const pipe alias holding a closure ladder',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-pipe-ladder',
     source: withEffectAndPipe(
-      'const run = pipe(pipe(Effect.succeed(1), Effect.map(f)), Effect.catch(g));\n',
+      'const run = pipe(Effect.succeed(1), Effect.flatMap((x) => pipe(load(x), Effect.flatMap((y) => save(x, y)))));\n',
     ),
     sourceFileName: 'const-pipe-ladder-alias.ts',
   },

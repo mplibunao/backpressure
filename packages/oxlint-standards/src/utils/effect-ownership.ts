@@ -12,6 +12,7 @@ import {
 } from './ast.js';
 import {
   collectEffectCompositionFacts,
+  holdsClosureLadder,
   isDataFirstTransformingNesting,
   isEffectLadder,
   isSourceOfEnclosingDataFirstNesting,
@@ -150,6 +151,12 @@ export const ownershipRegistry: readonly OwnershipEdge[] = [
     owners: ['no-effect-call-in-effect-arg', 'no-effect-ladder'],
     shape: 'data-first transformation whose source is an Effect call',
     ownsShape: isDataFirstTransformingNesting,
+  },
+  {
+    reporter: 'no-flatmap-ladder',
+    owners: ['no-pipe-ladder'],
+    shape: 'flatMap whose step callback holds an inline continuation closure',
+    ownsShape: holdsClosureLadder,
   },
   {
     reporter: 'no-manual-tag-check',

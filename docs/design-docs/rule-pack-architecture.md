@@ -4,13 +4,13 @@ Status: current-state design for the catalog after the Effect v4 alignment. [ADR
 
 ## Purpose
 
-`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The catalog has 43 custom rules (23 linteffect ports and 20 executor or recon reimplementations), the built-in oxlint settings of its config fragments, and 113 delegated `@effect/tsgo` checks that the Effect preset configures. `src/rule-manifest.ts` is the source of truth for these counts, and the generated `docs/references/rules.md` lists what each preset turns on.
+`@mplibunao/oxlint-standards` ships opinionated oxlint JS-plugin presets. The catalog has 44 custom rules (22 linteffect ports and 22 reimplementations of executor, recon, or linteffect ideas), the built-in oxlint settings of its config fragments, and 113 delegated `@effect/tsgo` checks that the Effect preset configures. `src/rule-manifest.ts` is the source of truth for these counts, and the generated `docs/references/rules.md` lists what each preset turns on.
 
 ## Source model
 
 The package combines four rule sources:
 
-- **linteffect port:** GritQL rules from `@catenarycloud/linteffect` v0.0.6, translated into ESTree visitors with MIT attribution. The manifest represents all 50 source rules, ports 23, and drops 27 by disposition, keeping each dropped row and its vendored fixtures as history.
+- **linteffect port:** GritQL rules from `@catenarycloud/linteffect` v0.0.6, translated into ESTree visitors with MIT attribution. The manifest represents all 50 source rules, ports 22, reimplements 1 with different semantics, and drops 27 by disposition, keeping each dropped row and its vendored fixtures as history.
 - **executor reimplementations:** structural rule ideas rewritten as this package's own oxlint rules. Executor remains an idea source, not a dependency.
 - **recon additions:** current Effect ecosystem patterns, including `prefer-effect-fn`, `no-barrel-import`, and `no-string-error-channel`.
 - **built-in oxlint rules:** the config fragments set built-in rules explicitly, and `generalPreset` enables built-in `no-nested-ternary` instead of shipping the dropped blanket `no-ternary` rule.
