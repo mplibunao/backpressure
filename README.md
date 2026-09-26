@@ -13,6 +13,8 @@ The completed setup plan lives at `docs/exec-plans/completed/backpressure-monore
 
 Release readiness, including the unified Changesets publish flow and npm Trusted Publishing setup, lives at `docs/references/release-readiness.md`.
 
-`packages/oxlint-standards` contains the group-3 Effect catalog substrate: 47 linteffect v0.0.6 rules are ported, 21 structural executor/recon rules are reimplemented, 1 built-in default is enabled, 13 checks are delegated to `@effect/language-service`, and 3 source rules are explicitly dropped. The package validates implemented rules through RuleTester, real oxlint fixture replay, and packed-consumer smoke testing.
+`packages/oxlint-standards` is the oxlint rule pack: custom rules, presets, and config fragments, including the Effect preset. See [its README](packages/oxlint-standards/README.md) for setup. `docs/references/rules.md` lists every rule each preset and config turns on.
 
-`packages/tsconfig` contains the second v0 package. It publishes `base.json`, `server.json`, and `browser.json` strict TypeScript presets with `exactOptionalPropertyTypes` enabled, validates the package tarball allowlist, and smoke-tests all three exported configs from a packed throwaway TypeScript consumer.
+`packages/tsconfig` holds the strict shared TypeScript configs and the Effect overlays. See [its README](packages/tsconfig/README.md).
+
+`packages/rules-viewer` is a private, unpublished local viewer for the rule list; `pnpm rules:view` starts it.

@@ -41,7 +41,7 @@ Both overlays share the same plugin options, generated from one graded policy. T
 | `oxlint-tsgolint` | `7.0.2001` | not used |
 | `effect` | `4.0.0-rc.115` | `4.0.0-rc.115` |
 
-`@effect/tsgo` patches only the exact targets it supports. With another oxlint version the patch fails, and Effect linting fails with it.
+`@effect/tsgo` 0.45.0 also supports `vite-plus` 0.3.1 with oxlint 1.81.0; the table lists the pair this repository tests. It patches only the exact targets it supports. `vite-plus` 0.3.3 (oxlint 1.83.0) and the `1.0.0-rc` releases (oxlint 1.85.0) are not supported: the patch fails, and oxlint then reports `Unknown plugin: 'effecttsgo'`. Upgrade `@effect/tsgo` and `vite-plus` together.
 
 ### Default route: patched oxlint
 
@@ -59,6 +59,8 @@ Both overlays share the same plugin options, generated from one graded policy. T
 4. Compose the full `effectPreset` from `@mplibunao/oxlint-standards` into your lint config. It includes the delegated rules, their severities, and the test-file scope.
 
 An unpatched oxlint rejects that config with an unknown `effecttsgo` plugin error, so a missing patch fails the lint instead of passing silently.
+
+The patched linter loads each tsconfig with TypeScript 7's rules, even when your project compiles with TypeScript 6. A tsconfig it cannot load shows up as a `typescript(tsconfig-error)` diagnostic, and that project's files get no Effect diagnostics. Options that TypeScript 7 rejects cause it, and so does a missing `types` package: install `bun-types` when you extend `server.json`.
 
 ### Fallback route: patched TypeScript 7
 

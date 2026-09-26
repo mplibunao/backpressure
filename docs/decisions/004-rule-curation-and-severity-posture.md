@@ -29,4 +29,4 @@ A first pass set every rule to `error`. In practice that read as noise and left 
 
 ## Supersession (2026-09-25)
 
-[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the language-service-specific wording above. Curation and graded severity stay in force. Type-aware or already-covered Effect checks are delegated to `@effect/tsgo` rather than `@effect/language-service`. That cutover is not yet implemented.
+[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the language-service-specific wording above. Curation and graded severity stay in force. Type-aware or already-covered Effect checks are delegated to `@effect/tsgo` rather than `@effect/language-service`. The cutover was implemented on 2026-09-26.

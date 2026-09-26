@@ -2,7 +2,7 @@
 
 Status: accepted (2026-05-30) · Authored ahead of build because it carries settled
 decisions that Items 5/10/14/15 of the setup plan depend on.
-[ADR-007](../decisions/007-tsgo-delegation-and-overlap.md) records the intended Effect v4 alignment; that behavior is not yet implemented.
+[ADR-007](../decisions/007-tsgo-delegation-and-overlap.md) owns the Effect preset's `@effect/tsgo` delegation.
 
 ## Purpose
 
@@ -21,7 +21,7 @@ The axis that keeps presets coherent is
 **which stack a rule presumes**, not which file type it inspects.
 
 "React" is a file-type axis, and it is the wrong one: our React rules presume Effect
-+ `@effect-atom`, so naming the preset `react` would silently hand Effect opinions to
+and its Atom modules, so naming the preset `react` would silently hand Effect opinions to
 any React project. The same trap exists for any rule whose name reads generic but
 whose opinion is stack-specific.
 
@@ -33,7 +33,7 @@ stack-neutral). This doc applies that principle to the rest of the catalog.
 
 | Preset | Presumes | Holds | Notes |
 |---|---|---|---|
-| `effect` | Effect (gen-first) | Composition-shape + structural Effect rules | The core opinion, with carve-outs confined here. |
+| `effect` | Effect (gen-first) | Composition-shape + structural Effect rules, plus every `@effect/tsgo` check at a pinned severity | The core opinion, with carve-outs confined here. A full config: it carries the `effecttsgo` plugin, the type-aware option, and a test-file override, and it requires the patched-oxlint route. |
 | `effect-react` | Effect and its Atom modules in React | Atom/state/render rules (`no-react-state`, `no-render-side-effects`, `no-atom-registry-effect-sync`) | Effect's opinion extended into React. |
 | `general` | Nothing (stack-neutral) | Universal TS/JS hygiene (`no-double-cast`, `no-ts-nocheck`, `no-nested-ternary`, `prevent-dynamic-imports`) | Safe for any project, Effect or not. |
 | `boundaries` | Monorepo layout | Cross-package/layer import rules (`no-cross-package-relative-imports`) | Architecture rules that are not stack rules. |
@@ -67,6 +67,8 @@ Every rule is classified on one axis:
 - **ungated / broad-firing**: no gate, matches a generic construct. Fires anywhere. This is the bite risk.
 
 ### Findings (50 linteffect rules, audited 2026-05-30)
+
+This audit is historical: it classified the source rules as they stood on 2026-05-30. The Effect v4 alignment later dropped `no-family-collection-read` and `no-effect-as`, and the implemented gate recognizes the v4 Atom packages (`@effect/atom-react`, `@effect/atom-solid`, and `@effect/atom-vue`) instead of `@effect-atom`.
 
 - **45 / 50** are import-gated on `"effect"` in the source GritQL. Safe for taxonomy purposes; realized gate strength follows the Item 6 import-guard decision.
 - **`no-family-collection-read`** gates on `@effect-atom`. Safe in non-atom projects.

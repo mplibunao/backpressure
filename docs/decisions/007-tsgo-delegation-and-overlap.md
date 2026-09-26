@@ -23,7 +23,7 @@ An AST check may overlap a `@effect/tsgo` diagnostic when it is stricter or when
 
 Private, unpublished tool packages are allowed in v0. `packages/rules-viewer` is one such package: `"private": true`, no `version` field, and no publish or pack scripts. Published package names stay under `@mplibunao/*`.
 
-This decision is accepted. The shipping package still follows ADR 001's language-service recommendation until the alignment cutover lands.
+This decision is accepted and implemented. Since 2026-09-26 the package ships the `@effect/tsgo` settings in place of ADR 001's language-service recommendation.
 
 ## Consequences
 
@@ -32,4 +32,4 @@ This decision is accepted. The shipping package still follows ADR 001's language
 - Positive: a private viewer can exist without becoming a published package.
 - Negative: Effect consumers must install `@effect/tsgo` and run the patch; an unpatched oxlint fails the Effect preset.
 - Negative: two routes exist, and using both duplicates reports.
-- Follow-up: land the alignment through the active execution ledger. Current-state design docs keep describing the language-service setup until that cutover lands.
+- Follow-up: every `@effect/tsgo` bump re-grades its rules and updates the supported version matrix.

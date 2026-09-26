@@ -25,4 +25,4 @@ The rule pack does not depend on Rika's package. Rika may be used only as a refe
 
 ## Supersession (2026-09-25)
 
-[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the language-service delegation and overlap clauses above. The preset remains gen-first and v4-primary, and it still ships structural oxlint rules. Type-aware Effect checks are delegated to `@effect/tsgo` instead of `@effect/language-service`. The overlap rule is owned by [ADR-007](007-tsgo-delegation-and-overlap.md). That cutover is not yet implemented.
+[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the language-service delegation and overlap clauses above. The preset remains gen-first and v4-primary, and it still ships structural oxlint rules. Type-aware Effect checks are delegated to `@effect/tsgo` instead of `@effect/language-service`. The overlap rule is owned by [ADR-007](007-tsgo-delegation-and-overlap.md). The cutover was implemented on 2026-09-26.

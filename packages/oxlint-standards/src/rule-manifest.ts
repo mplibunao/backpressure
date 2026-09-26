@@ -913,7 +913,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'An immediately invoked inline function whose body or parameters contain another immediately invoked inline function, such as nested arrow IIFEs, in a file that imports Effect.',
   }),
   sourceRule({
     name: 'no-atom-registry-effect-sync',
@@ -929,7 +929,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect-react'),
-    note: 'Retargeted to the v4 Atom module, effect/unstable/reactivity in the pinned rc.115 and effect/reactivity later. Reports each Effect-returning Atom.get, set, update, modify, or refresh call that runs synchronously inside an inline Effect.sync callback. Registry-instance calls are synchronous in v4, so the name-based atomRegistry branch is gone.',
+    note: "An Effect-returning call to the v4 Atom module's get, set, update, modify, or refresh inside an inline Effect.sync callback, which builds an Effect that never runs; synchronous AtomRegistry instance methods are fine.",
   }),
   sourceRule({
     name: 'no-branch-in-object',
@@ -945,7 +945,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port over Option.match and Match.value branches. The upstream Either.match branch is gone because v4 has no Either module.',
+    note: 'An Option.match or Match.value decision written inside an object literal.',
   }),
   droppedRule({
     name: 'no-call-tower',
@@ -970,7 +970,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port. Atom.set and Reactivity.invalidate steps resolve through the v4 reactivity modules; the v3 atom-react package and effect/Reactivity no longer count.',
+    note: 'An Effect.all array used to run state-changing steps in order, such as Atom.set or Reactivity.invalidate calls with concurrency 1 or a discarded asVoid result.',
   }),
   droppedRule({
     name: 'no-effect-as',
@@ -1007,7 +1007,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'Any call to Effect.bind, the builder-style do notation.',
   }),
   sourceRule({
     name: 'no-effect-call-in-effect-arg',
@@ -1023,7 +1023,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Narrowed to data-first transforming nesting: a bound v4 transforming combinator (map, flatMap, andThen, tap, flatten, and the verified catch*/zip* members) whose first argument is itself a direct Effect call. Runners, forks, acquireRelease, scoped, and ensuring are never the reported outer call, and a data-last call whose first argument is an Effect continuation is valid. Defers to no-effect-ladder and to an enclosing call that reports the same nesting chain through the ownership registry.',
+    note: 'A data-first transforming call (map, flatMap, andThen, tap, flatten, catch*, or zip*) whose source argument is itself an Effect call, such as Effect.map(Effect.succeed(1), f); runners, forks, and resource helpers such as acquireRelease, scoped, and ensuring may take an Effect.',
   }),
   droppedRule({
     name: 'no-effect-do',
@@ -1059,7 +1059,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Narrowed to deep first-argument chains in const or return positions whose outer call satisfies the data-first transforming contract. It does not ban runners, forks, or resource helpers. Error-level owner that no-effect-call-in-effect-arg and no-flatmap-ladder defer to.',
+    note: 'A const or returned data-first transforming call whose source nests further Effect calls, so the chain reads from the innermost call outward; it takes precedence over no-effect-call-in-effect-arg and no-flatmap-ladder.',
   }),
   droppedRule({
     name: 'no-effect-never',
@@ -1096,7 +1096,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Narrowed to the value slot of a bound Effect.as, the only argument data-last and the second data-first, holding a reviewed side-effect call that runs when the Effect is built. The data-first source argument, function values, and the v3 zipRight are out of scope. Atom calls use the v4 Atom module.',
+    note: 'A side-effect call in the value slot of Effect.as, which runs once when the Effect is built instead of when it runs; pure values and function values are fine.',
   }),
   droppedRule({
     name: 'no-effect-succeed-variable',
@@ -1163,7 +1163,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Warns on nested flatMap logic in callback and const or return shapes that the two error-level owners, no-effect-ladder and no-effect-call-in-effect-arg, do not already report; it never suppresses them.',
+    note: 'A flatMap nested inside a flatMap callback, or flatten over map, in shapes the two error-level ladder rules do not already report.',
   }),
   sourceRule({
     name: 'no-fromnullable-nullish-coalesce',
@@ -1179,7 +1179,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Retargeted from the v3 Option.fromNullable to exactly two v4 forms: Option.fromNullishOr(value ?? null) and Option.fromUndefinedOr(value ?? undefined) with the global undefined. No autofix: dropping ?? undefined turns a null into Some(null). The removed v3 name belongs to tsgo outdated-api.',
+    note: 'Option.fromNullishOr(value ?? null) and Option.fromUndefinedOr(value ?? undefined), where the fallback is redundant or changes how null is treated; there is no autofix because dropping ?? undefined turns a null into Some(null).',
   }),
   droppedRule({
     name: 'no-if-statement',
@@ -1204,7 +1204,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'An inline function that is called immediately, in a file that imports Effect.',
   }),
   droppedRule({
     name: 'no-inline-runtime-provide',
@@ -1241,7 +1241,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'Effect or Stream work sequenced inside a Match.value pipeline branch or an Option.match callback, such as Effect.flatMap in a branch; returning a plain Effect.succeed is fine.',
   }),
   droppedRule({
     name: 'no-match-void-branch',
@@ -1267,7 +1267,7 @@ export const ruleManifest = [
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Source-fixture-faithful structural port with RuleTester and replay coverage.',
+    note: 'A type assertion used as a const initializer, such as const user = data as User, in a file that imports Effect; as const is fine.',
   }),
   droppedRule({
     name: 'no-naked-object-state-update',
@@ -1313,7 +1313,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'Any call to Option.as.',
   }),
   sourceRule({
     name: 'no-option-boolean-normalization',
@@ -1329,7 +1329,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'An Option.match whose onSome returns value === true and whose onNone returns false.',
   }),
   sourceRule({
     name: 'no-pipe-ladder',
@@ -1345,7 +1345,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: "Narrowed to qualifying Effect nesting: a pipeline whose steps are all direct bound Effect calls, embedded in another qualifying pipeline's source or step or inside an inline callback of an Effect transforming combinator. Standalone pipes count only when bound to pipe from effect/Function or the effect barrel. Chained .pipe(a).pipe(b) is owned by effecttsgo/unnecessary-pipe-chain.",
+    note: 'An Effect pipeline, with every step an Effect call, nested in another Effect pipeline or in the callback of a transforming combinator such as Effect.flatMap; nested Schedule, Layer, and Schema pipes are fine, and chained .pipe(a).pipe(b) belongs to effecttsgo/unnecessary-pipe-chain.',
   }),
   sourceRule({
     name: 'no-react-state',
@@ -1361,7 +1361,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'ungated-broad',
     collections: defaultCollectionsForDomain('effect-react'),
-    note: 'Bans five hooks: useEffect, useReducer, useContext, useCallback, and useSyncExternalStore, as bare or member calls. useState is allowed for state local to one component, per the PA-3 amendment; the rule does not infer whether a useState value is shared. Kept ungated because it runs only where effect-react is enabled.',
+    note: 'The React hooks useEffect, useReducer, useContext, useCallback, and useSyncExternalStore, called bare or as members; useState stays allowed for state local to one component, and the rule cannot tell whether that state is shared.',
   }),
   sourceRule({
     name: 'no-render-side-effects',
@@ -1377,7 +1377,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect-react'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'A Match.value(...).pipe(...) with Match.when or Match.orElse steps used as a statement, so its branches run for their side effects during render.',
   }),
   droppedRule({
     name: 'no-return-in-arrow',
@@ -1413,7 +1413,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-callee',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Narrowed from every return null in an Effect-importing file to return null whose nearest function is a generator owned by Effect.gen or Effect.fn, plus a bound Effect.succeed(null). React components and nullable boundary helpers stay allowed; fnUntraced is outside the settled scope. Warn: returning null from Effect is a house-style preference.',
+    note: 'A return null inside an Effect.gen or Effect.fn generator, and Effect.succeed(null); React components and nullable boundary helpers are fine.',
   }),
   droppedRule({
     name: 'no-runtime-runfork',
@@ -1460,7 +1460,7 @@ export const ruleManifest = [
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Source-fixture-faithful structural port with RuleTester and replay coverage.',
+    note: 'Any switch statement in a file that imports Effect.',
   }),
   droppedRule({
     name: 'no-ternary',
@@ -1485,7 +1485,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester coverage and preset assignment.',
+    note: 'A try statement with a catch clause in a file that imports Effect; try/finally is fine.',
   }),
   sourceRule({
     name: 'no-unknown-boolean-coercion-helper',
@@ -1501,7 +1501,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural port with RuleTester and replay coverage.',
+    note: "A typeof value === 'boolean' check in a file that also has a Match.orElse(() => null) fallback.",
   }),
   droppedRule({
     name: 'no-wrapgraphql-catchall',
@@ -1528,7 +1528,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'stack-neutral',
     collections: defaultCollectionsForDomain('general'),
-    note: 'Scenario-covered structural port with RuleTester and replay coverage.',
+    note: 'Any dynamic import() expression.',
   }),
   droppedRule({
     name: 'warn-effect-sync-wrapper',
@@ -1565,7 +1565,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Executor-derived structural nullish predicate rule.',
+    note: 'A one-parameter function that only returns a nullish comparison of its parameter, whether declared, assigned to a variable, or passed to .filter, in a file that imports Effect.',
   }),
   sourceRule({
     name: 'prefer-effect-fn',
@@ -1581,7 +1581,7 @@ export const ruleManifest = [
     testSource: 'scenario-only',
     gating: 'effect-callee',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Recon-derived gen-first rule: a named function that only returns Effect.gen should become Effect.fn or Effect.fnUntraced. Overlaps effecttsgo/effect-fn-opportunity, which stays on at its generated severity: on the patched oxlint route that rule reports these wrappers only when the discovered tsconfig.json has no extends, so under the shipped overlay setup this AST check is what reports them.',
+    note: 'A named function whose only job is to return Effect.gen; it overlaps effecttsgo/effect-fn-opportunity, which on the patched oxlint route reports these wrappers only when the nearest tsconfig.json has no extends.',
   }),
   sourceRule({
     name: 'no-barrel-import',
@@ -1597,7 +1597,7 @@ export const ruleManifest = [
     testSource: 'scenario-only',
     gating: 'ungated-broad',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'effect-smol scenario port: named and namespace value imports from effect only.',
+    note: "A runtime named or namespace import from the effect barrel, such as import { Effect } from 'effect'; type-only and subpath imports are fine.",
   }),
   sourceRule({
     name: 'no-inline-schema-compile',
@@ -1613,7 +1613,7 @@ export const ruleManifest = [
     testSource: 't3code',
     gating: 'effect-callee',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Narrowed to a v4 Schema decoder or encoder factory, inside a function, whose schema argument is a direct Schema.*(...) construction. The v4 parser cache is keyed by schema AST, so decoding a hoisted schema inline is allowed; only the rebuilt schema is flagged. A schema first assigned to a local is not tracked. Schema.is and asserts are outside this policy. Warn, as t3code runs it: the smell is a cache miss.',
+    note: 'A Schema decoder or encoder factory inside a function whose schema argument is built inline with a Schema constructor call, so each call rebuilds the schema and can miss the parser cache; decoding a hoisted schema is fine.',
   }),
   sourceRule({
     name: 'no-cross-package-relative-imports',
@@ -1629,7 +1629,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'boundary',
     collections: defaultCollectionsForDomain('boundaries'),
-    note: 'Executor-derived cross-package relative import rule.',
+    note: 'A relative import that crosses from one package under apps, examples, or packages into another.',
   }),
   sourceRule({
     name: 'no-redundant-primitive-cast',
@@ -1645,7 +1645,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'stack-neutral',
     collections: defaultCollectionsForDomain('general'),
-    note: 'Executor-derived primitive as-cast rule.',
+    note: 'An as string, as number, or as boolean assertion on an identifier or member expression, outside config and tooling files.',
   }),
   sourceRule({
     name: 'no-effect-escape-hatch',
@@ -1661,7 +1661,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-callee',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Executor-derived ban on bound Effect.die and orDie references, calls or not, outside test files. The v3-only dieMessage and orDieWith are not matched. A justified inline disable marks a truly unrecoverable failure; consumer overrides can exempt a file.',
+    note: 'Effect.die and Effect.orDie, called or passed as a value, outside test files.',
   }),
   sourceRule({
     name: 'no-double-cast',
@@ -1677,7 +1677,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'stack-neutral',
     collections: defaultCollectionsForDomain('general'),
-    note: 'Executor-derived double cast rule.',
+    note: 'A cast through any or unknown, such as value as unknown as User, outside config and tooling files, unless a lint-allow-double-cast comment gives the reason.',
   }),
   sourceRule({
     name: 'no-ts-nocheck',
@@ -1693,7 +1693,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'stack-neutral',
     collections: defaultCollectionsForDomain('general'),
-    note: 'Executor-derived ts-nocheck rule.',
+    note: 'A ts-nocheck directive anywhere in a file.',
   }),
   builtInRule({
     name: 'no-nested-ternary',
@@ -1718,7 +1718,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: 'Any JSON.parse call in a file that imports Effect.',
   }),
   sourceRule({
     name: 'prefer-schema-inferred-types',
@@ -1734,7 +1734,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: 'An interface or object type alias named like a schema in the same file, such as type User beside UserSchema, instead of a type derived from that schema.',
   }),
   sourceRule({
     name: 'no-promise-catch',
@@ -1750,7 +1750,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: 'A .catch(...) call in a file that imports Effect, other than Effect.catch.',
   }),
   sourceRule({
     name: 'no-promise-reject',
@@ -1766,7 +1766,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: "Promise.reject(...) and calls to a Promise executor's reject parameter, in a file that imports Effect.",
   }),
   sourceRule({
     name: 'no-instanceof-error',
@@ -1782,7 +1782,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: 'An instanceof Error check in a file that imports Effect.',
   }),
   sourceRule({
     name: 'no-instanceof-tagged-error',
@@ -1798,7 +1798,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: 'An instanceof check against a class whose name ends in Error, other than Error itself, in a file that imports Effect.',
   }),
   sourceRule({
     name: 'no-manual-tag-check',
@@ -1814,7 +1814,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: "Narrowed to comparisons: a _tag equality with a static _tag read on either side, or a literal '_tag' in presence test; plain reads are allowed. Comparisons against imported Effect data-module tags are owned by no-effect-internal-tags. Deliberate house deviation from effect-solutions, which compares error.reason._tag by hand (04-services-and-layers.md:115); the fix names Effect.catchTag, catchTags, Match.tag, and Effect.catchReason.",
+    note: "A hand-written _tag comparison, such as error._tag === 'NotFound' or '_tag' in value; reading _tag without branching is fine, and the rule deliberately departs from effect-solutions, which compares reason tags by hand.",
   }),
   sourceRule({
     name: 'no-effect-internal-tags',
@@ -1830,7 +1830,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Reports a _tag comparison against a v4 data tag of an imported module: Option Some/None, Exit and Result Success/Failure, and Cause reason Fail/Die/Interrupt. The v3 Either module, the v3 Cause combinator tags, and Result Left/Right are not v4 representations.',
+    note: "A _tag comparison against a v4 data tag of an imported Effect module: Option Some or None, Exit or Result Success or Failure, or a Cause reason's Fail, Die, or Interrupt.",
   }),
   sourceRule({
     name: 'no-unknown-error-message',
@@ -1846,7 +1846,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Rescoped to caught-input provenance: bindings of native catch clauses and of the catch handler passed directly to a bound Effect.try or Effect.tryPromise, resolved by scope rather than by variable name. Same-binding Error-instance, object-with-message, and primitive guards in an if or conditional consequent or an && right side allow the read; flow-sensitive narrowing beyond that is not modeled.',
+    note: 'Reading .message, calling String(), or destructuring message on a value caught by a catch clause or by an Effect.try or Effect.tryPromise catch handler, unless a guard on the same binding proves its shape first.',
   }),
   sourceRule({
     name: 'no-string-error-channel',
@@ -1862,7 +1862,7 @@ export const ruleManifest = [
     testSource: 'scenario-only',
     gating: 'effect-callee',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'House rule from the alignment app run: a bound Effect.fail whose sole argument is a string literal or untagged template literal, looking through type assertions. It narrows the dropped string-sentinel rules to the error channel, where a string is never better than a tagged error; tsgo global-error-in-effect-failure covers only new Error(...). No autofix, because the error class, tag, and fields are a domain decision.',
+    note: 'Effect.fail with a string literal or plain template literal as its only argument.',
   }),
   droppedRule({
     name: 'prefer-yield-tagged-error',
@@ -1889,7 +1889,7 @@ export const ruleManifest = [
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
-    note: 'Scenario-covered structural reimplementation with explicit replay branch matrix and RuleTester coverage.',
+    note: 'A helper whose name ends in Error and that only returns a new tagged error, passing through no argument or its single argument.',
   }),
 
   baseRule({

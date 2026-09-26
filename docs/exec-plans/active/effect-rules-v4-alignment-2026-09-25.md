@@ -365,11 +365,11 @@ Boundary scoping: the Effect preset ships no path globs for React, Electron, CLI
 
 ## Deferred follow-ups
 
-This plan is the owning record for these until the introspection CLI works again, then each becomes an introspection record:
+Each of these now has a tech-debt record, written by hand on 2026-09-26 because the introspection CLI cannot validate records until its config schema issue is fixed:
 
-- `Effect.forkDetach`: research whether it should be flagged (see `no-runtime-runfork` in Decided).
-- `missed-pipeable-opportunity`: after it ships at `warn`, compare its hits with `no-effect-call-in-effect-arg` and drop the custom rule if tsgo covers it (pattern 9).
-- tsgo drift: the pinned-version test forces triage of new, renamed, or re-preset tsgo rules on every bump.
+- `Effect.forkDetach`: research whether it should be flagged (see `no-runtime-runfork` in Decided). Record: BP-TD-015.
+- `missed-pipeable-opportunity`: after it ships at `warn`, compare its hits with `no-effect-call-in-effect-arg` and drop the custom rule if tsgo covers it (pattern 9). The 2026-09-26 app audit found it does not cover the custom rules at 0.45.0 (6 of 482 spans). Record: BP-TD-016.
+- tsgo drift: the pinned-version test forces triage of new, renamed, or re-preset tsgo rules on every bump. Record: BP-TD-017.
 
 ## Next steps
 

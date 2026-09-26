@@ -17,7 +17,7 @@ one ladder.
 
 | Axis | What it is | What you author here | In this repo |
 |---|---|---|---|
-| Rule | One check: an AST visitor that calls `context.report` on a bad shape. | A single check. | Each file under `src/rules/`, such as `no-effect-as`. |
+| Rule | One check: an AST visitor that calls `context.report` on a bad shape. | A single check. | Each entry in `src/rule-catalog.ts`, such as `no-effect-escape-hatch`. |
 | Plugin | A namespaced container that bundles rules. It delivers rules; it does not decide which are on. | A bag of rules (or you depend on someone else's). | The default export with `meta.name: "@mplibunao/oxlint-standards"` and `rules`. |
 | Preset / config | A named selection of rules with severities and options. The consumer's unit of opt-in. | A curated selection of rules. | `effect`, `effect-react`, `general`, `boundaries` under `src/presets/`. |
 
@@ -93,8 +93,9 @@ that fits, not reimplementation.
   (the Effect rules here, or a niche library), author a jsPlugin. It can start as a
   preset inside `oxlint-standards` and graduate to its own package when it needs to.
 - **Delegate.** For a stack oxlint does not cover where a good ESLint plugin or
-  language-service already exists (TanStack Query, Drizzle, type-aware Effect
-  semantics), recommend that the consumer run it. Delegating to an ESLint plugin
+  language-service already exists (TanStack Query, Drizzle), recommend that the
+  consumer run it. Type-aware Effect checks are the one delegate this package
+  configures itself: the Effect preset ships `@effect/tsgo` settings (ADR-007). Delegating to an ESLint plugin
   does not mean the maintainer switches to ESLint. oxlint stays the front door, and
   ESLint is the documented escape hatch per ADR 001.
 
@@ -111,8 +112,8 @@ plugin that owns every stack.
 - For v0, presets are exposed as named exports from the main package entry (`.`),
   such as `effectPreset` imported from `"@mplibunao/oxlint-standards"`. No subpath
   imports. Preset names are the public API contract.
-- Consumers configure a standalone `.oxlintrc.json` so oxlint discovers the plugin
-  itself. Inline resolution through vite-plus config is not yet proven.
+- How consumers compose and load the configs is in the "Consumption model" section
+  of `packages/oxlint-standards/README.md`.
 
 ## References
 

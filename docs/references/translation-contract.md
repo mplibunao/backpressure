@@ -1,6 +1,6 @@
 # Translation contract
 
-Status: current for the Item 6 substrate.
+Status: historical contract for the Item 6 substrate. The translation rules still apply to new ports. The identifier-module contents and the `no-effect-as` examples describe the catalog as it stood then; the Effect v4 alignment later dropped `no-effect-as`.
 
 This contract defines how `@catenarycloud/linteffect` GritQL rules become `@mplibunao/oxlint-standards` oxlint JS-plugin rules. The baseline source is `@catenarycloud/linteffect` v0.0.6, which contains 50 GritQL rules. The first translated rule is `no-effect-as`.
 
@@ -46,7 +46,7 @@ The source baseline is v0.0.6. The source catalog still has 50 rules. The refres
 
 ## Severity policy
 
-A rule's source severity is input evidence. ADR 004 sets the governing default by the kind of problem a rule catches, and `src/rule-manifest.ts` records the chosen default per rule. `no-effect-as` is `error` in source and stays `error` in the `effect` preset because it catches a real correctness problem. Consumer projects can override any rule in their own oxlint config.
+A rule's source severity is input evidence. ADR 004 sets the governing default by the kind of problem a rule catches, and `src/rule-manifest.ts` records the chosen default per rule. `no-effect-as` was `error` in source and stayed `error` in the `effect` preset until the Effect v4 alignment dropped it. Consumer projects can override any rule in their own oxlint config.
 
 A deliberate deviation from the source severity belongs in the manifest note, with the rationale. See `docs/decisions/004-rule-curation-and-severity-posture.md`.
 
