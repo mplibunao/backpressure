@@ -866,7 +866,7 @@ export const tsgoPolicyRows: readonly TsgoPolicyRow[] = [
     diagnosticName: 'preferSchemaOverJson',
     rationaleClass: 'style',
     reason:
-      'Pending the measured app evaluation; off until its hits are shown to be few and worth rewriting.',
+      'Measured on t3code and executor (docs/reports/effect-v4-app-audit-2026-09-25.md): executor reports 313 hits against a limit of 98, and only 2 of 321 reviewed sites improve with Schema; the rest serialize on purpose (request bodies, logs, cache keys, CLI output, test fixtures).',
     ruleName: 'effecttsgo/prefer-schema-over-json',
     severity: 'off',
   },

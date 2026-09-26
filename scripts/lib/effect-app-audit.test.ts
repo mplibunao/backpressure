@@ -2,18 +2,24 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   type KnownRules,
+  ancestorDirectories,
+  appEffect,
   canaryProblems,
   countsByRule,
   diagnosticProblems,
   nativeDiagnosticCodes,
   effectVersionInTsgoRange,
+  invariantExcludes,
   isTestPath,
+  listedAppFiles,
   parseAuditArgs,
   parseLintReport,
+  projectConfigErrorCode,
+  projectCoverage,
+  rejectedProjects,
   selectAuditFiles,
   spanIdentities,
   typedCanaryCode,
-  uncoveredFiles,
 } from './effect-app-audit.ts';
 
 vi.setConfig({ testTimeout: 1000 });
@@ -38,31 +44,24 @@ const diagnostic = (code: string, filename: string, line = 3): Record<string, un
 });
 
 describe('parseAuditArgs()', () => {
-  it('reads explicit apps, revisions, tsconfigs, and exclusions', () => {
+  it('reads explicit apps, revisions, and exclusion globs', () => {
     expect(
       parseAuditArgs([
         ...baseArgs,
         '--app',
         'executor=/src/executor@480b390ee',
-        '--tsconfig',
-        'executor=tsconfig.base.json',
         '--exclude',
-        'vendor/',
+        '**/vendor/**',
         '--timeout-minutes',
         '45',
       ]),
     ).toStrictEqual({
       allowDirty: false,
       apps: [
-        { name: 't3code', path: '/src/t3code', revision: '53456bc01', tsconfig: 'tsconfig.json' },
-        {
-          name: 'executor',
-          path: '/src/executor',
-          revision: '480b390ee',
-          tsconfig: 'tsconfig.base.json',
-        },
+        { name: 't3code', path: '/src/t3code', revision: '53456bc01' },
+        { name: 'executor', path: '/src/executor', revision: '480b390ee' },
       ],
-      excludes: ['node_modules/', 'dist/', 'vendor/'],
+      excludes: ['**/node_modules/**', '**/dist/**', '**/vendor/**'],
       mode: 'candidate',
       output: '/tmp/audit',
       timeoutMinutes: 45,
@@ -85,8 +84,8 @@ describe('parseAuditArgs()', () => {
     expect(() => parseAuditArgs([...baseArgs, '--mode', 'everything'])).toThrow(
       '--mode must be one of',
     );
-    expect(() => parseAuditArgs([...baseArgs, '--tsconfig', 'other=tsconfig.json'])).toThrow(
-      'names no --app',
+    expect(() => parseAuditArgs([...baseArgs, '--tsconfig', 't3code=tsconfig.json'])).toThrow(
+      'Unknown argument --tsconfig',
     );
     expect(() => parseAuditArgs([...baseArgs, '--timeout-minutes', '0'])).toThrow(
       'positive integer',
@@ -103,22 +102,43 @@ describe('selectAuditFiles()', () => {
         [
           'apps/web/src/main.tsx',
           'apps/web/src/env.d.ts',
+          'apps/web/src/routeTree.gen.ts',
           'packages/core/dist/index.js',
           'packages/core/node_modules/x/index.ts',
           'packages/core/vendor/lib.ts',
           'packages/core/src/index.mts',
+          'packages/core/src/distance.ts',
+          'apps/site/src/page.astro',
           'README.md',
         ],
-        ['node_modules/', 'dist/', 'vendor/'],
+        [...invariantExcludes, '**/vendor/**', '**/*.gen.ts'],
       ),
     ).toStrictEqual({
       ignored: [
         'apps/web/src/env.d.ts',
+        'apps/web/src/routeTree.gen.ts',
         'packages/core/dist/index.js',
         'packages/core/node_modules/x/index.ts',
         'packages/core/vendor/lib.ts',
       ],
-      selected: ['apps/web/src/main.tsx', 'packages/core/src/index.mts'],
+      selected: [
+        'apps/site/src/page.astro',
+        'apps/web/src/main.tsx',
+        'packages/core/src/distance.ts',
+        'packages/core/src/index.mts',
+      ],
+    });
+  });
+
+  it('anchors a glob without a leading ** to the app root', () => {
+    expect(
+      selectAuditFiles(
+        ['vite.config.ts', 'apps/web/vite.config.ts', '.github/scripts/a.ts'],
+        ['vite.config.ts', '.github/**'],
+      ),
+    ).toStrictEqual({
+      ignored: ['.github/scripts/a.ts', 'vite.config.ts'],
+      selected: ['apps/web/vite.config.ts'],
     });
   });
 
@@ -209,6 +229,7 @@ describe('diagnosticProblems()', () => {
           diagnostic('effecttsgo(global-date)', 'src/a.ts'),
           diagnostic('eslint(no-debugger)', 'src/a.ts'),
           diagnostic('eslint-plugin-jsx-a11y(alt-text)', 'src/a.tsx'),
+          diagnostic(projectConfigErrorCode, 'tsconfig.json'),
         ]),
         known,
       ),
@@ -266,20 +287,94 @@ describe('diagnosticProblems()', () => {
   });
 });
 
-describe('uncoveredFiles()', () => {
-  it('lists the selected files the TypeScript project does not include', () => {
+describe('project coverage', () => {
+  it('reads the app files from tsc --listFilesOnly output', () => {
     const listed = [
       '/lib/lib.es2022.d.ts',
       '/real/app/src/a.ts',
+      '/real/app-other/src/b.ts',
       '/real/app/src/nested/b.tsx',
       '',
     ].join('\n');
-    expect(
-      uncoveredFiles(listed, '/real/app', ['src/a.ts', 'src/nested/b.tsx', 'scripts/c.ts']),
-    ).toStrictEqual(['scripts/c.ts']);
-    expect(uncoveredFiles('/lib/lib.es2022.d.ts\n', '/real/app', ['src/a.ts'])).toStrictEqual([
+    expect([...listedAppFiles(listed, '/real/app')]).toStrictEqual([
       'src/a.ts',
+      'src/nested/b.tsx',
     ]);
+  });
+
+  it('lists candidate project directories nearest first, ending at the root', () => {
+    expect(ancestorDirectories('apps/web/src/main.tsx')).toStrictEqual([
+      'apps/web/src',
+      'apps/web',
+      'apps',
+      '',
+    ]);
+    expect(ancestorDirectories('vite.config.ts')).toStrictEqual(['']);
+  });
+
+  it('assigns each file to the nearest project that lists it, as the engine does', () => {
+    const listed = new Map([
+      ['apps/web', new Set(['apps/web/src/main.tsx', 'scripts/lib/shared.ts'])],
+      ['scripts', new Set(['scripts/lib/shared.ts'])],
+      ['', new Set(['apps/web/vite.config.ts', 'vite.config.ts'])],
+    ]);
+    expect(
+      projectCoverage(
+        [
+          'apps/web/src/main.tsx',
+          'apps/web/vite.config.ts',
+          'scripts/lib/shared.ts',
+          'vite.config.ts',
+          'apps/web/public/sw.js',
+        ],
+        listed,
+      ),
+    ).toStrictEqual({
+      byProject: { 'apps/web/tsconfig.json': 1, 'scripts/tsconfig.json': 1, 'tsconfig.json': 2 },
+      uncovered: ['apps/web/public/sw.js'],
+    });
+  });
+
+  it('leaves the files of an engine-rejected project uncovered instead of falling back', () => {
+    const listed = new Map([
+      ['apps/cloud', new Set(['apps/cloud/src/a.ts'])],
+      ['', new Set(['apps/cloud/src/a.ts', 'scripts/b.ts'])],
+    ]);
+    const rejected = rejectedProjects(
+      parseLintReport(
+        report([
+          { ...diagnostic(projectConfigErrorCode, 'apps/cloud/tsconfig.json'), message: 'x' },
+        ]),
+      ).diagnostics,
+    );
+    expect(rejected).toStrictEqual({ 'apps/cloud/tsconfig.json': 'x' });
+    expect(
+      projectCoverage(['apps/cloud/src/a.ts', 'scripts/b.ts'], listed, Object.keys(rejected)),
+    ).toStrictEqual({ byProject: { 'tsconfig.json': 1 }, uncovered: ['apps/cloud/src/a.ts'] });
+    expect(projectCoverage(['scripts/b.ts'], listed, ['tsconfig.json'])).toStrictEqual({
+      byProject: {},
+      uncovered: ['scripts/b.ts'],
+    });
+  });
+});
+
+describe('appEffect()', () => {
+  const rc = { packageDir: '/store/effect@rc.115/node_modules/effect', version: '4.0.0-rc.115' };
+
+  it('records the one resolved version and the files that resolve none', () => {
+    expect(appEffect('t3code', [rc, globalThis.undefined, rc])).toStrictEqual({
+      ...rc,
+      filesWithoutEffect: 1,
+    });
+  });
+
+  it('refuses an app with no installed Effect or several versions', () => {
+    expect(() => appEffect('t3code', [globalThis.undefined])).toThrow(
+      't3code: no selected file resolves node_modules/effect',
+    );
+    expect(() =>
+      appEffect('t3code', [rc, { packageDir: '/other/effect', version: '4.0.0-rc.117' }]),
+    ).toThrow('several Effect versions: 4.0.0-rc.115, 4.0.0-rc.117');
   });
 });
 

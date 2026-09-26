@@ -1,7 +1,9 @@
 // Pure parts of the app audit: argument parsing, file selection, source/test classification,
-// diagnostic aggregation, and the typed-pass canary. The I/O runner lives in
+// project coverage, diagnostic aggregation, and the typed-pass canary. The I/O runner lives in
 // scripts/checks/effect-app-audit.ts. Every workflow choice that is not a fixed measurement
 // invariant (which apps, which revisions, extra exclusions, dirty trees) comes from the caller.
+import { matchesGlob, posix } from 'node:path';
+
 import { fail, isObjectRecord } from './script-runtime.ts';
 
 // `ast` repeats the recorded custom-rule run on the baseline engine. `candidate` runs the full
@@ -14,7 +16,6 @@ export interface AuditApp {
   readonly name: string;
   readonly path: string;
   readonly revision: string;
-  readonly tsconfig: string;
 }
 
 export interface AuditArgs {
@@ -44,15 +45,15 @@ export interface LintReport {
 
 const defaultTimeoutMinutes = 30;
 const outputPreviewLength = 2_000;
-const defaultTsconfig = 'tsconfig.json';
 const minimumAppCount = 1;
 
-// The recorded run's invariant exclusions. Vendored upstreams and generated files differ per app,
-// so the caller names them with --exclude.
-export const invariantExcludes = ['node_modules/', 'dist/'] as const;
+// The recorded run's invariant exclusions, as globs relative to the app root. Vendored upstreams,
+// generated files, and the recorded directory scope differ per app, so the caller names them.
+export const invariantExcludes = ['**/node_modules/**', '**/dist/**'] as const;
 
 // The extensions oxlint lints by default, so the selected set can be compared with its file count.
-const lintedExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx)$/u;
+// Framework components have no TypeScript program, so a typed pass excludes them explicitly.
+const lintedExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx|vue|svelte|astro)$/u;
 const declarationPattern = /\.d\.[cm]?ts$/u;
 const testDirectoryPattern = /(?:^|\/)(?:test|tests|__tests__)\//u;
 const testSuffixPattern = /[.-](?:test|spec)\.[cm]?[jt]sx?$/u;
@@ -60,12 +61,11 @@ const testSuffixPattern = /[.-](?:test|spec)\.[cm]?[jt]sx?$/u;
 export const usage = [
   'Usage: bun scripts/checks/effect-app-audit.ts --mode <ast|candidate|shipped> --output <dir>',
   '  --app <name>=<checkout path>@<expected revision>   (repeat per app)',
-  '  [--tsconfig <name>=<path relative to the app>]     (typed modes; default tsconfig.json)',
-  '  [--exclude <path prefix relative to each app>]     (repeat; vendored or generated sources)',
+  '  [--exclude <glob relative to each app root>]       (repeat; vendored or generated sources)',
   '  [--allow-dirty] [--timeout-minutes <n>]',
 ].join('\n');
 
-const parseApp = (value: string): Omit<AuditApp, 'tsconfig'> => {
+const parseApp = (value: string): AuditApp => {
   const equals = value.indexOf('=');
   const at = value.lastIndexOf('@');
   if (equals <= 0 || at <= equals + 1 || at === value.length - 1) {
@@ -97,24 +97,15 @@ interface RawFlags {
   readonly excludes: string[];
   readonly flags: Map<string, string>;
   readonly switches: Set<string>;
-  readonly tsconfigs: string[];
 }
 
-const flagsWithValue = new Set([
-  '--app',
-  '--exclude',
-  '--mode',
-  '--output',
-  '--timeout-minutes',
-  '--tsconfig',
-]);
+const flagsWithValue = new Set(['--app', '--exclude', '--mode', '--output', '--timeout-minutes']);
 
 // Repeatable flags collect into lists; the rest keep their single value.
 const recordFlag = (raw: RawFlags, flag: string, value: string): void => {
   const lists: Readonly<Record<string, string[]>> = {
     '--app': raw.apps,
     '--exclude': raw.excludes,
-    '--tsconfig': raw.tsconfigs,
   };
   const list = lists[flag];
   if (list === globalThis.undefined) {
@@ -130,7 +121,6 @@ const collectFlags = (argv: readonly string[]): RawFlags => {
     excludes: [],
     flags: new Map(),
     switches: new Set(),
-    tsconfigs: [],
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index] ?? '';
@@ -146,26 +136,15 @@ const collectFlags = (argv: readonly string[]): RawFlags => {
   return raw;
 };
 
-const tsconfigFor = (name: string, tsconfigs: readonly string[]): string => {
-  const entry = tsconfigs.find((value) => value.startsWith(`${name}=`));
-  return entry === globalThis.undefined ? defaultTsconfig : entry.slice(name.length + 1);
-};
-
 export const parseAuditArgs = (argv: readonly string[]): AuditArgs => {
   const raw = collectFlags(argv);
   const apps = raw.apps.map(parseApp);
   if (apps.length < minimumAppCount || new Set(apps.map((app) => app.name)).size !== apps.length) {
     return fail(`Name each app once with --app.\n${usage}`);
   }
-  const unknownTsconfig = raw.tsconfigs.find(
-    (value) => !apps.some((app) => value.startsWith(`${app.name}=`)),
-  );
-  if (unknownTsconfig !== globalThis.undefined) {
-    return fail(`--tsconfig ${unknownTsconfig} names no --app.`);
-  }
   return {
     allowDirty: raw.switches.has('--allow-dirty'),
-    apps: apps.map((app) => ({ ...app, tsconfig: tsconfigFor(app.name, raw.tsconfigs) })),
+    apps,
     excludes: [...invariantExcludes, ...raw.excludes],
     mode: parseMode(raw.flags.get('--mode')),
     output: raw.flags.get('--output') ?? fail(`--output is required.\n${usage}`),
@@ -174,10 +153,11 @@ export const parseAuditArgs = (argv: readonly string[]): AuditArgs => {
 };
 
 const isExcluded = (file: string, excludes: readonly string[]): boolean =>
-  excludes.some((prefix) => file.startsWith(prefix) || file.includes(`/${prefix}`));
+  excludes.some((glob) => matchesGlob(file, glob));
 
-// Selects from the app's tracked files: lintable extensions, no declaration files, no excluded
-// prefix. Returns the ignored files too, because the audit records them.
+// Selects from the app's tracked files: lintable extensions, no declaration files, no file matching
+// an exclusion glob. Returns the ignored files too, because the audit records them. The engine then
+// lints exactly the selected list, so no second copy of this policy exists as engine ignores.
 export const selectAuditFiles = (
   trackedFiles: readonly string[],
   excludes: readonly string[],
@@ -272,6 +252,27 @@ export const nativeDiagnosticCodes = (
     }),
   );
 
+// The patched engine's report that it rejected a project's tsconfig. It then skips that whole
+// program: none of the project's files get a typed diagnostic, although the engine still counts
+// them as linted. It is a coverage fact, not a rule hit, so projectCoverage consumes it.
+export const projectConfigErrorCode = 'typescript(tsconfig-error)';
+
+// The rejected tsconfig paths (relative to the app root) with the engine's reason.
+export const rejectedProjects = (
+  diagnostics: readonly LintedDiagnostic[],
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    diagnostics
+      .filter((diagnostic) => diagnostic.code === projectConfigErrorCode)
+      .map((diagnostic) => [diagnostic.filename, diagnostic.message]),
+  );
+
+// The listing directory of a tsconfig.json path; the app root is ''.
+export const projectDirectory = (tsconfigPath: string): string => {
+  const dir = posix.dirname(tsconfigPath);
+  return dir === '.' ? '' : dir;
+};
+
 const diagnosticCodePattern = /^(?<plugin>[^()]+)\((?<rule>[^()]+)\)$/u;
 
 const isKnownCode = (code: string, known: KnownRules): boolean => {
@@ -295,7 +296,7 @@ export const diagnosticProblems = (
     if (diagnostic.code === '') {
       return [`engine error in ${diagnostic.filename || '<no file>'}: ${diagnostic.message}`];
     }
-    return isKnownCode(diagnostic.code, known)
+    return diagnostic.code === projectConfigErrorCode || isKnownCode(diagnostic.code, known)
       ? []
       : [`unknown diagnostic code ${diagnostic.code} in ${diagnostic.filename}`];
   });
@@ -353,15 +354,92 @@ export const spanIdentities = (
     )
     .toSorted();
 
-// The selected files missing from `tsc --listFilesOnly` output, which prints one absolute, symlink-
-// resolved path per line; `appRoot` must therefore be the app's real path.
-export const uncoveredFiles = (
-  listFilesOutput: string,
-  appRoot: string,
+// The app files in `tsc --listFilesOnly` output, relative to the app root. tsc prints one absolute,
+// symlink-resolved path per line, so `appRoot` must be the app's real path.
+export const listedAppFiles = (listFilesOutput: string, appRoot: string): ReadonlySet<string> =>
+  new Set(
+    listFilesOutput
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(`${appRoot}/`))
+      .map((line) => line.slice(appRoot.length + 1)),
+  );
+
+// The directories, nearest first, that could hold the tsconfig.json of a file's project. The root
+// is ''.
+export const ancestorDirectories = (file: string): readonly string[] => {
+  const directories: string[] = [];
+  for (let dir = posix.dirname(file); dir !== '.'; dir = posix.dirname(dir)) {
+    directories.push(dir);
+  }
+  return [...directories, ''];
+};
+
+export interface ProjectCoverage {
+  // Selected-file counts per covering project, keyed by the tsconfig.json path.
+  readonly byProject: Readonly<Record<string, number>>;
+  readonly uncovered: readonly string[];
+}
+
+// The patched engine assigns a file the way tsserver does: the nearest tsconfig.json whose program
+// lists the file, then each ancestor's. A file no project lists gets a default program without the
+// app's compiler options, and a file whose project the engine rejected gets no typed diagnostics,
+// so both are uncovered. Project references are not modelled: the engine consults a project's
+// references before moving to an ancestor, so in an app that uses them it can pick a referenced
+// project, including a rejected one, that this model never sees. The result is exact only for apps
+// without references.
+export const projectCoverage = (
   selected: readonly string[],
-): readonly string[] => {
-  const listed = new Set(listFilesOutput.split('\n').map((line) => line.trim()));
-  return selected.filter((file) => !listed.has(`${appRoot}/${file}`));
+  listedByProjectDir: ReadonlyMap<string, ReadonlySet<string>>,
+  rejectedTsconfigs: readonly string[] = [],
+): ProjectCoverage => {
+  const rejectedDirs = new Set(rejectedTsconfigs.map(projectDirectory));
+  const byProject: Record<string, number> = {};
+  const uncovered: string[] = [];
+  for (const file of selected) {
+    const owner = ancestorDirectories(file).find((dir) => listedByProjectDir.get(dir)?.has(file));
+    if (owner === globalThis.undefined || rejectedDirs.has(owner)) {
+      uncovered.push(file);
+    } else {
+      const tsconfig = posix.join(owner, 'tsconfig.json');
+      byProject[tsconfig] = (byProject[tsconfig] ?? 0) + 1;
+    }
+  }
+  return { byProject, uncovered };
+};
+
+export interface EffectResolution {
+  // The resolved package directory, symlinks followed.
+  readonly packageDir: string;
+  readonly version: string;
+}
+
+export interface AppEffect extends EffectResolution {
+  readonly filesWithoutEffect: number;
+}
+
+// Workspace packages each resolve their own `effect`, so the version comes from every selected
+// file's nearest installed package. The audit records one Effect version per app snapshot, so a
+// mixed-version workspace is refused rather than summarized by one of its versions.
+export const appEffect = (
+  appName: string,
+  resolutions: ReadonlyArray<EffectResolution | undefined>,
+): AppEffect => {
+  const resolved = resolutions.filter((resolution) => resolution !== globalThis.undefined);
+  const versions = [...new Set(resolved.map((resolution) => resolution.version))].toSorted();
+  const [version] = versions;
+  if (version === globalThis.undefined) {
+    return fail(
+      `${appName}: no selected file resolves node_modules/effect. Install the app's dependencies first; the audit never installs.`,
+    );
+  }
+  if (versions.length > 1) {
+    return fail(
+      `${appName}: selected files resolve several Effect versions: ${versions.join(', ')}.`,
+    );
+  }
+  const [packageDir = ''] = resolved.map((resolution) => resolution.packageDir).toSorted();
+  return { filesWithoutEffect: resolutions.length - resolved.length, packageDir, version };
 };
 
 // The typed-pass canary: an audit-owned file holding `layerProvideSource`, outside the app, whose

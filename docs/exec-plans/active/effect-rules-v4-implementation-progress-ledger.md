@@ -29,8 +29,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
 | WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | WAITING for the upstream release | |
 | WI-11 | Rule list with its generated page and local viewer | M | DONE (local, not pushed) | `b848cb5` |
-| WI-07 | Install all six durable gates | L | DONE (uncommitted) | |
-| WI-08 | Measure the two apps and finalize conditional delegation | M | PENDING | |
+| WI-07 | Install all six durable gates | L | DONE (local, not pushed) | `671fcb9` |
+| WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (uncommitted); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) | |
 | WI-09 | Complete consumer guidance, records, and changesets | M | PENDING | |
 | WI-10 | Run acceptance and classify the remaining blocker accurately | S | PENDING | |
 
@@ -869,6 +869,51 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
   - **Checks:** `typecheck`, `/bin/sh -c "pnpm run lint"` (0 warnings, 0 errors), and `vp fmt --check` each exited 0. The four touched test files passed 68 tests. `pnpm check:effect-integration` exited 0.
 - **Commits:** none. The orchestrator commits.
 - **Action items for MP:** none.
+
+### WI-08: Measure the two apps and finalize conditional delegation (JSON decision DONE; full typed coverage BLOCKED)
+
+- **Blocked part:** the Done when's complete typed coverage is not met, so this part stays blocked until MP amends the G2/WI-08 contract or a later executor snapshot lints cleanly under TypeScript 7. The JSON decision, the custom-rule counts, and the comparisons are complete.
+- **Limitation:** executor's typed coverage is partial, 1,355 of 1,922 script files. TypeScript 7 rejects the configs of five executor projects (the root `tsconfig.json`, `apps/cloud`, `apps/local`, `apps/desktop`, and `packages/app`), and the linter skips their files. Executor's Effect `4.0.0-beta.59` is also below tsgo 0.45.0's supported range (`^4.0.0-beta.107`). No decision depends on the missing files: the JSON rule ships `off` either way, and missing evidence could never enable it.
+- **Report:** [`docs/reports/effect-v4-app-audit-2026-09-25.md`](../../reports/effect-v4-app-audit-2026-09-25.md) holds the before/after tables, coverage, fingerprints, the JSON review of every hit, and the pipe and `Effect.fn` comparisons. The alignment record gained an "After-change run" subsection under its app evidence.
+- **App copies:** `git clone --local` of each source checkout into the session scratchpad (`apps/t3code`, `apps/executor`), detached at `53456bc0129f` and `480b390eedd1`. Installs were frozen with lifecycle scripts off: `corepack pnpm@11.10.0 install --frozen-lockfile --ignore-scripts` (exit 0) and `bun install --frozen-lockfile --ignore-scripts` (exit 0). Both clones stayed clean in `git status`. The copies use 5.7 GB and 3.8 GB; free disk went from 52 GB to 41 GB, including package-manager caches. The source checkouts were only read. Executor's untracked set changed during the session (it showed `docs/investigations/` instead of `docs/.agents/`); none of it is tracked, so the snapshot is unaffected.
+- **Why every pass ran on the copies:** neither source checkout has `node_modules`, and the audit reads each app's installed Effect even in AST mode.
+- **Selection:** the recorded run's scope and exclusions, passed as globs. Executor selects 1,940 files, matching the recorded count. t3code selects 3,841, one fewer than the recorded 3,842, and no reading of the recorded policy over the tracked files gives 3,842. The typed passes also exclude `.astro`/`.vue`/`.svelte` components and every file no engine-accepted project lists: 3,802 t3code files and 1,355 executor files remain.
+- **Audit defects found on the real apps, fixed:**
+  - **Project coverage:** the audit took one `--tsconfig` per app and required every selected file in that project, which no monorepo satisfies. A pinned-engine probe (patched oxlint 1.82.0) showed that type-aware linting ignores `--tsconfig` and picks each file's project the way tsserver does: nearest listing `tsconfig.json`, then its references, then ancestors. `--tsconfig` is gone (hard cutover), the engine gets no `--tsconfig`, and coverage is now checked per file against that lookup (`projectCoverage`). References are not followed, which can only under-report coverage.
+  - **Rejected projects:** the engine rejects five executor tsconfigs under TypeScript 7 option validation (`TS5069`, `TS5096`), reports `typescript(tsconfig-error)` at `error`, and skips the program. Attributing diagnostics to owning projects showed exactly 0 tsgo diagnostics in each rejected project and some in every accepted one. The audit now records rejected projects, excludes their diagnostics from rule counts, and counts their files as uncovered. `tsc --listFilesOnly` exits 1 on those configs yet lists the full program, so a listing counts regardless of exit status and the error is recorded.
+  - **Effect version:** pnpm does not hoist `effect` to the t3code root. The audit resolves it per selected file from the nearest `node_modules/effect`, records files that resolve none, refuses a mixed-version app, and links the typed canary to that package.
+  - **Selection:** `--exclude` takes globs (`path.matchesGlob`) instead of prefixes, because the recorded policy has `*.gen.ts` and root-only files. The engine now receives the explicit selected file list instead of `.` plus mirrored ignore patterns. The extension set gained `.vue`, `.svelte`, and `.astro`, which oxlint lints by default.
+  - **`git ls-files` buffer:** t3code's tracked paths (1.6 MB) overflowed the default spawn buffer; the audit's git calls get a 256 MiB buffer.
+  - **AST rule set:** the AST config also enabled the 5 general and boundaries rules, which the recorded run never ran; it now enables only the Effect and Effect React domains (38 rules).
+  - The I/O-bound project listing, coverage, and Effect resolution moved to `scripts/lib/effect-app-projects.ts` to keep the runner under the 500-line limit. After the move, the AST and both shipped passes were re-run and matched the earlier summaries exactly; the only difference was a temporary consumer path inside one recorded listing error.
+- **Engine facts verified on the pinned engine:**
+  - The app's own `@effect/language-service` options apply to typed rules, and oxlint owns severity. The apps set no `effectFn`, so the default `["span"]` applies. The default `pipeableMinArgCount` is 2, the same as the overlay's.
+  - The engine honors inline `@effect-diagnostics` directives: none of the 254 t3code and 34 executor `preferSchemaOverJson:off` sites in the selection reports.
+- **Counts:** custom diagnostics fell from 34,030 to 6,414 (t3code) and 13,667 to 3,588 (executor). Shipped typed totals are 18,646 and 9,386. The shipped totals equal candidate totals minus exactly the JSON hits.
+- **JSON decision:** `off`. Candidate hits are 10 in t3code (limit 69) and 313 in executor (limit 98), counted on 70% of executor's files. Review of all 321 distinct sites found 2 that a Schema rewrite improves (`t3code apps/mobile/src/connection/migration.ts:94`, `executor apps/cli/src/tooling.ts:135`); the rest serialize on purpose. `scripts/config/tsgo-policy.ts` records the reason. `pnpm gen:effect-policy` rewrote the generated policy row. `pnpm gen:rules-page` wrote an unchanged page, because the page omits tsgo rules the policy sets off everywhere. `no-json-parse` stays `error`.
+- **Pipe-opportunity comparison:** 6 of 482 custom pipe-rule spans intersect a `missed-pipeable-opportunity` span. 620 of t3code's 811 tsgo spans are nested Schema constructors. The custom rules stay.
+- **`Effect.fn`:** `prefer-effect-fn` reports 324 (t3code) and 339 (executor typed selection); `effect-fn-opportunity` reports 2 and 1, with no shared line, under the apps' `effectFn` default and Effect-TS/tsgo#766.
+- **One-step pipelines:** 337 of 413 t3code `no-pipe-ladder` hits (82%) and 31 of 43 executor hits are one-step pipelines, mostly in `Effect.flatMap` and `Effect.catch` callbacks. The t3code source count is still 382, which the WI-04 review fixes explain (272, then 348, then 382).
+- **Judgment calls:**
+  - **Typed coverage is partial for executor.** Its typed evidence covers 1,355 of 1,922 files. That cannot flip the JSON decision, because uncovered files can only add hits.
+  - **Exact-path exclusions for uncovered files.** The first typed run of each app refused and listed the uncovered files; the usable run passes each as an exact `--exclude`. The audit itself never drops files on its own judgment.
+  - **Recorded-run test convention in the before/after table.** The recorded run counted `e2e/`, `testkit/`, `fixtures/`, and `.bench.` as test, which the audit's policy convention does not, so the table re-buckets the after-run raw output the recorded way. Totals do not depend on the convention.
+  - **Plan edit:** the G2 paragraph now states the per-file project lookup instead of `--tsconfig` at the app's tsconfig.
+- **Evidence location (outside the repo):** the session scratchpad holds `wi08-audit/` (AST), `wi08-typed/<app>/` (candidate and shipped, with `raw/`), the refused first typed runs (`wi08-typed/executor-probe/`), `wi08-<app>-uncovered.txt`, the JSON hit lists, and the analysis scripts.
+- **Review iteration 1 (orchestrator):**
+  - **Project references:** no reference-following added, because neither app uses references (0 of 16 t3code and 0 of 46 executor tracked `tsconfig`/`jsconfig` files outside `.repos`). In executor, all 1,355 credited files are also in the rejected root program (a farther ancestor), and 470 are pulled into rejected app programs through imports. 0 have a rejected project nearer than the credited one, and 0 are reached through references. Those 470 files get type-dependent tsgo diagnostics at 41%, against 34% for the other 885, so the engine did not assign them to a rejected project. The `projectCoverage` and `listAppProjects` comments now state that references are not modelled and that the result is exact only for apps without them; the report records the limitation and the counts.
+  - **Effect resolution:** every `effect` or `effect/*` import in the AST selection resolves from its own file's directory with both Bun's resolver and the nearest `node_modules/effect`, to the same package. That is 1,610 t3code files (7,343 file and specifier pairs, all rc.115) and 927 executor files (1,363 pairs, all beta.59), with 0 failures. No guard was added.
+  - **Report:** the outcome line now qualifies "same files" with t3code's 3,841 against the recorded 3,842, and the report carries the limitation statement above.
+- **Checks (final tree):**
+  - `pnpm check` without `introspection:check`: exit 0. It covered 2497 tests in 34 files, lint with 0 warnings and 0 errors, and `fixture:replay` (43 suites, 444 cases, 37 corpus variants).
+  - `pnpm check:effect-integration`: exit 0.
+  - `pnpm prose`: exit 0.
+  - `vp fmt --check`: exit 0.
+- **For later items:**
+  - **WI-09:** the pipe-coverage follow-up record can cite 6 of 482 spans. Consumer guidance may need two engine facts: a project whose tsconfig TypeScript 7 rejects gets no tsgo diagnostics, and the consumer sees that as a `typescript(tsconfig-error)` error; and the tsgo checks use the consumer's own `effectFn` unless the overlay is in the tsconfig chain.
+  - **WI-13:** re-run the audit after the tsgo bump to show whether `effect-fn-opportunity` then reports the plain wrappers `prefer-effect-fn` reports here.
+- **Commits:** none. The orchestrator commits.
+- **Action items for MP:** none required. The one-step `no-pipe-ladder` share is information; narrowing the rule would be a new decision.
 
 ### WI-12: Extend prefer-effect-fn to tsgo shape parity (PARKED)
 

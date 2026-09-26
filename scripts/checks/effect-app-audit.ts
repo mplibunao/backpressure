@@ -4,14 +4,7 @@
 // the app, and writes raw engine output plus a summary to the output directory. The typed modes use
 // the isolated harness consumer's patched oxlint, never the app's own toolchain.
 import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -21,22 +14,31 @@ import {
   presetEntriesForDomains,
 } from '../../packages/oxlint-standards/src/rule-manifest.ts';
 import {
+  type AppEffect,
   type AuditApp,
   type AuditArgs,
   type AuditMode,
   type KnownRules,
   type LintReport,
+  appEffect,
   canaryProblems,
   countsByRule,
   diagnosticProblems,
-  nativeDiagnosticCodes,
   effectVersionInTsgoRange,
+  nativeDiagnosticCodes,
   parseAuditArgs,
   parseLintReport,
+  projectConfigErrorCode,
   selectAuditFiles,
   spanIdentities,
-  uncoveredFiles,
 } from '../lib/effect-app-audit.ts';
+import {
+  type ProjectListings,
+  appCoverage,
+  coverageProblems,
+  effectResolver,
+  listAppProjects,
+} from '../lib/effect-app-projects.ts';
 import { readOxlintRuleItems } from '../lib/effective-config.ts';
 import {
   boundedSummary,
@@ -52,7 +54,6 @@ import {
   fail,
   isObjectRecord,
   printLine,
-  readJsonRecord,
   removeTempDir,
   runCommand,
 } from '../lib/script-runtime.ts';
@@ -67,7 +68,8 @@ import {
 
 const millisecondsPerMinute = 60_000;
 const summaryIndent = 2;
-const maxListedFiles = 5;
+// 256 MiB: a monorepo with vendored upstreams lists megabytes of tracked paths.
+const gitMaxBufferBytes = 268_435_456;
 // A lint run with findings exits 1; anything else is a config, startup, or type-aware failure.
 const lintExitCodes = new Set([0, 1]);
 const custom = (rule: string): string => `${oxlintPackageName}(${rule})`;
@@ -89,7 +91,7 @@ const disabledCategories = Object.fromEntries(
 
 interface CheckedApp extends AuditApp {
   readonly dirty: boolean;
-  readonly effectVersion: string;
+  readonly effect: AppEffect;
   readonly head: string;
   readonly ignored: readonly string[];
   readonly selected: readonly string[];
@@ -97,7 +99,6 @@ interface CheckedApp extends AuditApp {
 
 interface EngineRun {
   readonly bin: string;
-  readonly excludes: readonly string[];
   readonly config: Record<string, unknown>;
   // Run from the app root, the patched oxlint would look for tsgolint in the app; the typed modes
   // point it at the harness consumer's patched tsgolint instead.
@@ -111,20 +112,9 @@ interface EngineRun {
 }
 
 const git = (app: AuditApp, args: readonly string[]): string => {
-  const result = runCommand('git', ['-C', app.path, ...args]);
+  const result = runCommand('git', ['-C', app.path, ...args], { maxBuffer: gitMaxBufferBytes });
   ensureSuccess(result, `git ${args.join(' ')} in ${app.name}`);
   return result.stdout;
-};
-
-const effectVersionOf = (app: AuditApp): string => {
-  const manifestPath = join(app.path, 'node_modules', 'effect', 'package.json');
-  if (!existsSync(manifestPath)) {
-    return fail(
-      `${app.name}: node_modules/effect is missing. Install the app's dependencies first; the audit never installs.`,
-    );
-  }
-  const { version } = readJsonRecord(manifestPath, `${app.name} effect package.json`);
-  return typeof version === 'string' ? version : fail(`${app.name}: effect has no version.`);
 };
 
 const checkedHead = (app: AuditApp): string => {
@@ -151,31 +141,19 @@ const checkedDirty = (app: AuditApp, allowDirty: boolean): boolean => {
 const checkApp = (app: AuditApp, args: AuditArgs): CheckedApp => {
   const head = checkedHead(app);
   const dirty = checkedDirty(app, args.allowDirty);
-  if (args.mode !== 'ast' && !existsSync(join(app.path, app.tsconfig))) {
-    return fail(
-      `${app.name}: ${app.tsconfig} is missing, so the typed pass has no TypeScript project.`,
-    );
-  }
   const tracked = git(app, ['ls-files']).split('\n').filter(Boolean);
   const { ignored, selected } = selectAuditFiles(tracked, args.excludes);
-  return { ...app, dirty, effectVersion: effectVersionOf(app), head, ignored, selected };
+  const effect = appEffect(app.name, selected.map(effectResolver(app)));
+  return { ...app, dirty, effect, head, ignored, selected };
 };
 
-// The engine walks the app root itself, so the selection policy is repeated as ignore patterns; the
-// canary then requires the engine's file count to equal the selected count (plus a typed canary).
-const ignorePatterns = (excludes: readonly string[]): readonly string[] => [
-  '**/*.d.ts',
-  '**/*.d.cts',
-  '**/*.d.mts',
-  ...excludes.flatMap((prefix) => [`${prefix}**`, `**/${prefix}**`]),
-];
-
-// Every implemented custom rule the recorded run enabled, at its shipped severity.
+// Every implemented custom rule in the domains the recorded run enabled (Effect and Effect React),
+// at its shipped severity, so the counts compare with the recorded run's.
 const astConfig = (): Record<string, unknown> => ({
   categories: disabledCategories,
   jsPlugins: [pluginEntry],
   rules: Object.fromEntries(
-    presetEntriesForDomains(['effect', 'effect-react', 'general', 'boundaries'])
+    presetEntriesForDomains(['effect', 'effect-react'])
       .filter((entry) => entry.disposition !== 'built-in' && entry.disposition !== 'tsgo-delegated')
       .map((entry) => [
         `${oxlintPackageName}/${entry.name}`,
@@ -239,10 +217,7 @@ const knownRulesFor = (bin: string, config: Record<string, unknown>): KnownRules
 const writeTypedCanary = (app: CheckedApp, configDir: string): string => {
   const canaryDir = join(configDir, 'canary');
   mkdirSync(join(canaryDir, 'node_modules'), { recursive: true });
-  symlinkSync(
-    realpathSync(join(app.path, 'node_modules', 'effect')),
-    join(canaryDir, 'node_modules', 'effect'),
-  );
+  symlinkSync(app.effect.packageDir, join(canaryDir, 'node_modules', 'effect'));
   writeFileSync(
     join(canaryDir, 'tsconfig.json'),
     `${JSON.stringify({ compilerOptions: { module: 'esnext', moduleResolution: 'bundler', skipLibCheck: true, strict: true, target: 'es2022' }, include: ['.'] })}\n`,
@@ -258,23 +233,16 @@ const lintApp = async (
   configPath: string,
   canaryFile: string | undefined,
 ): Promise<LintReport> => {
-  const tsconfigArgs = run.mode === 'ast' ? [] : ['--tsconfig', app.tsconfig];
   const canaryArgs = canaryFile === globalThis.undefined ? [] : [canaryFile];
-  // CLI ignore patterns resolve against the app root; config ignorePatterns resolve against the temp
-  // config's folder on the patched engine, so they would not match the app's files.
-  const ignoreArgs = ignorePatterns(run.excludes).flatMap((pattern) => [
-    '--ignore-pattern',
-    pattern,
-  ]);
+  // No --tsconfig: on the pinned engine it changes only import resolution, and type-aware linting
+  // finds each file's project itself (projectCoverage models that lookup).
   const args = [
     '--config',
     configPath,
     '--disable-nested-config',
-    ...ignoreArgs,
-    ...tsconfigArgs,
     '--format',
     'json',
-    '.',
+    ...app.selected,
     ...canaryArgs,
   ];
   const result = ensureCompleted(
@@ -289,41 +257,16 @@ const lintApp = async (
     : fail(`${app.name} ${run.mode}: the engine failed.\n${boundedSummary(result)}`);
 };
 
-// oxlint lints every selected file whatever the tsconfig includes, so typed evidence counts only
-// when the named app project itself contains each selected file.
-const coverageProblems = async (app: CheckedApp, run: EngineRun): Promise<readonly string[]> => {
-  if (run.tsc === globalThis.undefined) {
-    return [];
-  }
-  const result = ensureCompleted(
-    await runBounded(run.tsc, ['--listFilesOnly', '-p', app.tsconfig], resolve(app.path), {
-      timeoutMs: run.timeoutMs,
-    }),
-    `${app.name} tsc --listFilesOnly`,
-  );
-  if (result.status !== 0) {
-    return fail(
-      `${app.name}: TypeScript could not list ${app.tsconfig}.\n${boundedSummary(result)}`,
-    );
-  }
-  const missing = uncoveredFiles(result.stdout, realpathSync(app.path), app.selected);
-  return missing.length === 0
-    ? []
-    : [
-        `${app.tsconfig} does not include ${missing.length} selected files, so typed evidence would not cover them (first: ${missing.slice(0, maxListedFiles).join(', ')})`,
-      ];
-};
-
 interface RunOutcome {
   readonly canaryFile: string | undefined;
-  readonly coverage: readonly string[];
+  readonly listings: ProjectListings | undefined;
   readonly report: LintReport;
 }
 
 const evidenceFor = (
   app: CheckedApp,
   run: EngineRun,
-  { canaryFile, coverage, report }: RunOutcome,
+  { canaryFile, listings, report }: RunOutcome,
 ) => {
   const engineProblems = diagnosticProblems(report.diagnostics, run.known);
   if (engineProblems.length > 0) {
@@ -331,12 +274,19 @@ const evidenceFor = (
       `${app.name} ${run.mode}: the run is not a measurement.\n${engineProblems.join('\n')}`,
     );
   }
+  const coverage =
+    listings === globalThis.undefined ? globalThis.undefined : appCoverage(app, listings, report);
   const appDiagnostics = report.diagnostics.filter(
-    (diagnostic) => diagnostic.filename !== canaryFile,
+    (diagnostic) =>
+      diagnostic.filename !== canaryFile && diagnostic.code !== projectConfigErrorCode,
   );
   return {
-    canaryProblems: [...coverage, ...canaryProblems(report, app.selected.length, canaryFile)],
+    canaryProblems: [
+      ...coverageProblems(coverage),
+      ...canaryProblems(report, app.selected.length, canaryFile),
+    ],
     countsByRule: countsByRule(appDiagnostics),
+    coverage,
     diagnostics: appDiagnostics.length,
     evaluatedSpans: spanIdentities(appDiagnostics, evaluatedCodes),
     lintedFiles: report.numberOfFiles,
@@ -349,10 +299,13 @@ const measureApp = async (app: CheckedApp, run: EngineRun) => {
   try {
     const configPath = join(configDir, 'oxlintrc.json');
     writeFileSync(configPath, `${JSON.stringify(run.config)}\n`);
-    const coverage = await coverageProblems(app, run);
+    const listings =
+      run.tsc === globalThis.undefined
+        ? globalThis.undefined
+        : await listAppProjects(app, run.tsc, run.timeoutMs);
     const canaryFile = run.mode === 'ast' ? globalThis.undefined : writeTypedCanary(app, configDir);
     const report = await lintApp(app, run, configPath, canaryFile);
-    return evidenceFor(app, run, { canaryFile, coverage, report });
+    return evidenceFor(app, run, { canaryFile, listings, report });
   } finally {
     removeTempDir(configDir);
   }
@@ -366,12 +319,12 @@ const engineVersion = async (bin: string): Promise<string> =>
 
 const appRecord = (app: CheckedApp) => ({
   dirty: app.dirty,
-  effectVersion: app.effectVersion,
-  effectVersionInTsgoRange: effectVersionInTsgoRange(app.effectVersion),
+  effectVersion: app.effect.version,
+  effectVersionInTsgoRange: effectVersionInTsgoRange(app.effect.version),
+  filesWithoutEffect: app.effect.filesWithoutEffect,
   head: app.head,
   ignoredFiles: app.ignored,
   selectedFiles: app.selected.length,
-  tsconfig: app.tsconfig,
 });
 
 const unusableEvidence = (results: Readonly<Record<string, unknown>>): readonly string[] =>
@@ -413,7 +366,6 @@ const auditWith = async (
       bin,
       config,
       env,
-      excludes: args.excludes,
       known,
       mode: args.mode,
       output: args.output,

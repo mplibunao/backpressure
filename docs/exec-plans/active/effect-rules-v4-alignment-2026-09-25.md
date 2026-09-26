@@ -336,6 +336,20 @@ More exemption evidence:
 - **No boundary scoping.** Both apps mix React, Electron, CLI, and promise-adapter code into Effect-importing files. The preset has no scoping for boundary code, and the README's `src/**/*.ts` override example applies every rule there.
 - **Rules that caught mostly real smells in the apps:** `no-json-parse`, `prefer-schema-inferred-types`, `prefer-effect-predicate`, `prefer-yield-tagged-error`, `no-effect-sync-console`, and mostly `no-model-overlay-cast`.
 
+### After-change run (verified 2026-09-26)
+
+The repeatable app audit replayed both snapshots after the rule rework; [the app audit report](../../reports/effect-v4-app-audit-2026-09-25.md) holds the per-rule tables, coverage, fingerprints, and every reviewed JSON hit.
+
+| App | Files | Custom diagnostics before | After | Typed files | Shipped typed diagnostics |
+|---|---|---|---|---|---|
+| t3code | 3,841 | 34,030 | 6,414 | 3,802 | 18,646 |
+| executor | 1,940 | 13,667 | 3,588 | 1,355 | 9,386 |
+
+- `prefer-schema-over-json` ships `off`: executor reports 313 hits against a limit of 98, and 2 of 321 reviewed sites improve with Schema.
+- tsgo's `missed-pipeable-opportunity` intersects 6 of 482 custom pipe-rule spans, mostly reporting nested Schema constructors, so it does not cover the custom rules.
+- `effect-fn-opportunity` reports 2 and 1 wrappers where `prefer-effect-fn` reports 324 and 339.
+- The typed engine rejects five executor tsconfigs under TypeScript 7 option validation and skips their programs, so executor's typed counts cover 1,355 of its 1,922 script files.
+
 ## tsgo severity list and boundary scoping (decided after design review)
 
 tsgo severities ship as one explicit `effecttsgo/*` list generated from the four category presets at the pinned tag (`oxlint-presets/{correctness,antipattern,style,effect-native}.json`), not by extending `recommended`, whose membership moved 22 rules in 12 commits. Grading follows ADR-004, with the decided severities above taking precedence:
