@@ -124,52 +124,6 @@
         "ignoreEffectWarningsInTscExitCode": false,
         "name": "@effect/language-service",
         "namespaceImportPackages": ["effect"],
-        "overrides": [
-          {
-            "include": [
-              "**/*.test.cjs",
-              "**/*.test.cts",
-              "**/*.test.js",
-              "**/*.test.jsx",
-              "**/*.test.mjs",
-              "**/*.test.mts",
-              "**/*.test.ts",
-              "**/*.test.tsx",
-              "**/*.spec.cjs",
-              "**/*.spec.cts",
-              "**/*.spec.js",
-              "**/*.spec.jsx",
-              "**/*.spec.mjs",
-              "**/*.spec.mts",
-              "**/*.spec.ts",
-              "**/*.spec.tsx",
-              "**/*-test.cjs",
-              "**/*-test.cts",
-              "**/*-test.js",
-              "**/*-test.jsx",
-              "**/*-test.mjs",
-              "**/*-test.mts",
-              "**/*-test.ts",
-              "**/*-test.tsx",
-              "**/*-spec.cjs",
-              "**/*-spec.cts",
-              "**/*-spec.js",
-              "**/*-spec.jsx",
-              "**/*-spec.mjs",
-              "**/*-spec.mts",
-              "**/*-spec.ts",
-              "**/*-spec.tsx",
-              "**/__tests__/**/*",
-              "**/test/**/*",
-              "**/tests/**/*"
-            ],
-            "options": {
-              "diagnosticSeverity": {
-                "strictEffectProvide": "off"
-              }
-            }
-          }
-        ],
         "pipeableMinArgCount": 2
       }
     ]

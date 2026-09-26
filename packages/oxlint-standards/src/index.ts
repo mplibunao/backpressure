@@ -3,13 +3,14 @@ export { plugin, plugin as default, pluginName, rules } from './plugin.js';
 export {
   collectionRuleNames,
   implementedCustomRuleNames,
-  lspOwnedChecks,
   linteffectSourceRuleNames,
   deriveOmittedNonErrorRuleAllowlist,
   manifestCollectionsForConfiguredFragment,
   ruleManifest,
   styleAtErrorExceptions,
+  tsgoOwnedChecks,
 } from './rule-manifest.js';
+export type { TsgoRuleId } from './generated/tsgo-policy.js';
 export type {
   RuleCollection,
   RuleConfigSeverity,
@@ -26,6 +27,9 @@ export type {
 export {
   baseConfig,
   composeLintConfigs,
+  effectBoundaryRules,
+  effectTsgoConfig,
+  type EffectTsgoConfig,
   jsdocConfig,
   nodeRuntimeConfig,
   unicornConfig,
@@ -35,6 +39,7 @@ export {
   boundariesPreset,
   effectPreset,
   effectReactPreset,
+  type EffectPresetConfig,
   generalPreset,
   type PresetConfig,
   type RuleConfig,

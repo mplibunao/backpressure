@@ -4,9 +4,11 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 import { ensureSuccess, fail, runCommand } from '../../lib/script-runtime.ts';
+import { effectIntegrationVersions } from '../../lib/tool-versions.ts';
 import { oxlintPackageDir, oxlintPackageName } from './package.ts';
 import {
   assertExactStringArray,
+  assertOptionalTsgoPeer,
   isObjectRecord,
   isStringRecord,
   readJsonObject,
@@ -19,6 +21,7 @@ interface PackageJson {
   readonly devDependencies?: Record<string, string>;
   readonly peerDependencies?: Record<string, string>;
   readonly optionalDependencies?: Record<string, string>;
+  readonly peerDependenciesMeta?: unknown;
 }
 
 const packageJsonPath = join(oxlintPackageDir, 'package.json');
@@ -48,6 +51,11 @@ const forbiddenPackagePathFragments = [
   'tsconfig',
 ];
 const forbiddenDependencyPatterns = ['rika'];
+// The broad non-Effect engine peer stays; tsgo is an optional peer that only advertises the
+// tested Effect contract.
+const nonEffectOxlintPeer = '^1.58.0';
+// Consumer runtime and declarations must never reach the tsgo patcher or the oxlint plugin SDK.
+const forbiddenUpstreamSpecifiers = ['@effect/tsgo', '@oxlint/plugins'];
 const distIndexJsPath = join(oxlintPackageDir, 'dist', 'index.js');
 const distIndexDtsPath = join(oxlintPackageDir, 'dist', 'index.d.ts');
 const packageInternalAliasPrefix = '#oxlint-standards/';
@@ -176,7 +184,7 @@ const moduleSpecifierForNode = (node: ts.Node): ModuleSpecifierForNode | null =>
   importTypeSpecifierForNode(node) ??
   dynamicImportSpecifierForNode(node);
 
-export const collectLeakedInternalModuleSpecifiers = (
+const collectModuleSpecifiers = (
   sourceText: string,
   sourceName: string,
   scriptKind: ts.ScriptKind,
@@ -188,12 +196,12 @@ export const collectLeakedInternalModuleSpecifiers = (
     true,
     scriptKind,
   );
-  const leakedSpecifiers: LeakedInternalModuleSpecifier[] = [];
+  const specifiers: LeakedInternalModuleSpecifier[] = [];
 
   const visit = (node: ts.Node): void => {
     const moduleSpecifier = moduleSpecifierForNode(node);
-    if (moduleSpecifier !== null && isLeakedInternalSpecifier(moduleSpecifier.specifier)) {
-      leakedSpecifiers.push({
+    if (moduleSpecifier !== null) {
+      specifiers.push({
         kind: moduleSpecifier.kind,
         line: lineForNode(sourceFile, moduleSpecifier.node),
         specifier: moduleSpecifier.specifier,
@@ -204,26 +212,68 @@ export const collectLeakedInternalModuleSpecifiers = (
   };
 
   visit(sourceFile);
-  return leakedSpecifiers;
+  return specifiers;
 };
+
+const isForbiddenUpstreamSpecifier = (specifier: string): boolean =>
+  forbiddenUpstreamSpecifiers.some(
+    (upstream) => specifier === upstream || specifier.startsWith(`${upstream}/`),
+  );
+
+export const collectLeakedInternalModuleSpecifiers = (
+  sourceText: string,
+  sourceName: string,
+  scriptKind: ts.ScriptKind,
+): LeakedInternalModuleSpecifier[] =>
+  collectModuleSpecifiers(sourceText, sourceName, scriptKind).filter((moduleSpecifier) =>
+    isLeakedInternalSpecifier(moduleSpecifier.specifier),
+  );
+
+export const collectUpstreamModuleSpecifiers = (
+  sourceText: string,
+  sourceName: string,
+  scriptKind: ts.ScriptKind,
+): LeakedInternalModuleSpecifier[] =>
+  collectModuleSpecifiers(sourceText, sourceName, scriptKind).filter((moduleSpecifier) =>
+    isForbiddenUpstreamSpecifier(moduleSpecifier.specifier),
+  );
 
 const assertNoLeakedInternalDistSpecifiers = (
   path: string,
   label: string,
   scriptKind: ts.ScriptKind,
 ): void => {
-  const leakedSpecifiers = collectLeakedInternalModuleSpecifiers(
-    readFileSync(path, 'utf8'),
-    path,
-    scriptKind,
-  );
+  const specifiers = collectModuleSpecifiers(readFileSync(path, 'utf8'), path, scriptKind);
 
+  const leakedSpecifiers = specifiers.filter((moduleSpecifier) =>
+    isLeakedInternalSpecifier(moduleSpecifier.specifier),
+  );
   if (leakedSpecifiers.length > 0) {
     const formattedSpecifiers = leakedSpecifiers.map(
       (leak) => `${leak.kind} ${JSON.stringify(leak.specifier)} at line ${leak.line}`,
     );
     fail(`${label} leaked internal module specifier(s): ${formattedSpecifiers.join(', ')}.`);
   }
+
+  const upstreamSpecifiers = specifiers.filter((moduleSpecifier) =>
+    isForbiddenUpstreamSpecifier(moduleSpecifier.specifier),
+  );
+  if (upstreamSpecifiers.length > 0) {
+    fail(
+      `${label} must not reference ${upstreamSpecifiers.map((leak) => `${JSON.stringify(leak.specifier)} at line ${leak.line}`).join(', ')}.`,
+    );
+  }
+};
+
+const assertOxlintPeers = (packageJson: PackageJson): void => {
+  if (packageJson.peerDependencies?.['oxlint'] !== nonEffectOxlintPeer) {
+    fail(`oxlint package must keep the ${nonEffectOxlintPeer} oxlint peer for non-Effect users.`);
+  }
+  assertOptionalTsgoPeer(
+    { ...packageJson },
+    effectIntegrationVersions().effectTsgo,
+    'oxlint package',
+  );
 };
 
 export const assertOxlintPackageJsonAllowlist = (): void => {
@@ -255,6 +305,8 @@ export const assertOxlintPackageJsonAllowlist = (): void => {
   if (forbiddenDependencies.length > 0) {
     fail(`Forbidden dependency in publish package: ${forbiddenDependencies.join(', ')}.`);
   }
+
+  assertOxlintPeers(packageJson);
 };
 
 export const assertOxlintPackedArtifact = (files: readonly string[]): void => {
@@ -294,6 +346,32 @@ export const assertOxlintDistArtifact = (): void => {
 
     if (entry.default?.rules?.['no-effect-escape-hatch'] === globalThis.undefined) {
       throw new Error('plugin rules did not include no-effect-escape-hatch');
+    }
+
+    if ('lspOwnedChecks' in entry) {
+      throw new Error('dist still exports lspOwnedChecks');
+    }
+
+    const tsgoRuleIds = Object.keys(entry.effectTsgoConfig?.rules ?? {});
+    if (tsgoRuleIds.length !== 113 || !tsgoRuleIds.every((ruleId) => ruleId.startsWith('effecttsgo/'))) {
+      throw new Error('effectTsgoConfig did not set all 113 effecttsgo rules');
+    }
+
+    if (JSON.stringify(entry.tsgoOwnedChecks) !== JSON.stringify(tsgoRuleIds)) {
+      throw new Error('tsgoOwnedChecks did not list the delegated rule IDs');
+    }
+
+    const preset = entry.effectPreset;
+    if (!preset?.plugins?.includes('effecttsgo') || preset?.options?.typeAware !== true) {
+      throw new Error('effectPreset did not carry the effecttsgo plugin and typeAware');
+    }
+
+    if (!tsgoRuleIds.every((ruleId) => ruleId in preset.rules) || preset.rules['no-shadow'] !== 'off') {
+      throw new Error('effectPreset did not compose the delegated rules and native carve-outs');
+    }
+
+    if (!Object.isFrozen(entry.effectBoundaryRules) || Object.keys(entry.effectBoundaryRules).length !== 18) {
+      throw new Error('effectBoundaryRules was not the frozen 18-rule relaxation');
     }
   `;
   const result = runCommand('node', ['--input-type=module', '--eval', runtimeContract], {

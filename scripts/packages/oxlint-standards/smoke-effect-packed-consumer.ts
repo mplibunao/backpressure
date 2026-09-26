@@ -1,0 +1,368 @@
+#!/usr/bin/env bun
+// Default route: both packed tarballs in an isolated consumer with the supported patched oxlint
+// pair. The consumer composes the installed full effectPreset and extends the installed overlay,
+// so a source-tree import cannot mask a missing export or JSON file.
+import { join } from 'node:path';
+
+import {
+  type BoundedResult,
+  type EffectConsumer,
+  type EffectRoute,
+  boundedSummary,
+  ensureBoundedSuccess,
+  ensureCompleted,
+  withEffectConsumer,
+} from '../../lib/effect-consumer-harness.ts';
+import { packWorkspacePackage } from '../../lib/packed-consumer-harness.ts';
+import {
+  createTempDir,
+  fail,
+  isObjectRecord,
+  printLine,
+  readJsonRecord,
+  removeTempDir,
+} from '../../lib/script-runtime.ts';
+import { effectIntegrationVersions } from '../../lib/tool-versions.ts';
+import { assertTsconfigPackedArtifact } from '../tsconfig/artifact-assertions.ts';
+import { tsconfigPackageDir } from '../tsconfig/package.ts';
+import { assertOxlintDistArtifact, assertOxlintPackedArtifact } from './artifact-assertions.ts';
+import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
+
+const versions = effectIntegrationVersions();
+const customCode = (ruleName: string): string => `${oxlintPackageName}(${ruleName})`;
+const tsgoCode = (ruleName: string): string => `effecttsgo(${ruleName})`;
+
+const provideSource = `import * as Context from 'effect/Context'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+
+class Config extends Context.Service<Config>()('Config', { make: Effect.succeed({}) }) {
+  static Default = Layer.effect(this, this.make)
+}
+
+export const program = Effect.void.pipe(Effect.provide(Config.Default))
+`;
+const escapeSource = `${provideSource}
+export const fatal = Effect.orDie(program)
+`;
+const clockSource = 'export const now = Date.now()\n';
+const inEffectClockSource = `import * as Effect from 'effect/Effect'
+
+export const now = Date.now()
+
+export const read = Effect.gen(function* () {
+  const at = Date.now()
+  return yield* Effect.succeed(at)
+})
+`;
+const wrapperBody = `  Effect.gen(function* () {
+    const value = yield* Effect.succeed(n)
+    return value + 1
+  })`;
+// effect-fn-opportunity reports a wrapper only when an enabled effectFn fix variant applies to it.
+// Upstream's default, ['span'], covers only the Effect.withSpan form; the overlay's inferred and
+// suggested spans cover the other two, which are the shapes the dropped prefer-effect-fn caught.
+const wrapperSources = {
+  'src/wrappers/declaration.ts': `import * as Effect from 'effect/Effect'\n\nexport function addOne(n: number) {\n  return${wrapperBody.slice(1)}\n}\n`,
+  'src/wrappers/parameter.ts': `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}\n`,
+  'src/wrappers/spanned.ts': `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}.pipe(Effect.withSpan('addOne'))\n`,
+};
+const testScopedFiles = [
+  'src/provide.test.ts',
+  'src/provide-spec.ts',
+  'src/__tests__/provide.ts',
+  'src/test/provide.ts',
+  'src/tests/provide.ts',
+];
+const boundaryGlob = 'src/boundary/**';
+
+interface LintDiagnostic {
+  readonly code: string;
+  readonly filename: string;
+  readonly severity: string;
+}
+
+const isLintDiagnostic = (value: unknown): value is LintDiagnostic =>
+  isObjectRecord(value) &&
+  typeof value['code'] === 'string' &&
+  typeof value['filename'] === 'string' &&
+  typeof value['severity'] === 'string';
+
+const lintDiagnostics = (result: BoundedResult, label: string): readonly LintDiagnostic[] => {
+  const parsed: unknown = JSON.parse(result.stdout);
+  const diagnostics = isObjectRecord(parsed) ? parsed['diagnostics'] : globalThis.undefined;
+  return Array.isArray(diagnostics) && diagnostics.every(isLintDiagnostic)
+    ? diagnostics
+    : fail(`${label} did not print oxlint JSON diagnostics.\n${boundedSummary(result)}`);
+};
+
+const codesIn = (diagnostics: readonly LintDiagnostic[], file: string): readonly string[] =>
+  diagnostics
+    .filter((diagnostic) => diagnostic.filename === file)
+    .map((diagnostic) => diagnostic.code);
+
+const severityOf = (diagnostics: readonly LintDiagnostic[], file: string, code: string): string =>
+  diagnostics.find((diagnostic) => diagnostic.filename === file && diagnostic.code === code)
+    ?.severity ?? 'absent';
+
+const expectPresence = (
+  diagnostics: readonly LintDiagnostic[],
+  file: string,
+  expected: Readonly<Record<string, boolean>>,
+  label: string,
+): void => {
+  const codes = codesIn(diagnostics, file);
+  const wrong = Object.entries(expected).filter(
+    ([code, present]) => codes.includes(code) !== present,
+  );
+  if (wrong.length > 0) {
+    fail(
+      `${label}: ${file} expected ${wrong.map(([code, present]) => `${present ? '' : 'no '}${code}`).join(', ')}; got [${codes.join(', ')}].`,
+    );
+  }
+};
+
+// The consumer writes its own config from the installed package, exactly as a vite or
+// .oxlintrc consumer would: the full preset plus a tail override relaxing one boundary path.
+const writeConsumerConfig = async (consumer: EffectConsumer): Promise<void> => {
+  const script = `
+    import { writeFileSync } from 'node:fs';
+    import { composeLintConfigs, effectBoundaryRules, effectPreset } from ${JSON.stringify(oxlintPackageName)};
+
+    const config = composeLintConfigs(effectPreset, {
+      overrides: [{ files: [${JSON.stringify(boundaryGlob)}], rules: { ...effectBoundaryRules } }],
+    });
+    writeFileSync('.oxlintrc.json', JSON.stringify(config, null, 2) + '\\n');
+  `;
+  ensureBoundedSuccess(
+    await consumer.exec('node', ['--input-type=module', '--eval', script]),
+    'write the consumer oxlint config',
+  );
+};
+
+const writeFixtures = (consumer: EffectConsumer): void => {
+  consumer.writeJson('tsconfig.json', {
+    extends: ['@mplibunao/tsconfig/base.json', '@mplibunao/tsconfig/effect.json'],
+    include: ['src'],
+  });
+  consumer.writeFile('src/program.ts', escapeSource);
+  consumer.writeFile('src/clock.ts', clockSource);
+  consumer.writeFile('src/boundary/clock.ts', inEffectClockSource);
+  for (const file of testScopedFiles) {
+    consumer.writeFile(file, provideSource);
+  }
+  for (const [file, text] of Object.entries(wrapperSources)) {
+    consumer.writeFile(file, text);
+  }
+};
+
+const lint = async (
+  consumer: EffectConsumer,
+  paths: readonly string[],
+  extraArgs: readonly string[] = [],
+): Promise<BoundedResult> =>
+  ensureCompleted(
+    await consumer.exec('pnpm', [
+      'exec',
+      'oxlint',
+      '--config',
+      '.oxlintrc.json',
+      '--tsconfig',
+      'tsconfig.json',
+      ...extraArgs,
+      ...paths,
+    ]),
+    `oxlint ${paths.join(' ')}`,
+  );
+
+const assertUnknownPlugin = (result: BoundedResult, label: string): void => {
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (result.status === 0 || !output.includes("Unknown plugin: 'effecttsgo'")) {
+    fail(`${label} must fail on the unknown effecttsgo plugin.\n${boundedSummary(result)}`);
+  }
+};
+
+// A custom and a delegated diagnostic from one run prove the installed composition wires both.
+const assertShippedSeverities = (diagnostics: readonly LintDiagnostic[], label: string): void => {
+  for (const [file, code, severity] of [
+    ['src/program.ts', tsgoCode('strict-effect-provide'), 'error'],
+    ['src/program.ts', customCode('no-effect-escape-hatch'), 'error'],
+    ['src/clock.ts', tsgoCode('global-date'), 'warning'],
+    ['src/boundary/clock.ts', tsgoCode('global-date-in-effect'), 'error'],
+  ] as const) {
+    if (severityOf(diagnostics, file, code) !== severity) {
+      fail(
+        `${label}: ${file} ${code} is ${severityOf(diagnostics, file, code)}, expected ${severity}.`,
+      );
+    }
+  }
+};
+
+const assertShippedBehavior = async (consumer: EffectConsumer): Promise<void> => {
+  const result = await lint(consumer, ['--format', 'json', 'src']);
+  const label = 'full effectPreset on the patched engine';
+  if (result.status !== 1) {
+    fail(`${label} must exit 1 on its error diagnostics.\n${boundedSummary(result)}`);
+  }
+  const diagnostics = lintDiagnostics(result, label);
+  assertShippedSeverities(diagnostics, label);
+  for (const file of testScopedFiles) {
+    expectPresence(
+      diagnostics,
+      file,
+      { [tsgoCode('strict-effect-provide')]: false },
+      `${label} test scope`,
+    );
+  }
+  expectPresence(
+    diagnostics,
+    'src/boundary/clock.ts',
+    { [tsgoCode('global-date')]: false },
+    `${label} boundary relaxation`,
+  );
+};
+
+const assertWarningExit = async (consumer: EffectConsumer): Promise<void> => {
+  const plain = await lint(consumer, ['src/clock.ts']);
+  if (plain.status !== 0) {
+    fail(`A warning-only file must pass without --max-warnings.\n${boundedSummary(plain)}`);
+  }
+  const strict = await lint(consumer, ['--max-warnings', '0', 'src/clock.ts']);
+  if (strict.status === 0) {
+    fail(`A warning-only file must fail with --max-warnings 0.\n${boundedSummary(strict)}`);
+  }
+};
+
+const wrapperCoverage = async (
+  consumer: EffectConsumer,
+  dir: string,
+): Promise<readonly string[]> => {
+  const result = await lint(consumer, ['--format', 'json', dir]);
+  const diagnostics = lintDiagnostics(result, `wrapper forms in ${dir}`);
+  return Object.keys(wrapperSources)
+    .map((file) => file.replace('src/wrappers/', `${dir}/`))
+    .filter((file) => !codesIn(diagnostics, file).includes(tsgoCode('effect-fn-opportunity')));
+};
+
+// tsgolint reads the Effect options from the tsconfig.json nearest each file, not from
+// --tsconfig. The control inlines the installed overlay's plugin entry in a tsconfig.json with no
+// `extends`, so it proves the engine, Effect types, and effectFn detection independently of how
+// the shipped setup inherits those options.
+const writeInlineOptionsControl = (consumer: EffectConsumer): void => {
+  const installed = (file: string): Record<string, unknown> =>
+    readJsonRecord(join(consumer.dir, 'node_modules', '@mplibunao', 'tsconfig', file), file);
+  const base = installed('base.json')['compilerOptions'];
+  const overlay = installed('effect.json')['compilerOptions'];
+  const plugins = isObjectRecord(overlay)
+    ? overlay['plugins']
+    : fail('effect.json has no plugins.');
+  consumer.writeJson('inline-control/tsconfig.json', {
+    compilerOptions: { ...(isObjectRecord(base) ? base : {}), plugins },
+    include: ['.'],
+  });
+  for (const [file, text] of Object.entries(wrapperSources)) {
+    consumer.writeFile(file.replace('src/wrappers/', 'inline-control/'), text);
+  }
+};
+
+// Under the shipped setup (a tsconfig.json extending the base config and effect.json), the patched
+// engine runs effect-fn-opportunity on upstream-default options, which report only the
+// Effect.withSpan wrapper. prefer-effect-fn covers the other two, so together every wrapper
+// reports. The exact per-file split also trips when upstream starts keeping the options through
+// `extends`, which is the signal to drop prefer-effect-fn again (BP-TD-014).
+const shippedWrapperCodes: Readonly<Record<string, readonly string[]>> = {
+  'src/wrappers/declaration.ts': [customCode('prefer-effect-fn')],
+  'src/wrappers/parameter.ts': [customCode('prefer-effect-fn')],
+  'src/wrappers/spanned.ts': [tsgoCode('effect-fn-opportunity')],
+};
+const wrapperRuleCodes = new Set([
+  customCode('prefer-effect-fn'),
+  tsgoCode('effect-fn-opportunity'),
+]);
+
+const assertShippedWrapperSplit = async (consumer: EffectConsumer): Promise<void> => {
+  const result = await lint(consumer, ['--format', 'json', 'src/wrappers']);
+  const diagnostics = lintDiagnostics(result, 'wrapper forms under the shipped setup');
+  for (const [file, expected] of Object.entries(shippedWrapperCodes)) {
+    const actual = codesIn(diagnostics, file).filter((code) => wrapperRuleCodes.has(code));
+    if (actual.length === 0) {
+      fail(
+        `${file} reported neither prefer-effect-fn nor effect-fn-opportunity under the shipped setup.`,
+      );
+    }
+    if (actual.toSorted().join() !== [...expected].toSorted().join()) {
+      fail(
+        `${file} reported [${actual.join(', ')}], expected [${expected.join(', ')}]. The split assumes the patched oxlint engine applies upstream-default Effect options when the discovered tsconfig.json uses \`extends\`. If effect-fn-opportunity now reports the plain wrappers, upstream keeps the options through \`extends\`: drop prefer-effect-fn again (BP-TD-014).`,
+      );
+    }
+  }
+};
+
+const assertWrapperCoverage = async (consumer: EffectConsumer): Promise<void> => {
+  writeInlineOptionsControl(consumer);
+  const controlMissing = await wrapperCoverage(consumer, 'inline-control');
+  if (controlMissing.length > 0) {
+    fail(
+      `The inline-options control did not report effect-fn-opportunity on ${controlMissing.join(', ')}.`,
+    );
+  }
+  await assertShippedWrapperSplit(consumer);
+};
+
+const withRouteConsumer = <T>(
+  route: EffectRoute,
+  tarballs: readonly string[],
+  body: (consumer: EffectConsumer) => Promise<T>,
+): Promise<T> =>
+  withEffectConsumer(
+    { label: `${route} consumer`, route, tarballs, versions },
+    async (consumer) => {
+      writeFixtures(consumer);
+      await writeConsumerConfig(consumer);
+      return body(consumer);
+    },
+  );
+
+const assertUnsupportedTarget = async (tarballs: readonly string[]): Promise<void> =>
+  withRouteConsumer('unsupported-oxlint', tarballs, async (consumer) => {
+    const patch = ensureCompleted(await consumer.patch(), 'unsupported-target patch');
+    if (patch.status === 0 || !`${patch.stdout}\n${patch.stderr}`.includes('Unsupported')) {
+      fail(
+        `Patching oxlint ${versions.unsupportedOxlint} must be rejected.\n${boundedSummary(patch)}`,
+      );
+    }
+    assertUnknownPlugin(
+      await lint(consumer, ['src/clock.ts']),
+      `oxlint ${versions.unsupportedOxlint}`,
+    );
+  });
+
+const assertDefaultRoute = async (tarballs: readonly string[]): Promise<void> =>
+  withRouteConsumer('oxlint', tarballs, async (consumer) => {
+    assertUnknownPlugin(await lint(consumer, ['src/clock.ts']), 'unpatched supported oxlint');
+    ensureBoundedSuccess(await consumer.patch(), 'effect-tsgo patch --no-typescript --oxlint');
+    ensureBoundedSuccess(await consumer.patch(), 'repeated effect-tsgo patch');
+    await assertShippedBehavior(consumer);
+    await assertWarningExit(consumer);
+    await assertWrapperCoverage(consumer);
+  });
+
+const packDestination = createTempDir('backpressure-effect-oxlint-pack-');
+try {
+  buildOxlintStandards();
+  assertOxlintDistArtifact();
+  const lintPack = packWorkspacePackage(oxlintPackageDir, packDestination, 'oxlint npm pack');
+  assertOxlintPackedArtifact(lintPack.files);
+  const tsconfigPack = packWorkspacePackage(
+    tsconfigPackageDir,
+    packDestination,
+    'tsconfig npm pack',
+  );
+  assertTsconfigPackedArtifact(tsconfigPack.files);
+  const tarballs = [lintPack.tarballPath, tsconfigPack.tarballPath];
+  await assertUnsupportedTarget(tarballs);
+  await assertDefaultRoute(tarballs);
+  printLine('oxlint-route Effect packed consumer smoke passed');
+} finally {
+  removeTempDir(packDestination);
+}

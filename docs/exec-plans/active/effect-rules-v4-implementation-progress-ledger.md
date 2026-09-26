@@ -24,8 +24,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-02 | Establish pinned inputs and the isolated toolchain foundation | L | DONE (local, not pushed); Renovate app activation waits on MP | `c863fa5` |
 | WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | DONE (local, not pushed) | `ec4f4f8` |
 | WI-04 | Narrow composition and error contracts | L | DONE (local, not pushed) | `9c12bcc` |
-| WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (uncommitted) | |
-| WI-06 | Activate the full Effect config and both package surfaces | L | PENDING | |
+| WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (local, not pushed) | `eaff7e4` |
+| WI-06 | Activate the full Effect config and both package surfaces | L | DONE (uncommitted); the `prefer-effect-fn` restore is an orchestrator call pending MP confirmation | |
 | WI-11 | Rule list with its generated page and local viewer | M | PENDING | |
 | WI-07 | Install all six durable gates | L | PENDING | |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | PENDING | |
@@ -607,3 +607,106 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
   - `prose`: exit 0 after wording fixes in this section.
   - `introspection:check`: exit 1 with the same `config.schema_violation` as the intake baseline.
 - **Commits:** none. The orchestrator commits.
+
+### WI-06: Activate the full Effect config and both package surfaces (DONE)
+
+- **Build:**
+  - **Manifest:** the 13 `lsp/*` rows are replaced by one generated row per pinned rule, 113 in all, built from `tsgoPolicyRows`. Each row has domain `tsgo`, disposition `tsgo-delegated`, source ownership `@effect/tsgo`, gating `type-aware`, and collection `effectTsgoConfig`. Each is `delegated`/`not-applicable`/`delegated`, and its note is the policy reason plus the upstream category. `missing-effect-service-dependency` returns as an `off` row. `importFromBarrel` is gone. `lspOwnedChecks` is replaced by `tsgoOwnedChecks`, which lists the fully qualified IDs, with no alias. `effectVersionSensitivity` is removed from the interface, every helper, and all 84 occurrences. `manifestCollectionsForConfiguredFragment('effectPreset')` now returns `effectPreset` and `effectTsgoConfig`.
+  - **Delegated fragment (`configs/effect-tsgo.ts`):** `effectTsgoConfig` sets `plugins: ['effecttsgo']`, `options.typeAware: true`, and all 113 severities read from the manifest rows. It also carries one test-file override that turns `strict-effect-provide` off. The one type bridge is the `isPatchedEngineConfig` type predicate. It checks the plugin literal, a type-aware-only options object, the exact 113-rule set with valid severities, and every override's shape. It then narrows to `EffectTsgoConfig`, which is `OxlintConfig` joined with the narrow fragment type. The code uses no `any` and no module augmentation, and nothing is widened globally.
+  - **`effectPreset`:** the export is now the full config. `composeLintConfigs` composes the custom rules, `no-shadow` and `require-yield` off, and `effectTsgoConfig`. It is typed as the new `EffectPresetConfig`: `OxlintConfig` with required `jsPlugins`, `plugins`, `options`, `rules`, and `overrides`. `effectReactPreset`, `generalPreset`, and `boundariesPreset` keep `PresetConfig`. `presetRulesForDomain` now returns severities only, and it throws if a delegated row ever reaches a preset.
+  - **`effectBoundaryRules` (`configs/effect-boundaries.ts`):** a frozen rules object with 18 `off` entries. The 8 package rules are prefixed. The 10 delegated IDs come from the generated `tsgoBoundaryRuleIds`. It holds no `*-in-effect` rule, no `strict-effect-provide`, and no `no-console`.
+  - **Root exports:** added `effectTsgoConfig`, `effectBoundaryRules`, `tsgoOwnedChecks`, `EffectPresetConfig`, `EffectTsgoConfig`, and `TsgoRuleId`. Removed `lspOwnedChecks`.
+  - **Gates (`src/effect-policy.ts`, internal):** `assertReplacementFloors(manifest, fragment)` checks each dropped row's `replacedBy` edges against the fragment's global severity. It normalizes tuple, numeric, and `deny`/`allow` spellings. An override may lower a replacement target only through the documented exception: `strict-effect-provide` off, on exactly the generated test-file patterns. That exception must also be present. The function returns the checked edges and throws with every broken one. `validateShippedOwnership(registry, manifest, fragment)` extends the WI-04 registry check to the shipped fragment. Every reporter and owner must be enabled in the fragment, and no owner may ship quieter than its reporter.
+  - **Packages:** both packages declare an optional `@effect/tsgo` 0.45.0 peer. The oxlint peer stays `^1.58.0`. The tsconfig package now ships and exports `effect.json` and `effect-tsc.json`, and ships a new `README.md`. `pnpm-lock.yaml` records the two new peer specifiers, and `pnpm install --frozen-lockfile --offline` exits 0.
+- **Decision: the tsc-route test-file override lives in the consumer's tsconfig.**
+  - **What ships:** `effect-tsc.json` has no `overrides`. The generator's new `tscTestOverrideEntry` projection builds the consumer entry: `{ "name": "@effect/language-service", "overrides": [...] }`, with the policy's 35 test patterns turning `strictEffectProvide` off. The tsconfig README documents it. A unit test holds the README snippet equal to the projection. The tsc smoke writes that README snippet verbatim as its consumer tsconfig.
+  - **Why:** tsgo 0.45.0 rebases an extended config's override globs onto that config's own folder (`internal/effectconfigraw/hooks.go`, `rewriteSpecs`). Only rooted paths and `${configDir}` are left alone, and the matcher does not substitute `${configDir}`. Globs shipped inside the installed overlay can only ever match files under `node_modules/@mplibunao/tsconfig/`.
+  - **Probe evidence:** run on TypeScript `7.0.2+effect-tsgo.0.45.0` in an isolated consumer built by the WI-02 harness from a packed tarball. Each probe used one production file with a `Layer` provide, the same provide in five test-scoped files, and a top-level `Date.now()`.
+    - Overlay-only: all six provide files reported `strictEffectProvide` at error. This reconfirms the WI-02 blocker.
+    - Consumer entry carrying only the override: only the production file reported. `globalDate` stayed a warning, so the overlay severities still applied.
+    - Monorepo: `packages/app/tsconfig.json` extends a root `tsconfig.effect.json` that holds the entry. Only the production file reported.
+    - Rooted `/**/…` patterns inside the overlay: worked in an ordinary folder. They were rejected because in a project under `tests/app/` the production `prod.ts` silently lost `strictEffectProvide`, since `/**/tests/**/*` matches folders above the project root. Upward `../` globs were rejected without a run: pnpm resolves the overlay's real path inside `node_modules/.pnpm/…`, so their depth depends on the install layout.
+    - A consumer `plugins` array with only an unrelated plugin still kept the overlay's Effect settings.
+- **Finding: the patched oxlint route applies upstream-default Effect options whenever the tsconfig it discovers uses `extends`.** The orchestrator reproduced it independently: an inline plugin entry reports all three shapes, while no plugin entry, `extends` with the entry in the base, and `extends` with the entry in the leaf each report only `addThree`.
+  - **Mechanism:** `effect-fn-opportunity` reports a wrapper only when an enabled `effectFn` fix variant applies to it: `firstAvailableFixName` returns `""`, and the rule skips the match (`internal/rules/effect_fn_opportunity.go`). Upstream's default `['span']` covers only the `Effect.withSpan` form. The README's "controls which quickfix variants are offered" wording understates this.
+  - **Discovery:** tsgolint reads the Effect options from the `tsconfig.json` nearest each linted file and ignores `--tsconfig` for them.
+  - **Evidence:** the orchestrator's probe project (`effect` rc.117, TypeScript 7.0.2, vite-plus 0.3.2) was copied and run with its own patched oxlint on the three wrapper shapes, enabling only `effecttsgo/effect-fn-opportunity`.
+    - Unchanged copy with `--tsconfig src/fnopt/tsconfig.default.json`: all three report. The adjacent `src/fnopt/tsconfig.json`, which holds all three `effectFn` variants, was the config actually used.
+    - With that file moved away: only the `Effect.withSpan` form reports, whether `--tsconfig` names the default config or the `effectFn` config.
+    - A `tsconfig.json` with no `extends`: no plugin entry reports only the `Effect.withSpan` form. `effectFn: ["no-span"]` reports all three, and so do the three shipped variants.
+    - Adding any `extends` reverts to the default. Extending a plain base with the plugin entry in the leaf, extending a plugin-only file, extending the shipped `effect.json`, and extending an array ending in `effect.json` each report only the `Effect.withSpan` form.
+  - **Not versions or types:** a 2×2 of TypeScript 6.0.2 or 7.0.2 with `effect` rc.115 or rc.117 gave only the `Effect.withSpan` form each time, using a root `tsconfig.json` with no plugin entry. In the harness consumer, `tsc` reported `Type 'Effect<string, never, never>' is not assignable to type 'number'`, so Effect types resolve. The orchestrator's oxlint binary and the matrix binary gave identical results on each project.
+  - **Likely cause (tagged source):** the patched `tsc` binary imports `etscheckerhooks`, which registers the merge hook that carries Effect options across `extends` (`internal/effectconfigraw/hooks.go`). `_patches/tsgolint/001-effect-rules.patch` does not import it, and the generated rules read `ctx.Program.Options().Effect` (`_tools/repoctl/src/codegen.ts`).
+  - **Impact:** the documented setup extends `effect.json`, so on the default route plain `(...) => Effect.gen(...)` wrappers do not report `effect-fn-opportunity`. Those are the shapes the dropped `prefer-effect-fn` caught. The floor gate passes, because the gap is in which shapes the rule sees, not in its severity. On this route severity is not a tsconfig observable: WI-02 showed oxlint owns every severity. `effectFn` is the overlay setting the route actually depends on.
+- **For WI-07, outside-program files (re-checked; still holds, independent of the cause):** in a plain consumer whose root `tsconfig.json` has `include: ["src"]`, `oxlint -c date.oxlintrc.json --format json outside.ts src/inside.ts` reported `outside.ts effecttsgo(global-date) warning` beside `src/inside.ts`. The result was the same with `--tsconfig tsconfig.json`. With no `tsconfig.json` at all, both files still reported. The plan's G6 "Program coverage" row expects no `effecttsgo` diagnostics there. The tsconfig README makes no claim about files outside the program.
+- **For WI-07, plugin-array premise contradicted by evidence (re-checked on the tsc route, where the merge hook exists; still holds):** §3.5 says consumers adding other plugins must retain the complete Effect entry. On the patched `tsc` 7.0.2, a tsconfig extending `base.json` and `effect-tsc.json` with `plugins: [{ "name": "unrelated-typescript-plugin" }]` still reported `error TS377032` (`strictEffectProvide`) on a `Layer` provide. Without the overlay it reported nothing, since the upstream default is off. The tsc smoke asserts this. The WI-07 G6 "plugin-array replacement control" row rests on the contradicted premise.
+- **Decision: restore `prefer-effect-fn` as an active overlapping rule (orchestrator call, pending MP confirmation).** The drop assumed `effecttsgo/effect-fn-opportunity` covers the same wrappers on the default route. Under the shipped setup it does not. ADR-007 allows an AST overlap that fires without a TypeScript project.
+  - **Alternative, accept the gap:** keep the rule dropped, and plain wrappers go unreported on the default route until upstream keeps the options through `extends`.
+  - **Alternative, hold the landing group:** keep WI-03 to WI-07 unmerged until upstream ships that fix.
+  - **Rule:** restored from `ec4f4f8^` onto current helpers. `isNamedEffectGenWrapper` requires a named function, either a declaration or a function initializing a variable, whose return node is a bound `Effect.gen` call. It uses `functionReturnNode` and `boundNamespaceCallMember`, so aliases, shadowing, type-only imports, and local look-alikes behave like the other catalog rules. `utils/reports.ts` stays deleted. The message is `Rule/Why/Fix/Ref` pointing at `Effect.fn` and `Effect.fnUntraced`, both exported by v4 `Effect.ts`, and it cites ADR-001's named-wrapper guidance.
+  - **Manifest:** the row is active again as `reimplemented` at its pre-drop `error` severity. It is in `effectPreset` and has no `replacedBy`. Its note records the overlap; `effect-fn-opportunity` stays on at its generated `error`.
+  - **Contracts:** the decided drop register loses the row, leaving 29 drops, with 27 of linteffect origin as before. The floor set has ten edges, and the floor tests now use `no-effect-do` for the lowered and unknown-target cases.
+  - **Ownership registry:** unchanged. The old ownership split was with the dropped `no-effect-wrapper-alias`, and no active rule suppresses these wrappers or defers to `prefer-effect-fn`.
+  - **Duplicates, by evidence:** the rule does not report the `.pipe(Effect.withSpan(...))` wrapper. That is a RuleTester valid case and a replay branch, and the oxlint smoke shows it: under the shipped setup each wrapper gets exactly one diagnostic. Where tsgo does receive the options (a `tsconfig.json` with no `extends`), the two plain wrappers get both diagnostics. That overlap is allowed and has no special-casing.
+  - **Smoke:** `smoke-effect-packed-consumer.ts` keeps the inline-options control, where `effect-fn-opportunity` reports all three shapes. Under the shipped setup it then asserts the exact per-file split: `prefer-effect-fn` alone on the declaration and parameter wrappers, and `effect-fn-opportunity` alone on the `Effect.withSpan` wrapper. Any other split fails with the `extends` explanation and a pointer to BP-TD-014, so the day upstream fixes it the smoke says to drop the rule again.
+  - **Deferral:** `docs/records/tech-debt/open/bp-td-014.md`, "Drop prefer-effect-fn again when tsgo's oxlint route keeps Effect options through extends", with the evidence and the three-shape reproduction. `introspection record create` stops on the same `config.schema_violation` as `introspection check`. The ID was allocated per plan §3.10: the highest existing record is BP-TD-013, and nothing references BP-TD-014.
+  - **Plan and record edits:**
+    - The build plan's drop table loses the row, and the count reads 26. A paragraph after the table records the overlap and the decision.
+    - Every eleven-edge statement reads ten (§3.3, G4, WI-06).
+    - The G6 fn-option row now covers the tsc route and states the oxlint split.
+    - The appendix line on option reading is limited to a discovered `tsconfig.json` with no `extends`.
+    - The alignment record's `prefer-effect-fn` bullet gains a dated note. Current-state docs already list `prefer-effect-fn` as a live rule.
+- **Judgment calls:**
+  - **Peer spelling:** exact `0.45.0` instead of `catalog:`. The smokes pack with `npm pack`, which would leave `catalog:` in the tarball. The artifact assertions require the peer to equal the catalog pin, so the version still has one source.
+  - **Gate home:** `src/effect-policy.ts` holds `assertReplacementFloors` and `validateShippedOwnership`. They are internal and absent from the package root, and `dist` tree-shakes them. The file pairs with the planned `src/effect-policy.test.ts`.
+  - **Fragment-shape tests:** they live in `src/configs/effect.test.ts`, the planned file. The drift-guard assertion that ordinary compositions gain no `effecttsgo` plugin, option, or rule lives there too, and `drift-guards.test.ts` is unchanged. Collection accounting for the full preset is a unit test there. The inventory's per-config loop still covers only the base, vitest, and node fragments.
+  - **Quiet-critical exception:** the inventory holds exactly `effecttsgo/duplicate-package`. It fails both on any other quiet correctness row and on a listed exception that no longer matches a row.
+  - **Pinned-count check:** the inventory reads the retained snapshot through `readRetainedTsgoSnapshot`. It requires the delegated row count and names to equal the pinned rules.
+  - **Route smoke commands:** the two new smokes run as `bun scripts/packages/oxlint-standards/smoke-effect-packed-consumer.ts` and `bun scripts/packages/tsconfig/smoke-effect-packed-consumer.ts`. Root script names and `check:effect-integration` land in WI-07 with the gate wiring.
+  - **tsconfig README scope:** the README documents composition and both routes. It also gives the tested matrix, the patch step, the consumer override entry, and how plugin entries merge. The lint package README (WI-09) still describes the old AST-only `effectPreset`, the language-service setup, and a preset-scoping recipe that drops the plugin and `typeAware`.
+- **Files touched outside the WI-06 key-file list:**
+  - `rule-catalog.ts`, `rule-catalog.test.ts`, `rule-messages.ts`, and `scripts/checks/fixture-replay.ts`: the restored rule, its tests, message, and replay suite.
+  - The build plan, the alignment record, and `docs/records/tech-debt/open/bp-td-014.md`: the decision and its deferral.
+  - `scripts/lib/effect-policy.ts` and its test: the generator projection change the tsc decision needs.
+  - `scripts/checks/check-rule-inventory.ts`: the LSP assertion and vocabulary this item removes.
+  - `scripts/lib/package-artifact-assertions.ts`: the shared optional-peer assertion.
+  - `scripts/packages/tsconfig/readme-snippets.ts`: README snippet reader shared by the test and the smoke.
+  - `pnpm-lock.yaml`: the two new peer specifiers.
+- **Stale reference for WI-11 (not changed here):** the `nativeRule` doc comment in `rule-manifest.ts` still says a work item owns the generated effective-config view. The §4 manifest row points it at the rules page.
+- **Negative controls:** each mutation failed its target and was restored by checksum.
+  - Dropping the global floor check failed the lowered-severity test. Dropping the override check failed the undocumented-override test. Dropping the exception check failed the widened-scope test.
+  - Dropping the shipped-fragment half of `validateShippedOwnership` failed the no-manifest-row owner test.
+  - Dropping the adapter's completeness check failed the "rejects a missing rule" test. Composing `effectPreset` without `effectTsgoConfig` failed at import with the "lost its options" error.
+  - An empty quiet-critical list failed `inventory:rules` on `duplicate-package`, and a stale extra entry failed its exact-match check.
+  - Removing `**/*.test.ts` from the README snippet failed the README drift test.
+  - The fragment's own negative tests reject a missing or unknown rule, a misspelled severity, another plugin, an extra option, `typeAware: false`, an override without files, and an override outside the `effecttsgo` namespace. The floor tests reject a lowered, missing, or unknown replacement, an undocumented override, a widened exception, and a missing exception. The owner tests reject a nonexistent, dropped, quieted, or disabled owner.
+  - Restore mutations: matching `fn` instead of `gen` failed the RuleTester invalid cases. Dropping the named-function check failed the valid cases. Limiting the rule to function declarations failed replay with "recon scenario: redundant Effect.gen wrapper function unexpectedly passed".
+  - Simulating the upstream fix, with a root tsconfig that sets the options inline without `extends`, failed the oxlint smoke. It reported `src/wrappers/declaration.ts reported [@mplibunao/oxlint-standards(prefer-effect-fn), effecttsgo(effect-fn-opportunity)]` with the BP-TD-014 pointer.
+- **Checks (each run separately at the uncommitted WI-06 tree):**
+  - `durable:refs`, `effect-policy:check`, `build`, `versions:check`, `typecheck`, `check-release-workflow`, `changesets:check`: exit 0.
+  - `/bin/sh -c "pnpm run lint"`: exit 0, with 0 warnings and 0 errors. `vp fmt --check`: clean.
+  - `test`: exit 0, with 1038 passing tests in 29 files.
+  - `SKIP_BUILD=true inventory:rules`: exit 0, printing `parity {"source-fixture-replay":2,"semantic-scenario-replay":41,"delegated":113,"not-applicable":164}`.
+  - `SKIP_BUILD=true fixture:replay`: exit 0, with 43 suites and 444 cases.
+  - `SKIP_BUILD=true smoke:oxlint-packed-consumer`: exit 0. It now also checks the new exports and types, the absence of LSP rows, the absence of `@effect/tsgo` in the type consumer, and the unpatched full-preset control on oxlint 1.58, which fails with `Unknown plugin: 'effecttsgo'`.
+  - `smoke:tsconfig-packed-consumer`, `oxlint:package:allowlist`, `tsconfig:package:allowlist`, and `pack:dry-run:no-build`: exit 0. The tsconfig package packs 10 files.
+  - `bun scripts/packages/tsconfig/smoke-effect-packed-consumer.ts`: exit 0. It covers these cases:
+    - Unpatched `tsc`: silent, with a plain version string.
+    - The patch twice, then the `+effect-tsgo.0.45.0` version.
+    - The README project reports the production error and all three wrapper forms. Test scopes stay exempt, and the overlay severities and Bun types survive.
+    - A warning-only project fails; a clean browser project passes.
+    - Controls for overlay-only, other plugins, and the shared monorepo config.
+  - `bun scripts/packages/oxlint-standards/smoke-effect-packed-consumer.ts`: exit 0. The inline-options control reported all three forms, and the shipped setup reported the exact split above. The earlier steps also passed:
+    - Both tarballs installed.
+    - Unsupported oxlint 1.83.0: the patch is rejected and linting fails on the unknown plugin.
+    - Unpatched supported oxlint: fails on the unknown plugin.
+    - The patch twice.
+    - Exit 1, with `strict-effect-provide` and custom `no-effect-escape-hatch` both at error in one run.
+    - `global-date` at warning, and five test scopes exempt.
+    - The boundary path drops `global-date` but keeps `global-date-in-effect` at error.
+    - A warning-only file exits 0, and 1 with `--max-warnings 0`.
+  - `prose`: exit 0 after two README wording fixes.
+  - `introspection:check`: exit 1 with the same `config.schema_violation` as the intake baseline.
+- **Review gate:** the agent's own oracle review did not run. RepoPrompt `manage_selection` mutations and `ask_oracle` were cancelled, as in WI-02. The orchestrator owns review.
+- **Commits:** none. The orchestrator commits.
+- **Action item for MP:** confirm or reverse the orchestrator's restore of `prefer-effect-fn`. The alternatives are recorded under the decision above.

@@ -4,12 +4,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { tsgoPolicy } from '../config/tsgo-policy.ts';
+import { readmeTscOverrideEntry } from '../packages/tsconfig/readme-snippets.ts';
 import {
   type TsgoPolicy,
   gradeTsgoRules,
   lintPolicyModule,
   oxlintRouteTsconfig,
   tscRouteTsconfig,
+  tscTestOverrideEntry,
 } from './effect-policy.ts';
 import { repoRoot } from './script-runtime.ts';
 import { stableJson } from './stable-json.ts';
@@ -254,18 +256,34 @@ describe('tsgo projections', () => {
     });
   });
 
-  it('gives the tsc route every severity in upstream spelling plus the test override', () => {
+  it('gives the tsc route every severity in upstream spelling and no inert override', () => {
     const plugin = pluginOf(tscRouteTsconfig(rows, tsgoPolicy));
     const severities = plugin['diagnosticSeverity'] as Record<string, string>;
     expect(Object.keys(severities)).toHaveLength(113);
     expect(new Set(Object.values(severities))).toEqual(new Set(['error', 'off', 'warning']));
     expect(severities['duplicatePackage']).toBe('warning');
     expect(plugin['ignoreEffectWarningsInTscExitCode']).toBe(false);
-    const [override] = plugin['overrides'] as Array<{ include: string[]; options: unknown }>;
+    // An override inside an extended overlay only matches files under the overlay's own folder.
+    expect(plugin).not.toHaveProperty('overrides');
+  });
+
+  it('projects the consumer-owned test-file override entry from the policy', () => {
+    const entry = tscTestOverrideEntry(rows, tsgoPolicy);
+    expect(Object.keys(entry).toSorted()).toEqual(['name', 'overrides']);
+    expect(entry['name']).toBe('@effect/language-service');
+    const [override, ...rest] = entry['overrides'] as Array<{
+      include: string[];
+      options: unknown;
+    }>;
+    expect(rest).toEqual([]);
     expect(override?.options).toEqual({ diagnosticSeverity: { strictEffectProvide: 'off' } });
     expect(override?.include).toEqual(tsgoPolicy.testFilePatterns);
     expect(override?.include).toContain('**/*.test.ts');
     expect(override?.include).toContain('**/__tests__/**/*');
+  });
+
+  it('documents exactly the projected override entry in the tsconfig package README', () => {
+    expect(readmeTscOverrideEntry()).toEqual(tscTestOverrideEntry(rows, tsgoPolicy));
   });
 
   it('serializes deterministically and never imports from the lint module', () => {

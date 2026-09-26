@@ -71,3 +71,38 @@ export const assertExactPackedFiles = (
 ): void => {
   assertExactStringArray([...actual].toSorted(), [...expected].toSorted(), label);
 };
+
+// Both packages advertise the tested @effect/tsgo pin as an optional peer: consumers who never use
+// the Effect config install nothing, and neither package depends on tsgo at runtime.
+const isOnlyOptionalTsgoMeta = (meta: unknown): boolean => {
+  const tsgoMeta = isObjectRecord(meta) ? meta['@effect/tsgo'] : globalThis.undefined;
+  return (
+    isObjectRecord(meta) &&
+    Object.keys(meta).join() === '@effect/tsgo' &&
+    isObjectRecord(tsgoMeta) &&
+    tsgoMeta['optional'] === true
+  );
+};
+
+const hasTsgoRuntimeDependency = (packageJson: JsonObject): boolean =>
+  ['dependencies', 'optionalDependencies'].some((field) => {
+    const block = packageJson[field];
+    return isObjectRecord(block) && '@effect/tsgo' in block;
+  });
+
+export const assertOptionalTsgoPeer = (
+  packageJson: JsonObject,
+  tsgoVersion: string,
+  label: string,
+): void => {
+  const peers = packageJson['peerDependencies'];
+  if (!isObjectRecord(peers) || peers['@effect/tsgo'] !== tsgoVersion) {
+    fail(`${label} must declare the @effect/tsgo ${tsgoVersion} peer.`);
+  }
+  if (!isOnlyOptionalTsgoMeta(packageJson['peerDependenciesMeta'])) {
+    fail(`${label} must mark only @effect/tsgo as an optional peer.`);
+  }
+  if (hasTsgoRuntimeDependency(packageJson)) {
+    fail(`${label} must not depend on @effect/tsgo at runtime.`);
+  }
+};

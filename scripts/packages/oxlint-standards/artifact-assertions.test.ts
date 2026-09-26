@@ -1,7 +1,10 @@
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { collectLeakedInternalModuleSpecifiers } from './artifact-assertions.ts';
+import {
+  collectLeakedInternalModuleSpecifiers,
+  collectUpstreamModuleSpecifiers,
+} from './artifact-assertions.ts';
 
 describe('oxlint package artifact assertions', () => {
   it('flags package-internal alias module specifiers in emitted artifacts', () => {
@@ -28,5 +31,18 @@ describe('oxlint package artifact assertions', () => {
     );
 
     expect(leaks).toStrictEqual([]);
+  });
+
+  it('flags the tsgo patcher and plugin SDK as module specifiers, not as strings', () => {
+    const upstream = collectUpstreamModuleSpecifiers(
+      "import type { Plugin } from '@oxlint/plugins';\nexport * from '@effect/tsgo/package.json';\nconst plugin = 'effecttsgo';\nconst note = '@effect/tsgo';\nimport type { OxlintConfig } from 'oxlint';\n",
+      'synthetic.d.ts',
+      ts.ScriptKind.TS,
+    );
+
+    expect(upstream.map((leak) => leak.specifier)).toStrictEqual([
+      '@oxlint/plugins',
+      '@effect/tsgo/package.json',
+    ]);
   });
 });

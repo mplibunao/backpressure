@@ -98,6 +98,10 @@ importers:
         version: 2.9.0
 
   packages/oxlint-standards:
+    dependencies:
+      '@effect/tsgo':
+        specifier: 0.45.0
+        version: 0.45.0
     devDependencies:
       oxlint:
         specifier: 'catalog:'
@@ -106,7 +110,11 @@ importers:
         specifier: 'catalog:'
         version: 0.22.2(typescript@6.0.2)
 
-  packages/tsconfig: {}
+  packages/tsconfig:
+    dependencies:
+      '@effect/tsgo':
+        specifier: 0.45.0
+        version: 0.45.0
 
 packages:
 

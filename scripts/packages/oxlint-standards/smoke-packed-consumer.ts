@@ -15,6 +15,7 @@ import {
 import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
 import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './real-engine.ts';
 import { ruleManifest } from '../../../packages/oxlint-standards/src/rule-manifest.ts';
+import { tsgoRuleIds } from '../../../packages/oxlint-standards/src/generated/tsgo-policy.ts';
 import { ruleMessage } from '../../../packages/oxlint-standards/src/rule-messages.ts';
 import { canonicalVersions } from '../../lib/tool-versions.ts';
 import { assertOxlintDistArtifact, assertOxlintPackedArtifact } from './artifact-assertions.ts';
@@ -105,9 +106,6 @@ const assertMainEntryExports = (consumerDir: string) => {
       throw new Error('generalPreset did not expose prevent-dynamic-imports');
     }
 
-    if (!ruleManifest.some((entry) => entry.name === 'lsp/missingEffectServiceDependency')) {
-      throw new Error('ruleManifest did not expose LSP-owned checks');
-    }
 
     if (typeof composeLintConfigs !== 'function') {
       throw new Error('composeLintConfigs did not expose a function');
@@ -133,6 +131,33 @@ const assertMainEntryExports = (consumerDir: string) => {
   ensureSuccess(result, 'packed main-entry export contract');
 };
 
+const assertEffectExports = (consumerDir: string) => {
+  const script = `
+    import * as packageRoot from ${JSON.stringify(oxlintPackageName)};
+
+    const { effectBoundaryRules, effectPreset, ruleManifest, tsgoOwnedChecks } = packageRoot;
+    if (JSON.stringify(tsgoOwnedChecks) !== JSON.stringify(${JSON.stringify(tsgoRuleIds)})) {
+      throw new Error('tsgoOwnedChecks did not list every pinned effecttsgo rule');
+    }
+
+    if (ruleManifest.some((entry) => entry.name.startsWith('lsp/')) || 'lspOwnedChecks' in packageRoot) {
+      throw new Error('package still exposes language-service delegated rows');
+    }
+
+    if (effectPreset.plugins.join() !== 'effecttsgo' || effectPreset.options.typeAware !== true) {
+      throw new Error('effectPreset is not the full Effect config');
+    }
+
+    if (Object.keys(effectBoundaryRules).length === 0 || !Object.isFrozen(effectBoundaryRules)) {
+      throw new Error('effectBoundaryRules did not expose the frozen boundary relaxation');
+    }
+  `;
+  const result = runCommand('node', ['--input-type=module', '--eval', script], {
+    cwd: consumerDir,
+  });
+  ensureSuccess(result, 'packed Effect export contract');
+};
+
 const assertDroppedRulesAbsent = (consumerDir: string) => {
   const script = `
     import { effectPreset, effectReactPreset, plugin } from ${JSON.stringify(oxlintPackageName)};
@@ -155,10 +180,13 @@ const assertDroppedRulesAbsent = (consumerDir: string) => {
 };
 
 const assertMainEntryTypes = (consumerDir: string) => {
-  const forbiddenPeerPath = join(consumerDir, 'node_modules', '@oxlint', 'plugins');
-
-  if (existsSync(forbiddenPeerPath)) {
-    throw new Error('type smoke unexpectedly installed @oxlint/plugins');
+  for (const forbiddenPeer of [
+    ['@oxlint', 'plugins'],
+    ['@effect', 'tsgo'],
+  ]) {
+    if (existsSync(join(consumerDir, 'node_modules', ...forbiddenPeer))) {
+      throw new Error(`type smoke unexpectedly installed ${forbiddenPeer.join('/')}`);
+    }
   }
 
   writeJsonFile(join(consumerDir, 'tsconfig.json'), {
@@ -174,7 +202,7 @@ const assertMainEntryTypes = (consumerDir: string) => {
   });
   writeFileSync(
     join(consumerDir, 'contract.ts'),
-    `import defaultPlugin, { baseConfig, composeLintConfigs, effectPreset, generalPreset, jsdocConfig, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst sentinelInPlugin: unknown = pluginRules['${sentinelRuleName}'];\nconst sentinelInDefaultPlugin: unknown = defaultPluginRules['${sentinelRuleName}'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst jsdocRules: NonNullable<typeof jsdocConfig.rules> = jsdocConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst jsdocRuleCount: number = Object.keys(jsdocRules).length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!sentinelInPlugin || !sentinelInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || jsdocRuleCount === 0 || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
+    `import defaultPlugin, { baseConfig, composeLintConfigs, effectBoundaryRules, effectPreset, effectTsgoConfig, generalPreset, jsdocConfig, nodeRuntimeConfig, plugin, ruleManifest, tsgoOwnedChecks, vitestConfig, type EffectPresetConfig, type EffectTsgoConfig, type TsgoRuleId } from ${JSON.stringify(oxlintPackageName)};\n\nconst fullEffect: EffectPresetConfig = effectPreset;\nconst delegated: EffectTsgoConfig = effectTsgoConfig;\nconst delegatedRuleId: TsgoRuleId = 'effecttsgo/strict-effect-provide';\nconst delegatedSeverity: unknown = delegated.rules[delegatedRuleId];\nconst boundaryComposition = composeLintConfigs(baseConfig, fullEffect, { overrides: [{ files: ['src/platform/**'], rules: { ...effectBoundaryRules } }] });\nconst ownedCount: number = tsgoOwnedChecks.length;\nif (!delegatedSeverity || ownedCount === 0 || !boundaryComposition.overrides || fullEffect.plugins.length === 0) {\n  throw new Error('unexpected full Effect config contract');\n}\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst sentinelInPlugin: unknown = pluginRules['${sentinelRuleName}'];\nconst sentinelInDefaultPlugin: unknown = defaultPluginRules['${sentinelRuleName}'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst jsdocRules: NonNullable<typeof jsdocConfig.rules> = jsdocConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst jsdocRuleCount: number = Object.keys(jsdocRules).length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!sentinelInPlugin || !sentinelInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || jsdocRuleCount === 0 || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
   );
 
   const result = runCommand('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: consumerDir });
@@ -223,6 +251,33 @@ const runComposedConfigOxlint = (consumerDir: string) => {
   // Native base rule: oxlint reports eslint-core rules as `eslint(<rule>)`, so assert the
   // diagnostic token rather than the bare name (which could appear in a non-diagnostic line).
   assertIncludes(commandOutput(result), 'eslint(no-console)', 'packed composed-config oxlint');
+};
+
+// On an engine without the @effect/tsgo patch the full Effect preset must fail loudly on the
+// unknown plugin instead of silently linting without its delegated rules.
+const runUnpatchedEffectPreset = (consumerDir: string) => {
+  const script = `
+    import { writeFileSync } from 'node:fs';
+    import { baseConfig, composeLintConfigs, effectPreset } from ${JSON.stringify(oxlintPackageName)};
+
+    writeFileSync('.oxlintrc.effect.json', JSON.stringify(composeLintConfigs(baseConfig, effectPreset), null, 2) + '\\n');
+  `;
+  ensureSuccess(
+    runCommand('node', ['--input-type=module', '--eval', script], { cwd: consumerDir }),
+    'write packed full Effect config',
+  );
+  writeFileSync(join(consumerDir, 'effect-fixture.ts'), 'export const value = 1;\n');
+  const result = runCommand(
+    'pnpm',
+    ['exec', 'oxlint', '--config', '.oxlintrc.effect.json', 'effect-fixture.ts'],
+    { cwd: consumerDir },
+  );
+  ensureFailure(result, `unpatched full Effect preset\n${commandOutput(result)}`);
+  assertIncludes(
+    commandOutput(result),
+    "Unknown plugin: 'effecttsgo'",
+    'unpatched full Effect preset',
+  );
 };
 
 const runConsumerOxlint = (consumerDir: string) => {
@@ -280,9 +335,11 @@ try {
   assertMainEntryTypes(typeConsumerDir);
   prepareConsumer(consumerDir, packed.tarballPath);
   assertMainEntryExports(consumerDir);
+  assertEffectExports(consumerDir);
   assertDroppedRulesAbsent(consumerDir);
   runConsumerOxlint(consumerDir);
   runComposedConfigOxlint(consumerDir);
+  runUnpatchedEffectPreset(consumerDir);
   printLine('packed consumer smoke passed');
 } finally {
   removeTempDir(packDestination);

@@ -179,7 +179,9 @@ const diagnosticNameFor = (rows: readonly GradedTsgoRule[], kebab: string): stri
   fail(`No graded row for ${kebab}.`);
 
 // Options-only overlay for the TypeScript 7 fallback route, which owns every severity itself and
-// fails typecheck on both errors and warnings.
+// fails typecheck on both errors and warnings. It carries no test-file override: tsgo rebases an
+// extended config's override globs onto that config's own folder (inside node_modules), so the
+// override has to live in the consumer's tsconfig; `tscTestOverrideEntry` is that entry.
 export const tscRouteTsconfig = (
   rows: readonly GradedTsgoRule[],
   policy: TsgoPolicy,
@@ -193,22 +195,32 @@ export const tscRouteTsconfig = (
         diagnostics: true,
         ignoreEffectErrorsInTscExitCode: false,
         ignoreEffectWarningsInTscExitCode: false,
-        overrides: [
-          {
-            include: policy.testFilePatterns,
-            options: {
-              diagnosticSeverity: diagnosticSeverities(
-                Object.entries(policy.testFileOverrides).map(([kebab, severity]) => [
-                  diagnosticNameFor(rows, kebab),
-                  severity,
-                ]),
-              ),
-            },
-          },
-        ],
       }),
     ],
   },
+});
+
+// The plugin entry a tsc-route consumer adds to its own tsconfig. tsgo merges it key by key with
+// the extended overlay, so it needs only the test-file override. The tsconfig package README
+// documents exactly this entry, and a test holds the two equal.
+export const tscTestOverrideEntry = (
+  rows: readonly GradedTsgoRule[],
+  policy: TsgoPolicy,
+): Record<string, unknown> => ({
+  name: effectPluginName,
+  overrides: [
+    {
+      include: policy.testFilePatterns,
+      options: {
+        diagnosticSeverity: diagnosticSeverities(
+          Object.entries(policy.testFileOverrides).map(([kebab, severity]) => [
+            diagnosticNameFor(rows, kebab),
+            severity,
+          ]),
+        ),
+      },
+    },
+  ],
 });
 
 const qualifiedOverrides = (policy: TsgoPolicy): Readonly<Record<string, TsgoSeverity>> =>

@@ -12,8 +12,12 @@ import {
   type RuleEntry,
   serializeArtifact,
 } from '../lib/effective-config.ts';
-import { tsgoRuleIds } from '../../packages/oxlint-standards/src/generated/tsgo-policy.ts';
+import {
+  tsgoPolicyVersion,
+  tsgoRuleIds,
+} from '../../packages/oxlint-standards/src/generated/tsgo-policy.ts';
 import { fail, repoRoot } from '../lib/script-runtime.ts';
+import { readRetainedTsgoSnapshot } from '../lib/tsgo-snapshot-files.ts';
 import { buildOxlintStandards, oxlintBin } from '../packages/oxlint-standards/package.ts';
 
 const distEntryPath = join(repoRoot, 'packages', 'oxlint-standards', 'dist', 'index.js');
@@ -85,7 +89,6 @@ const decidedDropRegister = new Map<string, readonly string[]>([
   ['no-string-sentinel-return', []],
   ['no-ternary', []],
   ['no-wrapgraphql-catchall', ['effecttsgo/outdated-api']],
-  ['prefer-effect-fn', ['effecttsgo/effect-fn-opportunity']],
   ['prefer-yield-tagged-error', ['effecttsgo/unnecessary-fail-yieldable-error']],
   ['warn-effect-sync-wrapper', []],
 ]);
@@ -106,6 +109,10 @@ const sourceConfigAnomalies = [
 const sourceFixtureParity = 'source-fixture-replay';
 const semanticScenarioParity = 'semantic-scenario-replay';
 const delegatedParity = 'delegated';
+const delegatedDisposition = 'tsgo-delegated';
+// duplicate-package reports install state rather than a code defect, so it ships at warn; the
+// correctness-at-error gate stays in force for every other enabled row.
+const quietCriticalExceptions: readonly string[] = ['effecttsgo/duplicate-package'];
 const notApplicableParity = 'not-applicable';
 const minimumSemanticInvalidCases = 1;
 const minimumSemanticValidCases = 2;
@@ -685,8 +692,14 @@ const omittedNonErrorRuleNames = deriveOmittedNonErrorRuleAllowlist({
   jsdocConfig: configs['jsdocConfig'] ?? fail('Built package missing jsdocConfig.'),
   vitestConfig: vitestConfigEntry,
 });
+// Delegated tsgo rows sit in effectTsgoConfig without a local implementation; integration runs,
+// not custom parity, validate them.
+const isDelegatedTsgoEntry = (entry: ManifestEntry): boolean =>
+  entry.disposition === delegatedDisposition &&
+  entry.implementationStatus === 'delegated' &&
+  entry.parityStatus === delegatedParity;
 const enabledWithoutImplementation = collectionEntries.filter(
-  (entry) => entry.implementationStatus !== 'implemented',
+  (entry) => entry.implementationStatus !== 'implemented' && !isDelegatedTsgoEntry(entry),
 );
 if (enabledWithoutImplementation.length > 0) {
   fail(
@@ -697,6 +710,7 @@ if (enabledWithoutImplementation.length > 0) {
 const enabledWithoutParity = collectionEntries.filter(
   (entry) =>
     entry.disposition !== 'built-in' &&
+    !isDelegatedTsgoEntry(entry) &&
     ![sourceFixtureParity, semanticScenarioParity].includes(entry.parityStatus),
 );
 if (enabledWithoutParity.length > 0) {
@@ -722,9 +736,23 @@ const quietlyEnabledCriticalRules = collectionEntries.filter(
     entry.severity !== 'off' &&
     entry.severity !== 'error',
 );
-if (quietlyEnabledCriticalRules.length > 0) {
+const unexpectedQuietCriticalRules = quietlyEnabledCriticalRules.filter(
+  (entry) => !quietCriticalExceptions.includes(entry.name),
+);
+if (unexpectedQuietCriticalRules.length > 0) {
   fail(
-    `Enabled correctness/safety rules must stay at error: ${list(quietlyEnabledCriticalRules.map((entry) => entry.name))}.`,
+    `Enabled correctness/safety rules must stay at error: ${list(unexpectedQuietCriticalRules.map((entry) => entry.name))}.`,
+  );
+}
+// The exception list must match exactly, so a stale entry cannot linger as a silent allowance.
+if (
+  !sameList(
+    sorted(quietlyEnabledCriticalRules.map((entry) => entry.name)),
+    sorted(quietCriticalExceptions),
+  )
+) {
+  fail(
+    `Quiet correctness exceptions must match the enabled quiet correctness rows exactly: expected [${quietCriticalExceptions.join(', ')}].`,
   );
 }
 
@@ -823,8 +851,10 @@ for (const entry of manifestEntries) {
     }
   }
 
-  if (entry.disposition === 'LSP-delegated' && entry.parityStatus !== delegatedParity) {
-    fail(`${entry.name} is LSP-delegated but parityStatus is ${entry.parityStatus}.`);
+  if (entry.disposition === delegatedDisposition && !isDelegatedTsgoEntry(entry)) {
+    fail(
+      `${entry.name} is tsgo-delegated but has ${entry.implementationStatus} implementation and ${entry.parityStatus} parity.`,
+    );
   }
 
   if (
@@ -861,8 +891,22 @@ for (const [ruleName, fixtureSets] of sourceFixtureFiles.entries()) {
   }
 }
 
-if (!manifestEntries.some((entry) => entry.name === 'lsp/missingEffectServiceDependency')) {
-  fail('Expected @effect/language-service delegated checks to be represented.');
+// Every pinned @effect/tsgo rule has exactly one generated delegated row, including the rules
+// the shipped config sets off.
+const pinnedTsgoRuleNames = readRetainedTsgoSnapshot(
+  join(repoRoot, 'scripts', 'references', 'tsgo'),
+  tsgoPolicyVersion,
+).rules.map((rule) => rule.ruleName);
+const delegatedEntries = manifestEntries.filter(
+  (entry) => entry.disposition === delegatedDisposition,
+);
+if (delegatedEntries.length !== pinnedTsgoRuleNames.length) {
+  fail(
+    `Expected ${pinnedTsgoRuleNames.length} delegated tsgo rows for the pinned @effect/tsgo ${tsgoPolicyVersion}, found ${delegatedEntries.length}.`,
+  );
+}
+if (!sameList(sorted(delegatedEntries.map((entry) => entry.name)), sorted(pinnedTsgoRuleNames))) {
+  fail('Delegated tsgo rows must name exactly the pinned @effect/tsgo rules.');
 }
 
 const parityCounts = Object.fromEntries(

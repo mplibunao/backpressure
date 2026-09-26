@@ -748,6 +748,29 @@ run('no-effect-escape-hatch', {
   ],
 });
 
+run('prefer-effect-fn', {
+  invalid: [
+    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
+    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.gen(function* () { yield* task; }); }",
+    "import * as Effect from 'effect/Effect';\nconst addOne = (n: number) => Effect.gen(function* () { return n + 1; });",
+    "import * as Effect from 'effect/Effect';\nconst run = function () { return Effect.gen(function* () { yield* task; }); };",
+    "import { Effect } from 'effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
+    "import * as Fx from 'effect/Effect';\nconst run = () => Fx.gen(function* () { yield* task; });",
+  ],
+  valid: [
+    "import * as Effect from 'effect/Effect';\nconst run = Effect.gen(function* () { yield* task; });",
+    "import * as Effect from 'effect/Effect';\nconst run = () => { const program = Effect.gen(function* () { yield* task; }); return program; };",
+    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.gen(function* () { yield* task; }));",
+    "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(() => Effect.gen(function* () { yield* task; })));",
+    "import * as Effect from 'effect/Effect';\nconst run = Effect.fn('run')(function* () { yield* task; });",
+    // The piped-span form is left to effecttsgo/effect-fn-opportunity, which reports it on every route.
+    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; }).pipe(Effect.withSpan('run'));",
+    'const Effect = { gen: (value: unknown) => value };\nconst run = () => Effect.gen(function* () { yield* task; });',
+    "import * as Effect from 'effect/Effect';\nconst make = (Effect: { gen: (body: unknown) => unknown }) => { const run = () => Effect.gen(function* () {}); return run; };",
+    "import type * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
+  ],
+});
+
 run('prefer-effect-predicate', {
   invalid: [
     "import { Predicate } from 'effect';\nconst isPresent = (value: string | null) => value !== null;",

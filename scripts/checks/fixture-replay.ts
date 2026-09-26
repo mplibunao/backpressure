@@ -588,6 +588,69 @@ export const replaySuites = [
     ],
   }),
   suite({
+    ruleName: 'prefer-effect-fn',
+    requiredBranchIds: [
+      'invalid.arrow-wrapper-effect-gen',
+      'invalid.function-declaration-wrapper',
+      'invalid.barrel-effect-import',
+      'valid.inline-effect-gen-value',
+      'valid.inline-flatmap-callback',
+      'valid.pipe-flatmap-callback',
+      'valid.effect-fn-definition',
+      'valid.piped-span-wrapper',
+      'valid.local-effect-helper',
+    ],
+    invalid: [
+      scenario(
+        'recon scenario: redundant Effect.gen wrapper function',
+        "import * as Effect from 'effect/Effect';\nexport const addTwo = (n: number) =>\n  Effect.gen(function* () {\n    const value = yield* Effect.succeed(n);\n    return value + 1;\n  });\n",
+        { branchIds: ['invalid.arrow-wrapper-effect-gen'] },
+      ),
+      scenario(
+        'function declaration returning Effect.gen',
+        "import * as Effect from 'effect/Effect';\nexport function addOne(n: number) {\n  return Effect.gen(function* () {\n    const value = yield* Effect.succeed(n);\n    return value + 1;\n  });\n}\n",
+        { branchIds: ['invalid.function-declaration-wrapper'] },
+      ),
+      scenario(
+        'wrapper over the effect barrel namespace',
+        "import { Effect } from 'effect';\nexport const run = () => Effect.gen(function* () { yield* task; });\n",
+        { branchIds: ['invalid.barrel-effect-import'] },
+      ),
+    ],
+    valid: [
+      scenario(
+        'allows inline Effect.gen value',
+        "import * as Effect from 'effect/Effect';\nconst run = Effect.gen(function* () { yield* task; });\n",
+        { branchIds: ['valid.inline-effect-gen-value'] },
+      ),
+      scenario(
+        'review false-positive: inline flatMap callback may return Effect.gen',
+        "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.gen(function* () { yield* task; }));\n",
+        { branchIds: ['valid.inline-flatmap-callback'] },
+      ),
+      scenario(
+        'review false-positive: pipe flatMap callback may return Effect.gen',
+        "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(() => Effect.gen(function* () { yield* task; })));\n",
+        { branchIds: ['valid.pipe-flatmap-callback'] },
+      ),
+      scenario(
+        'allows the Effect.fn form the rule asks for',
+        "import * as Effect from 'effect/Effect';\nexport const run = Effect.fn('run')(function* () { yield* task; });\n",
+        { branchIds: ['valid.effect-fn-definition'] },
+      ),
+      scenario(
+        'leaves the piped-span wrapper to effecttsgo/effect-fn-opportunity',
+        "import * as Effect from 'effect/Effect';\nexport const addThree = (n: number) =>\n  Effect.gen(function* () {\n    return n + 1;\n  }).pipe(Effect.withSpan('addThree'));\n",
+        { branchIds: ['valid.piped-span-wrapper'] },
+      ),
+      scenario(
+        'leaves local non-imported Effect-shaped helper alone',
+        'const Effect = { gen: (value) => value };\nconst run = () => Effect.gen(function* () { yield* task; });\n',
+        { branchIds: ['valid.local-effect-helper'] },
+      ),
+    ],
+  }),
+  suite({
     ruleName: 'prefer-effect-predicate',
     requiredBranchIds: [
       'invalid.variable-predicate-helper',

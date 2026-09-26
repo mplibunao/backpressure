@@ -1,12 +1,17 @@
 /* oxlint-disable max-lines -- The manifest is intentionally data-dense because it is the canonical machine-checkable catalog. */
-import type { TsgoRuleId } from './generated/tsgo-policy.js';
+import {
+  type TsgoPolicyRow,
+  type TsgoRuleId,
+  type TsgoRuleSeverity,
+  tsgoPolicyRows,
+} from './generated/tsgo-policy.js';
 
 export type RuleDomain =
   | 'effect'
   | 'effect-react'
   | 'general'
   | 'boundaries'
-  | 'lsp'
+  | 'tsgo'
   | 'base'
   | 'test'
   | 'runtime';
@@ -14,6 +19,7 @@ export type RuleCollection =
   | 'generalPreset'
   | 'effectPreset'
   | 'effectReactPreset'
+  | 'effectTsgoConfig'
   | 'boundariesPreset'
   | 'baseConfig'
   | 'vitestConfig'
@@ -24,8 +30,13 @@ export type RuleCollection =
 // manifest collections are allowed to explain one configured fragment's explicit rules.
 export const manifestCollectionsForConfiguredFragment = (
   collection: RuleCollection,
-): readonly RuleCollection[] =>
-  collection === 'baseConfig' ? ['baseConfig', 'unicornConfig', 'jsdocConfig'] : [collection];
+): readonly RuleCollection[] => {
+  if (collection === 'baseConfig') {
+    return ['baseConfig', 'unicornConfig', 'jsdocConfig'];
+  }
+  // The exported effectPreset is the custom Effect rules composed with the delegated tsgo fragment.
+  return collection === 'effectPreset' ? ['effectPreset', 'effectTsgoConfig'] : [collection];
+};
 
 // Independent policy allowlist: tests and inventory compare the manifest's style-at-error rows
 // against this hardcoded list, then require each listed row to carry autofix evidence.
@@ -64,7 +75,7 @@ export type RuleDisposition =
   | 'ported'
   | 'reimplemented'
   | 'built-in'
-  | 'LSP-delegated'
+  | 'tsgo-delegated'
   | 'dropped'
   | 'not-implemented';
 export type RuleSourceOwnership =
@@ -75,7 +86,7 @@ export type RuleSourceOwnership =
   | 'recon'
   | 'built-in'
   | 'oxlint-native'
-  | 'LSP';
+  | '@effect/tsgo';
 export type RuleTestSource = 'linteffect-fixture' | 't3code' | 'scenario-only' | 'none';
 export type RuleParityStatus =
   | 'source-fixture-replay'
@@ -90,7 +101,8 @@ export type RuleGating =
   | 'stack-neutral'
   | 'test-file'
   | 'runtime'
-  | 'boundary';
+  | 'boundary'
+  | 'type-aware';
 
 export interface RuleManifestEntry {
   readonly name: string;
@@ -102,7 +114,6 @@ export interface RuleManifestEntry {
   readonly testStatus: 'covered' | 'not-applicable';
   readonly parityStatus: RuleParityStatus;
   readonly disposition: RuleDisposition;
-  readonly effectVersionSensitivity: string;
   readonly sourceOwnership: RuleSourceOwnership;
   readonly testSource: RuleTestSource;
   readonly gating: RuleGating;
@@ -142,9 +153,6 @@ const isAgentFailureModeRule = (entry: RuleManifestEntryInput): boolean =>
   entry.name.includes('ladder');
 
 const inferRationaleClass = (entry: RuleManifestEntryInput): RuleRationaleClass => {
-  if (entry.disposition === 'LSP-delegated') {
-    return 'correctness';
-  }
   if (entry.gating === 'boundary') {
     return 'safety';
   }
@@ -186,7 +194,6 @@ const droppedRule = ({
   sourcePresets,
   severity,
   rationaleClass,
-  effectVersionSensitivity,
   sourceOwnership,
   gating,
   replacedBy,
@@ -202,7 +209,6 @@ const droppedRule = ({
     testStatus: 'not-applicable',
     parityStatus: 'not-applicable',
     disposition: 'dropped',
-    effectVersionSensitivity,
     sourceOwnership,
     testSource: 'none',
     gating,
@@ -211,26 +217,32 @@ const droppedRule = ({
     note,
   });
 
-const lspDelegatedCheck = (name: string): RuleManifestEntry =>
+const tsgoManifestSeverity: Readonly<Record<TsgoRuleSeverity, RuleManifestSeverity>> = {
+  error: 'error',
+  off: 'off',
+  warn: 'warning',
+};
+
+// One row per pinned @effect/tsgo rule, generated from the graded policy. Rows set off stay in the
+// collection because effectTsgoConfig sets every rule explicitly: owned is not the same as enabled.
+// Integration runs, not custom RuleTester parity, validate these rows.
+const tsgoDelegatedRule = (row: TsgoPolicyRow): RuleManifestEntry =>
   sourceRule({
-    name: `lsp/${name}`,
-    domain: 'lsp',
+    name: row.ruleName,
+    domain: 'tsgo',
     sourcePresets: [],
-    severity: 'error',
+    severity: tsgoManifestSeverity[row.severity],
+    rationaleClass: row.rationaleClass,
     implementationStatus: 'delegated',
     testStatus: 'not-applicable',
     parityStatus: 'delegated',
-    disposition: 'LSP-delegated',
-    effectVersionSensitivity: 'type-aware semantic',
-    sourceOwnership: 'LSP',
+    disposition: 'tsgo-delegated',
+    sourceOwnership: '@effect/tsgo',
     testSource: 'none',
-    gating: 'effect-import',
-    collections: [],
-    note: '@effect/language-service owns this semantic/type-aware diagnostic.',
+    gating: 'type-aware',
+    collections: ['effectTsgoConfig'],
+    note: `${row.reason} Upstream category: ${row.category}.`,
   });
-
-const lspDelegatedChecks = (names: readonly string[]): readonly RuleManifestEntry[] =>
-  names.map(lspDelegatedCheck);
 
 // --- Authoring helpers ---
 // Use these for new entries instead of sourceRule to avoid repeating boilerplate defaults.
@@ -251,7 +263,7 @@ interface PortedScenarioRuleOptions {
 
 /**
  * Ported linteffect rule with semantic-scenario-replay coverage.
- * Hardcodes: ported / implemented / covered / semantic-scenario-replay / v4-primary structural / linteffect / testSource:none.
+ * Hardcodes: ported / implemented / covered / semantic-scenario-replay / linteffect / testSource:none.
  * @param options Manifest fields that vary for a ported scenario rule.
  * @param options.name Rule name.
  * @param options.domain Preset domain.
@@ -283,7 +295,6 @@ export const portedScenarioRule = ({
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating,
@@ -303,7 +314,7 @@ interface PortedFixtureRuleOptions {
 
 /**
  * Ported linteffect rule tested via upstream source fixtures.
- * Hardcodes: ported / error / implemented / covered / source-fixture-replay / v4-primary structural / linteffect / linteffect-fixture.
+ * Hardcodes: ported / error / implemented / covered / source-fixture-replay / linteffect / linteffect-fixture.
  * @param options Manifest fields that vary for a ported fixture-backed rule.
  * @param options.name Rule name.
  * @param options.domain Preset domain.
@@ -333,7 +344,6 @@ export const portedFixtureRule = ({
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating,
@@ -346,7 +356,6 @@ interface ReimplementedScenarioRuleOptions {
   readonly domain: RuleDomain;
   readonly severity: RuleManifestSeverity;
   readonly rationaleClass: RuleRationaleClass;
-  readonly effectVersionSensitivity: string;
   readonly sourceOwnership: RuleSourceOwnership;
   readonly testSource: RuleTestSource;
   readonly gating: RuleGating;
@@ -362,7 +371,6 @@ interface ReimplementedScenarioRuleOptions {
  * @param options.domain Preset domain.
  * @param options.severity Default severity.
  * @param options.rationaleClass Severity rationale class.
- * @param options.effectVersionSensitivity Effect-version sensitivity note.
  * @param options.sourceOwnership Source or inspiration owner.
  * @param options.testSource Replay source classification.
  * @param options.gating Consumer-safety gate classification.
@@ -375,7 +383,6 @@ export const reimplementedScenarioRule = ({
   domain,
   severity,
   rationaleClass,
-  effectVersionSensitivity,
   sourceOwnership,
   testSource,
   gating,
@@ -392,7 +399,6 @@ export const reimplementedScenarioRule = ({
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity,
     sourceOwnership,
     testSource,
     gating,
@@ -412,7 +418,7 @@ interface BuiltInRuleOptions {
 
 /**
  * Built-in oxlint rule included in a preset with no custom implementation.
- * Hardcodes: built-in / sourcePresets:[] / implemented / not-applicable / not-applicable / structural / built-in / none.
+ * Hardcodes: built-in / sourcePresets:[] / implemented / not-applicable / not-applicable / built-in / none.
  * @param options Manifest fields that vary for a built-in preset rule.
  * @param options.name Rule name.
  * @param options.domain Preset domain.
@@ -442,7 +448,6 @@ export const builtInRule = ({
     testStatus: 'not-applicable',
     parityStatus: 'not-applicable',
     disposition: 'built-in',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'built-in',
     testSource: 'none',
     gating,
@@ -492,7 +497,6 @@ export const nativeRule = ({
     testStatus: 'not-applicable',
     parityStatus: 'not-applicable',
     disposition: 'built-in',
-    effectVersionSensitivity: 'native oxlint/plugin rule',
     sourceOwnership: 'oxlint-native',
     testSource: 'none',
     gating,
@@ -905,7 +909,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -922,7 +925,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -939,7 +941,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -951,7 +952,6 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: off-preset duplicate of the shallow nested-call intent that no-effect-call-in-effect-arg owns.',
@@ -966,7 +966,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -979,7 +978,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: Effect.as value replacement is idiomatic v4 code; no-effect-side-effect-wrapper still reports eager arguments such as Effect.as(doSomething()).',
@@ -990,7 +988,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/outdated-api'],
@@ -1006,7 +1003,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1023,7 +1019,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1036,7 +1031,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/effect-do-notation'],
@@ -1047,7 +1041,6 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Effect.fn generator bodies are preferred traced units of logic.',
@@ -1062,7 +1055,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1075,7 +1067,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: intentional nontermination with Effect.never is allowed; v4 tests and t3code use it on purpose, and no source calls it slop.',
@@ -1086,7 +1077,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'agent-failure-mode',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/outdated-api'],
@@ -1102,7 +1092,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1115,7 +1104,6 @@ export const ruleManifest = [
     sourcePresets: [],
     severity: 'warning',
     rationaleClass: 'agent-failure-mode',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: it flagged harmless Effect.succeed(value) while allowing the eager Effect.succeed(makeValue()) bug. Focused tsgo eager-value and success-channel checks are complementary, not equivalent.',
@@ -1126,7 +1114,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/global-console-in-effect'],
@@ -1138,7 +1125,6 @@ export const ruleManifest = [
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: explicit Effect type aliases are allowed for the same reason as explicit channel annotations; no consensus treats aliasing Effect types as slop.',
@@ -1149,7 +1135,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: ordinary non-gen Effect-returning functions such as `const run = () => Effect.succeed(value)` are idiomatic; effect-solutions writes that shape.',
@@ -1160,7 +1145,6 @@ export const ruleManifest = [
     sourcePresets: ['web', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-react-import',
     note: 'Dropped: it inferred row-reads-collection atoms from an upstream naming convention that MP projects do not use.',
@@ -1175,7 +1159,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1192,7 +1175,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1204,7 +1186,6 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Conflicts with gen-first posture; guards inside generators are allowed.',
@@ -1219,7 +1200,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1232,7 +1212,6 @@ export const ruleManifest = [
     sourcePresets: ['web'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/strict-effect-provide'],
@@ -1244,7 +1223,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: explicit Effect.Effect and Layer.Layer channel annotations are allowed; the references annotate service interfaces, and explicit types help type-check performance at scale.',
@@ -1259,7 +1237,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1272,7 +1249,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: void-valued Match branches are allowed; the rule had no source and conflicted with the tsgo effect-succeed-with-void fix.',
@@ -1287,7 +1263,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
@@ -1300,7 +1275,6 @@ export const ruleManifest = [
     sourcePresets: ['web', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: "Dropped: its JSON branch flagged every JSON.stringify in Effect files, and object spread is Effect's own update baseline. JSON.parse stays covered by no-json-parse; tsgo prefer-schema-over-json is a conditional, not an equivalent, replacement.",
@@ -1310,7 +1284,6 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: off-preset duplicate of the deep nested-call intent that no-effect-ladder owns.',
@@ -1321,7 +1294,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/nested-effect-gen-yield'],
@@ -1337,7 +1309,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1354,7 +1325,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1371,7 +1341,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1388,7 +1357,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'ungated-broad',
@@ -1405,7 +1373,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1418,7 +1385,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'info',
     rationaleClass: 'agent-failure-mode',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: combinator handlers that return early are allowed; effect-solutions writes that shape, and the rule also fired on non-Effect callbacks.',
@@ -1429,7 +1395,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'info',
     rationaleClass: 'agent-failure-mode',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: returns inside callbacks are allowed, including `return yield* new XError(...)` in Effect generators, which Effect agent guidance requires.',
@@ -1444,7 +1409,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-callee',
@@ -1457,7 +1421,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/run-effect-inside-effect'],
@@ -1469,7 +1432,6 @@ export const ruleManifest = [
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: the AST shape matched every string const, not status strings used as control flow. Model statuses as Schema.Literal or tagged types.',
@@ -1480,7 +1442,6 @@ export const ruleManifest = [
     sourcePresets: ['ts-type', 'full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: success-channel strings such as file paths and service IDs are allowed.',
@@ -1495,7 +1456,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'source-fixture-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'linteffect-fixture',
     gating: 'effect-import',
@@ -1507,7 +1467,6 @@ export const ruleManifest = [
     domain: 'effect',
     sourcePresets: ['core', 'full'],
     severity: 'error',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Blanket ternary ban is too broad; general enables built-in no-nested-ternary instead.',
@@ -1522,7 +1481,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1539,7 +1497,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'effect-import',
@@ -1552,7 +1509,6 @@ export const ruleManifest = [
     sourcePresets: ['full'],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/outdated-api'],
@@ -1568,7 +1524,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'ported',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     testSource: 'none',
     gating: 'stack-neutral',
@@ -1581,7 +1536,6 @@ export const ruleManifest = [
     sourcePresets: ['core', 'full'],
     severity: 'warning',
     rationaleClass: 'agent-failure-mode',
-    effectVersionSensitivity: 'v4-primary structural',
     sourceOwnership: 'linteffect',
     gating: 'effect-import',
     note: 'Dropped: wrapping a synchronous, non-throwing side effect is the intended use of Effect.sync.',
@@ -1592,7 +1546,6 @@ export const ruleManifest = [
     sourcePresets: [],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'recon',
     gating: 'effect-callee',
     replacedBy: ['effecttsgo/multiple-effect-provide'],
@@ -1608,24 +1561,27 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
     collections: defaultCollectionsForDomain('effect'),
     note: 'Executor-derived structural nullish predicate rule.',
   }),
-  droppedRule({
+  sourceRule({
     name: 'prefer-effect-fn',
     domain: 'effect',
     sourcePresets: [],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'v4-primary Effect.gen wrapper shape',
+    implementationStatus: 'implemented',
+    testStatus: 'covered',
+    parityStatus: 'semantic-scenario-replay',
+    disposition: 'reimplemented',
     sourceOwnership: 'recon',
+    testSource: 'scenario-only',
     gating: 'effect-callee',
-    replacedBy: ['effecttsgo/effect-fn-opportunity'],
-    note: 'Dropped in favor of effecttsgo/effect-fn-opportunity, which flags every (...) => Effect.gen(...) wrapper shape this rule caught plus object methods and piped-span wrappers when the tsconfig overlay sets effectFn.',
+    collections: defaultCollectionsForDomain('effect'),
+    note: 'Recon-derived gen-first rule: a named function that only returns Effect.gen should become Effect.fn or Effect.fnUntraced. Overlaps effecttsgo/effect-fn-opportunity, which stays on at its generated severity: on the patched oxlint route that rule reports these wrappers only when the discovered tsconfig.json has no extends, so under the shipped overlay setup this AST check is what reports them.',
   }),
   sourceRule({
     name: 'no-barrel-import',
@@ -1637,7 +1593,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'recon:effect-smol',
     testSource: 'scenario-only',
     gating: 'ungated-broad',
@@ -1654,7 +1609,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'recon:t3code',
     testSource: 't3code',
     gating: 'effect-callee',
@@ -1671,7 +1625,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'boundary',
@@ -1688,7 +1641,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'stack-neutral',
@@ -1705,7 +1657,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-callee',
@@ -1722,7 +1673,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'stack-neutral',
@@ -1739,7 +1689,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'stack-neutral',
@@ -1765,7 +1714,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1782,7 +1730,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1799,7 +1746,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1816,7 +1762,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1833,7 +1778,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1850,7 +1794,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1867,7 +1810,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1884,7 +1826,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1901,7 +1842,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -1918,7 +1858,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'recon',
     testSource: 'scenario-only',
     gating: 'effect-callee',
@@ -1931,7 +1870,6 @@ export const ruleManifest = [
     sourcePresets: [],
     severity: 'error',
     rationaleClass: 'correctness',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     gating: 'effect-import',
     replacedBy: ['effecttsgo/unnecessary-fail-yieldable-error'],
@@ -1947,7 +1885,6 @@ export const ruleManifest = [
     testStatus: 'covered',
     parityStatus: 'semantic-scenario-replay',
     disposition: 'reimplemented',
-    effectVersionSensitivity: 'structural',
     sourceOwnership: 'executor',
     testSource: 'none',
     gating: 'effect-import',
@@ -2615,21 +2552,7 @@ export const ruleManifest = [
     gating: 'runtime',
     note: 'The node: protocol removes ambiguity between built-ins and same-named packages.',
   }),
-  ...lspDelegatedChecks([
-    'importFromBarrel',
-    'missingEffectServiceDependency',
-    'leakingRequirements',
-    'unsafeEffectTypeAssertion',
-    'instanceOfSchema',
-    'globalDate',
-    'globalRandom',
-    'globalConsole',
-    'globalFetch',
-    'globalTimers',
-    'preferSchemaOverJson',
-    'schemaSyncInEffect',
-    'cryptoRandomUUID',
-  ]),
+  ...tsgoPolicyRows.map(tsgoDelegatedRule),
 ] as const satisfies readonly RuleManifestEntry[];
 
 export const implementedCustomRuleNames = ruleManifest
@@ -2640,9 +2563,11 @@ export const implementedCustomRuleNames = ruleManifest
 export const collectionRuleNames = ruleManifest
   .filter((entry) => entry.collections.length > 0)
   .map((entry) => entry.name);
-export const lspOwnedChecks = ruleManifest
-  .filter((entry) => entry.disposition === 'LSP-delegated')
-  .map((entry) => entry.name.replace('lsp/', ''));
+// Every delegated tsgo rule this package grades, as fully qualified `effecttsgo/*` IDs. Owned
+// includes the rules the shipped config sets off; it is not the enabled set.
+export const tsgoOwnedChecks: readonly string[] = ruleManifest
+  .filter((entry) => entry.disposition === 'tsgo-delegated')
+  .map((entry) => entry.name);
 export const linteffectSourceRuleNames = ruleManifest
   .filter((entry) => entry.sourceOwnership === 'linteffect')
   .map((entry) => entry.name);
