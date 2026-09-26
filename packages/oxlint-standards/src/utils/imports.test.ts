@@ -8,7 +8,6 @@ import {
   collectNamespaceImports,
   getImportSource,
   hasEffectStackImport,
-  hasEffectTypeOrRuntimeImport,
   hasImportFrom,
   importSpecifierName,
   isEffectNamespaceImportReference,
@@ -369,39 +368,6 @@ describe('hasImportFrom()', () => {
   });
 });
 
-// ── hasEffectTypeOrRuntimeImport ──────────────────────────────────────────────
-
-describe('hasEffectTypeOrRuntimeImport()', () => {
-  it('returns true for a runtime import from effect', () => {
-    expect(hasEffectTypeOrRuntimeImport(prog(importDecl('effect', [nsSpecifier('Effect')])))).toBe(
-      true,
-    );
-  });
-
-  it('returns true for a type-only import from the effect stack', () => {
-    // Type imports are included — the key distinction from hasEffectStackImport
-    expect(
-      hasEffectTypeOrRuntimeImport(prog(importDecl('effect', [nsSpecifier('Effect')], 'type'))),
-    ).toBe(true);
-  });
-
-  it('returns true for an effect submodule import', () => {
-    expect(
-      hasEffectTypeOrRuntimeImport(prog(importDecl('effect/Effect', [nsSpecifier('Effect')]))),
-    ).toBe(true);
-  });
-
-  it('returns false for a non-effect import', () => {
-    expect(hasEffectTypeOrRuntimeImport(prog(importDecl('rxjs', [nsSpecifier('Rx')])))).toBe(false);
-  });
-
-  it('returns false for a program containing only non-import statements', () => {
-    expect(
-      hasEffectTypeOrRuntimeImport(mixedProg([{ type: 'ExpressionStatement', range: RANGE }])),
-    ).toBe(false);
-  });
-});
-
 // ── hasEffectStackImport ──────────────────────────────────────────────────────
 
 describe('hasEffectStackImport()', () => {
@@ -410,8 +376,7 @@ describe('hasEffectStackImport()', () => {
   });
 
   it('returns false for a type-only import — runtime check excludes it', () => {
-    // Same input returns true for hasEffectTypeOrRuntimeImport — isRuntimeImportDeclaration
-    // Is the differentiating condition here
+    // IsRuntimeImportDeclaration rejects `import type`, so a type-only import alone does not activate rules.
     expect(hasEffectStackImport(prog(importDecl('effect', [nsSpecifier('Effect')], 'type')))).toBe(
       false,
     );

@@ -162,17 +162,6 @@ export const hasImportFrom = (
     );
   });
 
-export const hasEffectTypeOrRuntimeImport = (program: ESTree.Program): boolean =>
-  // Matches any import from the effect stack, including type-only imports.
-  // Used by type-modeling rules that must fire even with `import type`.
-  program.body.some((statement) => {
-    if (statement.type !== 'ImportDeclaration') {
-      return false;
-    }
-    const source = getImportSource(statement);
-    return source !== null && isEffectStackModuleSource(source);
-  });
-
 export const hasEffectStackImport = (program: ESTree.Program): boolean =>
   program.body.some((statement) => {
     if (statement.type !== 'ImportDeclaration') {

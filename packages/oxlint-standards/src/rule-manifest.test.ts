@@ -8,6 +8,7 @@ import {
   unicornConfig,
   vitestConfig,
 } from './configs/index.js';
+import { tsgoPolicyRows } from './generated/tsgo-policy.js';
 import { pluginRuleName } from './presets/shared.js';
 import {
   collapseManifestSeverity,
@@ -353,5 +354,36 @@ describe('rule manifest schema', () => {
 
       expect(missingNonErrorNames).toStrictEqual([]);
     }
+  });
+});
+
+describe('replacement edges', () => {
+  const manifestSeverityRank = { off: 0, info: 1, warning: 1, error: 2 } as const;
+  const tsgoSeverityRank = { off: 0, warn: 1, error: 2 } as const;
+  const policyByRuleId = new Map(tsgoPolicyRows.map((row) => [row.ruleName, row]));
+
+  it('declares replacedBy only on dropped rows', () => {
+    expect(
+      ruleManifest
+        .filter((entry) => entry.replacedBy !== globalThis.undefined)
+        .filter((entry) => entry.disposition !== 'dropped')
+        .map((entry) => entry.name),
+    ).toStrictEqual([]);
+  });
+
+  it('hands each dropped row to tsgo rules graded at least as strictly', () => {
+    const loweredEdges = ruleManifest.flatMap((entry) =>
+      (entry.replacedBy ?? [])
+        .filter((ruleId) => {
+          const row = policyByRuleId.get(ruleId);
+          return (
+            row === globalThis.undefined ||
+            tsgoSeverityRank[row.severity] < manifestSeverityRank[entry.severity]
+          );
+        })
+        .map((ruleId) => `${entry.name} -> ${ruleId}`),
+    );
+
+    expect(loweredEdges).toStrictEqual([]);
   });
 });

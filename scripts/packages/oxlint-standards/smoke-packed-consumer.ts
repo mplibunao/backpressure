@@ -14,6 +14,7 @@ import {
 } from '../../lib/script-runtime.ts';
 import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
 import { type RuleConfig, assertDiagnostic, runOxlintOnSource } from './real-engine.ts';
+import { ruleManifest } from '../../../packages/oxlint-standards/src/rule-manifest.ts';
 import { ruleMessage } from '../../../packages/oxlint-standards/src/rule-messages.ts';
 import { canonicalVersions } from '../../lib/tool-versions.ts';
 import { assertOxlintDistArtifact, assertOxlintPackedArtifact } from './artifact-assertions.ts';
@@ -31,9 +32,14 @@ const typeConsumerPrefix = 'backpressure-type-consumer-';
 const versions = canonicalVersions();
 const consumerOxlintVersion = `oxlint@${versions.oxlint}`;
 const consumerTypescriptVersion = `typescript@${versions.typescript}`;
-const noEffectAsRules: RuleConfig = {
-  'no-effect-as': 'error',
+const sentinelRuleName = 'no-effect-escape-hatch';
+const sentinelRules: RuleConfig = {
+  [sentinelRuleName]: 'error',
 };
+// Read from the source manifest so the packed artifact is checked against an independent list.
+const droppedRuleNames = ruleManifest
+  .filter((entry) => entry.disposition === 'dropped')
+  .map((entry) => entry.name);
 const noBarrelImportRules: RuleConfig = {
   'no-barrel-import': 'error',
 };
@@ -87,8 +93,8 @@ const assertMainEntryExports = (consumerDir: string) => {
       throw new Error('default plugin meta.name did not match package name');
     }
 
-    if (plugin.rules['no-effect-as']?.meta?.messages?.avoidEffectAs !== ${JSON.stringify(ruleMessage('no-effect-as'))}) {
-      throw new Error('no-effect-as rule message in plugin does not match expected');
+    if (plugin.rules[${JSON.stringify(sentinelRuleName)}]?.meta?.docs?.description !== ${JSON.stringify(ruleMessage(sentinelRuleName))}) {
+      throw new Error(${JSON.stringify(`${sentinelRuleName} rule description in plugin does not match expected`)});
     }
 
     if (!effectPreset.rules['${oxlintPackageName}/no-barrel-import']) {
@@ -127,6 +133,27 @@ const assertMainEntryExports = (consumerDir: string) => {
   ensureSuccess(result, 'packed main-entry export contract');
 };
 
+const assertDroppedRulesAbsent = (consumerDir: string) => {
+  const script = `
+    import { effectPreset, effectReactPreset, plugin } from ${JSON.stringify(oxlintPackageName)};
+
+    const droppedRuleNames = ${JSON.stringify(droppedRuleNames)};
+    const shippedDroppedRules = droppedRuleNames.filter(
+      (name) =>
+        name in plugin.rules ||
+        '${oxlintPackageName}/' + name in effectPreset.rules ||
+        '${oxlintPackageName}/' + name in effectReactPreset.rules,
+    );
+    if (shippedDroppedRules.length > 0) {
+      throw new Error('packed plugin or Effect presets still ship dropped rules: ' + shippedDroppedRules.join(', '));
+    }
+  `;
+  const result = runCommand('node', ['--input-type=module', '--eval', script], {
+    cwd: consumerDir,
+  });
+  ensureSuccess(result, 'packed dropped-rule absence contract');
+};
+
 const assertMainEntryTypes = (consumerDir: string) => {
   const forbiddenPeerPath = join(consumerDir, 'node_modules', '@oxlint', 'plugins');
 
@@ -147,7 +174,7 @@ const assertMainEntryTypes = (consumerDir: string) => {
   });
   writeFileSync(
     join(consumerDir, 'contract.ts'),
-    `import defaultPlugin, { baseConfig, composeLintConfigs, effectPreset, generalPreset, jsdocConfig, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst noEffectAsInPlugin: unknown = pluginRules['no-effect-as'];\nconst noEffectAsInDefaultPlugin: unknown = defaultPluginRules['no-effect-as'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst jsdocRules: NonNullable<typeof jsdocConfig.rules> = jsdocConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst jsdocRuleCount: number = Object.keys(jsdocRules).length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!noEffectAsInPlugin || !noEffectAsInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || jsdocRuleCount === 0 || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
+    `import defaultPlugin, { baseConfig, composeLintConfigs, effectPreset, generalPreset, jsdocConfig, nodeRuntimeConfig, plugin, ruleManifest, vitestConfig } from ${JSON.stringify(oxlintPackageName)};\n\nconst defaultPluginRules: Record<string, unknown> = defaultPlugin.rules;\nconst pluginRules: Record<string, unknown> = plugin.rules;\nconst sentinelInPlugin: unknown = pluginRules['${sentinelRuleName}'];\nconst sentinelInDefaultPlugin: unknown = defaultPluginRules['${sentinelRuleName}'];\nconst effectRules: Record<string, unknown> = effectPreset.rules;\nconst generalRules: Record<string, unknown> = generalPreset.rules;\nconst baseRules: NonNullable<typeof baseConfig.rules> = baseConfig.rules;\nconst jsdocRules: NonNullable<typeof jsdocConfig.rules> = jsdocConfig.rules;\nconst vitestRules: NonNullable<typeof vitestConfig.rules> = vitestConfig.rules;\nconst nodeRules: NonNullable<typeof nodeRuntimeConfig.rules> = nodeRuntimeConfig.rules;\nconst composedRules: ReturnType<typeof composeLintConfigs>['rules'] = composeLintConfigs(baseConfig, vitestConfig, nodeRuntimeConfig).rules;\nconst effectRule: unknown = effectRules['${oxlintPackageName}/no-barrel-import'];\nconst generalRule: unknown = generalRules['${oxlintPackageName}/prevent-dynamic-imports'];\nconst nativeRule: unknown = baseRules['no-console'];\nconst composedRule: unknown = composedRules?.['no-console'];\nconst manifestCount: number = ruleManifest.length;\nconst jsdocRuleCount: number = Object.keys(jsdocRules).length;\nconst vitestRuleCount: number = Object.keys(vitestRules).length;\nconst nodeRuleCount: number = Object.keys(nodeRules).length;\n\nif (!sentinelInPlugin || !sentinelInDefaultPlugin || !effectRule || !generalRule || !nativeRule || !composedRule || jsdocRuleCount === 0 || vitestRuleCount === 0 || nodeRuleCount === 0 || manifestCount === 0) {\n  throw new Error('unexpected main-entry rule export contract');\n}\n`,
   );
 
   const result = runCommand('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: consumerDir });
@@ -204,8 +231,8 @@ const runConsumerOxlint = (consumerDir: string) => {
     commandPrefixArgs: ['exec', 'oxlint'],
     cwd: consumerDir,
     pluginSpecifier: oxlintPackageName,
-    rules: noEffectAsRules,
-    source: "import * as Effect from 'effect/Effect';\nEffect.as('done');\n",
+    rules: sentinelRules,
+    source: "import * as Effect from 'effect/Effect';\nEffect.orDie(program);\n",
   });
 
   ensureFailure(
@@ -215,8 +242,8 @@ ${commandOutput(result)}`,
   );
   assertDiagnostic(result, {
     label: 'packed consumer oxlint',
-    message: ruleMessage('no-effect-as'),
-    ruleName: 'no-effect-as',
+    message: ruleMessage(sentinelRuleName),
+    ruleName: sentinelRuleName,
   });
 
   const catalogResult = runOxlintOnSource({
@@ -253,6 +280,7 @@ try {
   assertMainEntryTypes(typeConsumerDir);
   prepareConsumer(consumerDir, packed.tarballPath);
   assertMainEntryExports(consumerDir);
+  assertDroppedRulesAbsent(consumerDir);
   runConsumerOxlint(consumerDir);
   runComposedConfigOxlint(consumerDir);
   printLine('packed consumer smoke passed');

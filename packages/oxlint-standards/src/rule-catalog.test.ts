@@ -69,38 +69,6 @@ run('no-barrel-import', {
   ],
 });
 
-run('effect-no-multiple-provide', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B));",
-    "import * as E from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(effect, E.provide(A), E.provide(B));",
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A)).pipe(Effect.provide(B));",
-    // Behavior regression: three provides across inner+outer chain must report exactly once (not twice).
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B)).pipe(Effect.provide(C));",
-    // Behavior regression: nested standalone pipe(pipe(...)) must be detected as one composed pipeline.
-    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A)), Effect.provide(B));",
-    // Guard regression: inner standalone pipe with 2+ provides must report exactly once (not twice).
-    // The inner pipe must not be reported separately, even though it also exceeds the provide threshold.
-    {
-      code: "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A), Effect.provide(B)), Effect.provide(C));",
-      expectedErrors: 1,
-    },
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.provide(effect, Layer.mergeAll(A, B));",
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.map(() => Effect.provide(B)));",
-    'const Effect = { provide: (x: unknown) => x };\neffect.pipe(Effect.provide(A), Effect.provide(B));',
-    "import * as Effect from 'effect/Effect';\nconst pipe = (...steps: Array<unknown>) => steps;\npipe(effect, Effect.provide(A), Effect.provide(B));",
-    // Ownership regression: const pipe alias with multiple provides is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\nconst run = pipe(pipe(effect, Effect.provide(A)), Effect.provide(B));",
-    // Exactly one provide across a chained member pipe must not report.
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A)).pipe(Effect.map(f));",
-    // A single provide in a simple member pipe is valid.
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A));",
-    // Single standalone provide — keeps the boundary test symmetric for both pipe forms.
-    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(effect, Effect.provide(A));",
-  ],
-});
-
 run('no-inline-schema-compile', {
   invalid: [
     "import * as Schema from 'effect/Schema';\nconst User = Schema.Struct({ name: Schema.String });\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(User)(input);",
@@ -120,65 +88,16 @@ run('no-inline-schema-compile', {
   ],
 });
 
-run('no-family-collection-read', {
-  invalid: [
-    sourceFixture('no-family-collection-read', 'invalid-get.ts'),
-    sourceFixture('no-family-collection-read', 'invalid-get-get.ts'),
-    sourceFixture('no-family-collection-read', 'invalid-atom-get.ts'),
-  ],
-  valid: [
-    sourceFixture('no-family-collection-read', 'valid-keyed-source.ts'),
-    sourceFixture('no-family-collection-read', 'valid-outside-family.ts'),
-  ],
-});
-
-run('no-naked-object-state-update', {
-  invalid: [
-    sourceFixture('no-naked-object-state-update', 'invalid-spread.ts'),
-    sourceFixture('no-naked-object-state-update', 'invalid-from-entries.ts'),
-    {
-      code: sourceFixture('no-naked-object-state-update', 'invalid-object-assign.ts'),
-      expectedErrors: 2,
-    },
-    {
-      code: sourceFixture('no-naked-object-state-update', 'invalid-json-transition.ts'),
-      expectedErrors: 2,
-    },
-    "import * as Ref from 'effect/Ref';\nRef.modify(stateRef, (state) => { return { ...state, ready: true }; });",
-  ],
-  valid: [
-    sourceFixture('no-naked-object-state-update', 'valid-effect-record-set.ts'),
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => state);",
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => Object.fromEntries(entries));",
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => Object.assign(state, patch));",
-    "import * as Effect from 'effect/Effect';\nJSON.parse(payload);",
-    // ContainsObjectSpread returns false for plain object with no spread — should not flag.
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (s) => ({ count: s.count + 1 }));",
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => { return { count: state.count + 1 }; });",
-  ],
-});
-
 run('no-effect-side-effect-wrapper', {
   invalid: [
     "import * as Effect from 'effect/Effect';\nEffect.as(setState(value), undefined);",
     "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
     "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.as(Atom.set(atom, value), undefined);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.as(program, value);",
+    // Named wrappers and pipe aliases get no exemption: the eager side effect runs either way.
     "import * as Effect from 'effect/Effect';\nconst run = () => Effect.zipRight(Effect.logInfo('x'), next);",
-    // Ownership regression: side-effect wrapper inside pipe alias is owned by no-effect-wrapper-alias.
     "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.zipRight(Effect.logInfo('x'), next), Effect.map(f));",
   ],
-});
-
-run('no-return-in-arrow', {
-  invalid: ["import * as Effect from 'effect/Effect';\nitems.map((item) => { return item.id; });"],
-  valid: [
-    // Effect import is required because the exemption only matters when the rule is active.
-    "import * as Effect from 'effect/Effect';\nimport * as Schema from 'effect/Schema';\nSchema.filter((value) => { return value !== null; }, { message: () => 'x' });",
-    "import * as Effect from 'effect/Effect';\nimport * as S from 'effect/Schema';\nS.filter((value) => { return value !== null; }, { message: () => 'x' });",
-  ],
+  valid: ["import * as Effect from 'effect/Effect';\nEffect.as(program, value);"],
 });
 
 run('no-unknown-boolean-coercion-helper', {
@@ -261,17 +180,6 @@ run('no-branch-in-object', {
   ],
 });
 
-run('no-call-tower', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.succeed(1), (n) => n);",
-    "import * as Effect from 'effect/Effect';\nEffect.catchAll(Effect.tryPromise(fetchUser), handle);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(program, (n) => n);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.succeed(value));",
-  ],
-});
-
 run('no-effect-all-step-sequencing', {
   invalid: [
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)], { concurrency: 1 });",
@@ -284,35 +192,24 @@ run('no-effect-all-step-sequencing', {
     "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
     // A pipeline reports when any direct step discards state-changing work with asVoid.
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.map(f), Effect.asVoid);",
+    // A pipe alias gets no exemption: the sequential Effect.all still reports.
+    "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nconst run = pipe(Effect.all([Ref.set(ref, value)], { concurrency: 1 }), Effect.map(f));",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.all([program], { concurrency: 2 });",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => console.log('x'))], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => setState(value))], { concurrency: 1 });",
-    // Ownership regression: Effect.all inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nconst run = pipe(Effect.all([Ref.set(ref, value)], { concurrency: 1 }), Effect.map(f));",
     "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.join(fiber)], { concurrency: 1 });",
   ],
 });
 
-run('no-effect-async', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.async((resume) => resume(Effect.succeed(1)));",
-  ],
-  valid: [
-    'const Effect = { async: () => null };\nEffect.async();',
-    // Ownership regression: Effect.async inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.async(register), Effect.map(f));",
-  ],
-});
-
 run('no-effect-bind', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.bind('user', loadUser);"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(program, f);",
-    // Ownership regression: Effect.bind inside pipe wrapper alias is owned by no-effect-wrapper-alias.
+  invalid: [
+    "import * as Effect from 'effect/Effect';\nEffect.bind('user', loadUser);",
+    // A pipe alias gets no exemption.
     "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.bind('user', loadUser), Effect.map(f));",
   ],
+  valid: ["import * as Effect from 'effect/Effect';\nEffect.map(program, f);"],
 });
 
 run('no-effect-call-in-effect-arg', {
@@ -327,6 +224,12 @@ run('no-effect-call-in-effect-arg', {
     "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.flatMap(program, f), g);",
     // Ownership regression: flatten(map) in expression-statement has no other enabled owner.
     "import * as Effect from 'effect/Effect';\nEffect.flatten(Effect.map(program, f));",
+    // No active rule owns these shapes, so the nested Effect argument reports here.
+    "import * as Effect from 'effect/Effect';\nEffect.orElse(Effect.flatMap(program, f), fallback);",
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), value);",
+    // Named wrappers and pipe aliases get no exemption.
+    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.map(Effect.succeed(1), f); }",
+    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.map(Effect.succeed(1), f), Effect.map(g));",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, f);",
@@ -334,21 +237,12 @@ run('no-effect-call-in-effect-arg', {
     // Const form: still owned by no-flatmap-ladder.
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.flatMap(Effect.succeed(1), f), g);",
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatten(Effect.map(program, f));",
-    "import * as Effect from 'effect/Effect';\nEffect.orElse(Effect.flatMap(program, f), fallback);",
     "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
     // Ownership regression: Atom.set is a side-effect; no-effect-side-effect-wrapper owns this shape.
     "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.zipRight(Atom.set(atom, value), Effect.succeed(next));",
-    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), value);",
+    // Ownership regression: no-effect-bind reports every Effect.bind call, including this one.
     "import * as Effect from 'effect/Effect';\nEffect.bind('user', Effect.succeed(user));",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.map(Effect.succeed(1), f); }",
-    // Ownership regression: Effect.map(Effect.succeed(...)) inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.map(Effect.succeed(1), f), Effect.map(g));",
   ],
-});
-
-run('no-effect-do', {
-  invalid: ["import * as Effect from 'effect/Effect';\nconst program = Effect.Do;"],
-  valid: ['const Effect = { Do: {} };\nconst program = Effect.Do;'],
 });
 
 run('no-effect-ladder', {
@@ -356,6 +250,11 @@ run('no-effect-ladder', {
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.map(Effect.succeed(1), f), g);",
     "import * as Effect from 'effect/Effect';\nconst program = Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy);",
     "import * as Effect from 'effect/Effect';\nfunction run() { if (ready) { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); } return fallback; }",
+    // Named wrappers get no exemption.
+    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); }",
+    // No active rule owns these deep first-argument chains.
+    "import * as Effect from 'effect/Effect';\nconst program = Effect.as(Effect.map(Effect.succeed(1), f), value);",
+    "import * as Effect from 'effect/Effect';\nconst program = Effect.orElse(Effect.flatMap(Effect.succeed(1), f), fallback);",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.succeed(1), g);",
@@ -364,117 +263,16 @@ run('no-effect-ladder', {
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.flatMap(Effect.succeed(1), f), g);",
     "import * as Effect from 'effect/Effect';\nlet program = Effect.flatMap(Effect.map(Effect.succeed(1), f), g);",
     "import * as Effect from 'effect/Effect';\nvar program = Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); }",
     // Ownership regression: flatten(map) const is owned by no-flatmap-ladder, not no-effect-ladder.
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatten(Effect.map(Effect.succeed(1), f));",
     // Ownership regression: second-arg-only deep nesting is not owned by no-effect-ladder (first-arg only).
     "import * as Effect from 'effect/Effect';\nconst program = Effect.zipRight(program, Effect.map(Effect.succeed(1), f));",
-    // Ownership regression: single-callee rules (no-effect-as, no-effect-bind) own these shapes.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.as(Effect.map(Effect.succeed(1), f), value);",
+    // Ownership regression: no-effect-bind owns this shape.
     "import * as Effect from 'effect/Effect';\nconst program = Effect.bind('user', Effect.map(Effect.succeed(user), f));",
     // Ownership regression: non-first-arg deep nesting is not a ladder — first-arg depth is only 1.
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.map(program, Effect.succeed(1)), g);",
-    // Ownership regression: no-effect-orElse-ladder owns this const form.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.orElse(Effect.flatMap(Effect.succeed(1), f), fallback);",
     // Ownership regression: no-effect-side-effect-wrapper owns this const form.
     "import * as Effect from 'effect/Effect';\nconst program = Effect.zipRight(Effect.map(Effect.logInfo('x'), f), next);",
-  ],
-});
-
-run('no-effect-never', {
-  invalid: ["import * as Effect from 'effect/Effect';\nconst program = Effect.never;"],
-  valid: ['const Effect = { never: {} };\nconst program = Effect.never;'],
-});
-
-run('no-effect-orElse-ladder', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.orElse(Effect.flatMap(program, f), fallback);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.orElse(program, fallback);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.orElse(Effect.flatMap(program, f), fallback); }",
-  ],
-});
-
-run('no-effect-succeed-variable', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(1);",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(value ?? fallback);",
-    "import * as Effect from 'effect/Effect';\nlet run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nvar run = () => Effect.succeed(value);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed({ value });",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed([value]);",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(makeValue());",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(condition ? value : fallback);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.succeed(value); }",
-    // Regression coverage: descendant inside wrapper-owned expression must not be double-reported.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.map(Effect.succeed(value), f);",
-    // Ownership regression: Effect.succeed inside standalone pipe wrapper alias must not double-report.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.succeed(value), Effect.map(f));",
-  ],
-});
-
-run('no-effect-sync-console', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.sync(() => console.log('x'));"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => value);",
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => setState(value));",
-  ],
-});
-
-run('no-effect-type-alias', {
-  invalid: [
-    "import { Effect } from 'effect';\ntype Program = Effect.Effect<number>;",
-    // Regression coverage: type-only imports must also activate the type-modeling rule.
-    "import type { Effect } from 'effect';\ntype Program = Effect.Effect<number>;",
-    "import type * as Effect from 'effect/Effect';\ntype Program = Effect.Effect<number>;",
-  ],
-  valid: [
-    'type Program = Promise<number>;',
-    "import { Effect } from 'effect';\nfunction run(): Effect.Effect<number> { return program; }",
-    "import { Effect } from 'effect';\ninterface Service { run(): Effect.Effect<number>; }",
-    "import { Effect } from 'effect';\nfunction run(program: Effect.Effect<number>) { return program; }",
-  ],
-});
-
-run('no-effect-wrapper-alias', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nconst wrapper = pipe(Effect.succeed(1), Effect.map(f));",
-    // Ownership regression: pipe source contains an Effect call as a descendant.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(decorate(Effect.succeed(1)), Effect.map(f));",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nconst run = (value: string) => Effect.sync(() => value);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.sync(task); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.succeed(value); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.map(Effect.succeed(1), f); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.orElse(Effect.flatMap(program, f), fallback); }",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.zipRight(Effect.logInfo('x'), next);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.tryPromise(fetchUser);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.acquireRelease(acquire, release); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); }",
-  ],
-  valid: [
-    // Ownership split: direct Effect.gen wrappers are owned by prefer-effect-fn, not no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.gen(function* () { yield* task; }); }",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.succeed(1);",
-    "import * as Effect from 'effect/Effect';\nconst mapped = pipe(program, Effect.map(f));",
-    // Behavior regression: member .pipe(...) alias is not source-covered; must stay valid.
-    "import * as Effect from 'effect/Effect';\nconst run = decorate(Effect.succeed(1)).pipe(Effect.map(f));",
-    // Behavior regression: const function-expression wrapper is not source-covered (source covers arrow and declaration only).
-    "import * as Effect from 'effect/Effect';\nconst run = function () { return Effect.succeed(value); };",
-    // Source parity: block-bodied const arrow wrapper is not source-covered.
-    "import * as Effect from 'effect/Effect';\nconst run = () => { return Effect.succeed(value); };",
-    "import * as Effect from 'effect/Effect';\nconst run = () => { const program = Effect.succeed(value); return program; };",
-    "import * as Effect from 'effect/Effect';\nlet run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nvar run = () => Effect.succeed(value);",
   ],
 });
 
@@ -484,11 +282,12 @@ run('no-flatmap-ladder', {
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatten(Effect.map(program, f));",
     // Behavior regression: flatMap in callback (second arg) position is now caught via full-arg scan.
     "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(program, () => Effect.flatMap(other, f));",
+    // Named wrappers get no exemption.
+    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.flatMap(Effect.flatMap(program, f), g); }",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, f);",
     "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.flatMap(program, f), g);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.flatMap(Effect.flatMap(program, f), g); }",
     "import * as Effect from 'effect/Effect';\nlet program = Effect.flatMap(Effect.flatMap(program, f), g);",
     "import * as Effect from 'effect/Effect';\nvar program = Effect.flatten(Effect.map(program, f));",
   ],
@@ -511,34 +310,6 @@ run('no-iife-wrapper', {
   ],
 });
 
-run('no-inline-runtime-provide', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { const live = yield* runtime.pipe(Effect.provide(Live)); return live; });",
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { return yield* runtime.pipe(Effect.provide(Live)); });",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.provide(program, Live);",
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* runtime.pipe(Effect.provide(Live)); });",
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* runtime.pipe(Effect.provide(program, Live)); });",
-    "import * as Effect from 'effect/Effect';\nruntime.pipe(Effect.provide(Live));",
-  ],
-});
-
-run('no-manual-effect-channels', {
-  invalid: [
-    "import { Effect } from 'effect';\nfunction run(): Effect.Effect<number, Error, Env> { return program; }",
-    "import { Layer } from 'effect';\ninterface Service { readonly layer: Layer.Layer<Service, Error, Env>; }",
-    "import { Layer } from 'effect';\ntype Live = Layer.Layer<Service, Error, Env>;",
-    // Regression coverage: type-only imports must also activate the type-modeling rule.
-    "import type { Effect } from 'effect';\nfunction run(): Effect.Effect<number, Error, Env> { return program; }",
-    "import type { Layer } from 'effect';\ntype Live = Layer.Layer<Service, Error, Env>;",
-  ],
-  valid: [
-    "import { Effect } from 'effect';\ntype Program = Effect.Effect<number, Error, Env>;",
-    "import { Effect } from 'effect';\ntype Program = Effect.Effect;",
-  ],
-});
-
 run('no-match-effect-branch', {
   invalid: [
     "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => Effect.flatMap(program, f)));",
@@ -557,42 +328,6 @@ run('no-match-effect-branch', {
     "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => pipe(value, f)));",
     // Behavior regression: member .pipe() is not source sequencing; Effect call alone is not enough.
     "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => Effect.succeed(value).pipe(f)));",
-  ],
-});
-
-run('no-match-void-branch', {
-  invalid: [
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when(true, () => Effect.void));",
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when(false, () => Effect.void));",
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.orElse(() => Effect.void));",
-  ],
-  valid: [
-    "import * as Match from 'effect/Match';\nMatch.value(kind).pipe(Match.when(true, () => undefined));",
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('not-found', () => Effect.void));",
-  ],
-});
-
-run('no-nested-effect-call', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.flatMap(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nEffect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.succeed(1), g);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.succeed(value));",
-    // Behavior regression: second-arg deep nesting not caught after first-arg ladder-depth fix.
-    "import * as Effect from 'effect/Effect';\nEffect.map(program, Effect.flatMap(Effect.succeed(1), f));",
-  ],
-});
-
-run('no-nested-effect-gen', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.gen(function* () { yield* task; }); });",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* task; });",
-    // Ownership regression: nested Effect.gen inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.gen(function* () { yield* Effect.gen(function* () { yield* task; }); }), Effect.map(f));",
   ],
 });
 
@@ -629,12 +364,12 @@ run('no-pipe-ladder', {
     "import * as Effect from 'effect/Effect';\npipe(value, other.pipe(f));",
     // Ownership regression: nested member .pipe(...) inside a member pipe step must also be caught.
     "import * as Effect from 'effect/Effect';\nsource.pipe(other.pipe(f));",
+    // A const pipe alias gets no exemption.
+    "import * as Effect from 'effect/Effect';\nconst run = pipe(pipe(Effect.succeed(1), f), g);",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\npipe(value, f);",
     "import * as Effect from 'effect/Effect';\nsource.pipe(f).pipe(g);",
-    // Ownership regression: const pipe alias whose source contains an Effect call is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(pipe(Effect.succeed(1), f), g);",
     // A non-pipe function call in a pipe step must not be detected as a nested pipe.
     "import * as Effect from 'effect/Effect';\npipe(value, doSomething(x));",
     // A non-pipe outer function call must not be detected as a pipe expression.
@@ -658,50 +393,9 @@ run('no-render-side-effects', {
   ],
 });
 
-run('no-return-in-callback', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nitems.map(function itemToId(item) { return item.id; });",
-  ],
-  valid: [
-    'items.map(function itemToId(item) { return item.id; });',
-    "import * as Effect from 'effect/Effect';\nitems.map((item) => { return item.id; });",
-    "import * as Effect from 'effect/Effect';\n(function () { return value; })();",
-  ],
-});
-
 run('no-return-null', {
   invalid: ["import * as Effect from 'effect/Effect';\nfunction value() { return null; }"],
   valid: ['function value() { return null; }'],
-});
-
-run('no-runtime-runfork', {
-  invalid: ["import * as Runtime from 'effect/Runtime';\nRuntime.runFork(runtime, program);"],
-  valid: ['const Runtime = { runFork: () => null };\nRuntime.runFork(runtime, program);'],
-});
-
-run('no-string-sentinel-const', {
-  invalid: ["import * as Effect from 'effect/Effect';\nconst status = 'ready';"],
-  valid: [
-    "const status = 'ready';",
-    "import * as Effect from 'effect/Effect';\nlet status = 'ready';",
-    "import * as Effect from 'effect/Effect';\nvar status = 'ready';",
-  ],
-});
-
-run('no-string-sentinel-return', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nlet run = () => Effect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nvar run = () => Effect.succeed('ready');",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(status);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed('ready');",
-    // Regression coverage: string sentinel nested inside wrapper-owned expression must not double-report.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.map(Effect.succeed('ready'), f);",
-    // Ownership regression: string sentinel inside standalone pipe wrapper alias must not double-report.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.succeed('ready'), Effect.map(f));",
-  ],
 });
 
 run('no-try-catch', {
@@ -711,39 +405,6 @@ run('no-try-catch', {
   valid: [
     'try { run(); } catch (error) { handle(error); }',
     "import * as Effect from 'effect/Effect';\ntry { run(); } finally { cleanup(); }",
-  ],
-});
-
-run('no-wrapgraphql-catchall', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nwrapGraphqlCall(request).pipe(Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\npipe(wrapGraphqlCall(request), Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.flatMap(applyResponse), Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(applyResponse), Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(wrapGraphqlCall(request)).pipe(Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\npipe(pipe(program, Effect.flatMap(applyResponse)), Effect.catchAll(handle));",
-    // A GraphQL source can appear among other pipeline steps before catchAll.
-    "import * as Effect from 'effect/Effect';\npipe(program, Effect.map(value, f), wrapGraphqlCall(request), Effect.catchAll(handle));",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.catchAll((error) => applyResponse(error)));",
-    "import * as Effect from 'effect/Effect';\nEffect.catchAll(program, (error) => applyResponse(error));",
-    // A non-wrapGraphqlCall function call at the pipe source must not fire.
-    "import * as Effect from 'effect/Effect';\ndoSomething(request).pipe(Effect.catchAll(handle));",
-  ],
-});
-
-run('warn-effect-sync-wrapper', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.sync(() => setState(value));"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => console.log('x'));",
-    // Behavior regression: block-bodied return is not expression-bodied; source parity excludes it.
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => { return setState(value); });",
-    // Ownership regression: Effect.sync inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.sync(() => setState(value)), Effect.map(f));",
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => console.warn('x'));",
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => console.debug('x'));",
   ],
 });
 
@@ -878,21 +539,6 @@ run('no-unknown-error-message', {
   ],
 });
 
-run('prefer-yield-tagged-error', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(new DomainError()); });",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* new DomainError(); });",
-    // Non-delegate yield does not trigger the rule (delegate check must be === true).
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield Effect.fail(new DomainError()); });",
-    // Non-constructor arg: yield* Effect.fail(variable) cannot be simplified to yield* variable.
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(existingError); });",
-    // Plain Error construction must stay distinct from tagged domain errors.
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(new Error('msg')); });",
-  ],
-});
-
 run('no-redundant-error-factory', {
   invalid: [
     "import * as Effect from 'effect/Effect';\nfunction makeDomainError() { return new DomainError(); }",
@@ -931,6 +577,8 @@ run('no-effect-escape-hatch', {
     "import * as Effect from 'effect/Effect';\nEffect.die(program);",
     "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
     "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+    // A pipe alias gets no exemption.
+    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.orDie(program), Effect.map(f));",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.catch(program, handler);",
@@ -960,22 +608,6 @@ run('no-effect-escape-hatch', {
       code: "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
       filename: 'src/program.test.mts',
     },
-    // Ownership regression: Effect.orDie inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.orDie(program), Effect.map(f));",
-  ],
-});
-
-run('prefer-effect-fn', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.gen(function* () { yield* task; }); }",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nconst run = Effect.gen(function* () { yield* task; });",
-    "import * as Effect from 'effect/Effect';\nconst run = () => { const program = Effect.gen(function* () { yield* task; }); return program; };",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.gen(function* () { yield* task; }));",
-    "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(() => Effect.gen(function* () { yield* task; })));",
-    'const Effect = { gen: (value: unknown) => value };\nconst run = () => Effect.gen(function* () { yield* task; });',
   ],
 });
 

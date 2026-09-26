@@ -21,8 +21,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | ID | Item | Size | Status | Commits |
 | --- | --- | --- | --- | --- |
 | WI-01 | Record ownership and initialize the execution ledger | S | DONE (local, not pushed) | `15fce6c` |
-| WI-02 | Establish pinned inputs and the isolated toolchain foundation | L | DONE (uncommitted); Renovate app activation waits on MP | |
-| WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | PENDING | |
+| WI-02 | Establish pinned inputs and the isolated toolchain foundation | L | DONE (local, not pushed); Renovate app activation waits on MP | `c863fa5` |
+| WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | DONE (uncommitted) | |
 | WI-04 | Narrow composition and error contracts | L | PENDING | |
 | WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | PENDING | |
 | WI-06 | Activate the full Effect config and both package surfaces | L | PENDING | |
@@ -49,7 +49,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 - **Issues:** the introspection schema blocker remains. It does not block independent prose or tests.
 - **Action items for MP:** none.
 
-### WI-02: Establish pinned inputs and the isolated toolchain foundation (DONE, uncommitted)
+### WI-02: Establish pinned inputs and the isolated toolchain foundation (DONE)
 
 - **Build:** exact `@effect/tsgo` 0.45.0 root dev pin through the catalog (`pnpm-workspace.yaml`, `package.json`, `pnpm-lock.yaml`). Root `prepare` (`vp config`), the root tool pins, and the `oxlint-tsgolint` override are unchanged.
 - **Pinned metadata:** `scripts/references/tsgo/0.45.0/metadata.json` plus the tagged `LICENSE`. It was captured from tag `@effect/tsgo@0.45.0`, which resolves to commit `54bbc1e7f0ffe7bb555642312168a88741667c6f`, by `bun scripts/checks/generate-effect-policy.ts --capture /Users/mp/references/effect-ts/tsgo`. The capture reads git objects at the tag, never the working tree. It records sha256 hashes of the four source files; an independent `git show … | shasum -a 256` matched all four. Each row keeps `description`, `fixable`, `preview`, `codes`, `defaultSeverity`, and `supportedEffect`. The snapshot also retains the supported-target table from the tagged README.
@@ -128,3 +128,87 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
   - Final checks: `test` exits 0 with 834 passing tests in 25 files. `typecheck`, `versions:check`, and `effect-policy:check` exit 0. Lint exits 0 with 0 warnings and 0 errors.
 - **Commits:** none. The orchestrator commits.
 - **Action items for MP:** add `mplibunao/backpressure` to the existing Renovate installation. Open `https://github.com/settings/installations/27958297`, complete GitHub's sudo confirmation, pick the repository under **Only select repositories**, and save. Activation is done when Renovate's onboarding PR appears.
+
+### WI-03: Remove obsolete runtime policies and repair ownership contracts (DONE)
+
+- **Build:** all 27 register rules are dropped by disposition. No manifest row was deleted: the manifest still has 219 rows and all 50 linteffect source identities. Each dropped row now has `disposition: dropped`, `implementationStatus: not-implemented`, `testStatus` and `parityStatus` set to `not-applicable`, `collections: []`, `testSource: none`, and a reason taken from the decided record. Origin, domain, `sourcePresets`, historical severity, gating, and source ownership are unchanged.
+- **Replacement edges:** `RuleManifestEntry.replacedBy` is an optional non-empty tuple of generated `TsgoRuleId` values, imported type-only from `src/generated/tsgo-policy.ts`. Exactly the plan's eleven rows carry edges, and all eleven targets are graded `error` in the generated policy.
+- **Runtime removal:** removed the 27 rule bodies from `rule-catalog.ts`, along with 62 helpers that only those rules used. The standalone `no-effect-as` module, its message module, its RuleTester file, and `utils/reports.ts` are deleted; only `no-effect-as` used `utils/reports.ts`. Messages for the five dropped rules that had one are gone, and the `effectValueMappingMembers` constant is removed. The `plugin.ts` comment about `no-effect-as` assembly is removed. Vendored linteffect fixtures are untouched.
+- **Ownership repair:**
+  - `isInAnyWrapperOwnedExpression` and the five helpers behind it are deleted and removed from all six survivors: `no-effect-all-step-sequencing`, `no-effect-bind`, `no-effect-call-in-effect-arg`, `no-effect-escape-hatch`, `no-effect-side-effect-wrapper`, and `no-pipe-ladder`.
+  - The named-wrapper exemption is removed from `no-effect-ladder`, `no-flatmap-ladder`, and the flatMap-ladder owner check.
+  - Single-callee ownership now covers only `bind`, through the same predicate that `no-effect-bind` reports.
+  - The `orElse` ladder-owner branch is gone.
+  - `no-effect-side-effect-wrapper` and `no-flatmap-ladder` now report through the same predicate that other rules use to defer to them.
+  - A static test in `utils/effect-ownership.test.ts` fails if package source defines or references any retired wrapper helper.
+- **Reclassified cases:** each wrapper-owned valid case whose owner was dropped now reports through a surviving rule in the RuleTester, per-rule replay, and preset duplicate-intent layers. New replay branches cover a named wrapper or pipe alias for all seven survivors that lost a guard. Cases that belonged only to deleted rules are removed. This includes the multiple-provide and type-alias duplicate-intent runner functions and their invocations. A new preset replay checks that nine decided-allowed shapes lint clean under the AST Effect preset. Examples: `const run = () => Effect.succeed(value)`, `Effect.as(program, value)`, `Effect.never`, and early returns in handlers.
+- **Inventory:** `explicitDrops` now lists all 27 linteffect-origin drops and must equal the dropped linteffect rows exactly. A separate decided drop register lists all 30 drops with their exact `replacedBy` edges. It is checked in both directions against the manifest, and every edge target is checked against the pinned `tsgoRuleIds`. Dropped-row field shapes are checked. `replacedBy` on an active row fails. Runtime rule names and replay suite names must each equal the active custom rows exactly, so a dropped name in either fails. Source-fixture checks skip dropped rows, whose fixtures stay as history. A fixture directory with no manifest row fails.
+- **Smoke sentinels:** the `no-effect-as` sentinels in `smoke-packed-consumer.ts` (runtime message, type contract, and real-oxlint diagnostic) and in `artifact-assertions.ts` now use `no-effect-escape-hatch`. A new packed step asserts that no dropped rule appears in the plugin, `effectPreset`, or `effectReactPreset`. It takes the dropped list from the source manifest. The LSP sentinel stays until its API transition in WI-06.
+- **Counts (manifest query at `HEAD` versus the WI-03 tree):**
+
+  | Measure | Before | After |
+  | --- | --- | --- |
+  | Manifest rows | 219 | 219 |
+  | Runtime and active custom rules | 68 | 41 |
+  | Dropped rows | 3 | 30 |
+  | Rows with `replacedBy` | 0 | 11 |
+  | `effectPreset` rows | 55 | 33 |
+  | `effectReactPreset` rows | 6 | 3 |
+  | LSP rows | 13 | 13 |
+  | Unit tests (files) | 834 (25) | 627 (24) |
+  | Replay suites and cases | 87 and 512 | 50 and 315 |
+
+- **Judgment calls:**
+  - **LSP rows stay:** the thirteen `lsp/*` rows, `lspOwnedChecks`, the inventory assertion on `lsp/missingEffectServiceDependency`, and the smoke's LSP sentinel stay until WI-06. The WI-06 done-when removes old LSP metadata, and the plan ties delegated-row activation to the new config.
+  - **`effectVersionSensitivity` stays:** its removal is a public metadata cutover, so it lands with the WI-06 exports. New dropped rows keep their existing values.
+  - **Owner registry and parent-reports check move to WI-04:** WI-04's done-when owns parent-exempt child violations and active-owner exact counts, and its narrowed predicates are what the registry must share. `isDirectArgumentOfBoundEffectCall` still defers to the parent call under the same active rule, not to a dropped owner. The warning-level `no-flatmap-ladder` still suppresses the two error owners. The §3.7 precedence change lands with WI-04's new error contracts.
+  - **Pre-narrowing verdicts:** `Effect.as(Effect.succeed(1), value)` and `Effect.orElse(Effect.flatMap(program, f), fallback)` now report through `no-effect-call-in-effect-arg` or `no-effect-ladder`. No active rule owned them after the drops. WI-04's transforming-combinator contract will make both valid, because `as` does not transform and `orElse` is a v3 name.
+  - **Early floor test:** `rule-manifest.test.ts` checks every edge against the generated policy severity, and the test fails when an edge points at a `warn` rule. G4 against the shipped fragment remains WI-06.
+  - **Imports helpers kept:** `collectEffectNamespaceImports` and `isEffectNamespaceImportReference` in `utils/imports.ts` now have no production caller. They stay for the WI-04 `imports.ts` work.
+- **Files touched outside the WI-03 key-file list:**
+  - `tsconfig.scripts.json` includes `src/generated/tsgo-policy.ts`. Scripts type-check `rule-manifest.ts`, which now imports `TsgoRuleId`. The plan's §4 already lists this include.
+  - `scripts/packages/oxlint-standards/artifact-assertions.ts` held the dist-artifact half of the `no-effect-as` sentinel, and the ordinary packed smoke runs it.
+- **Stale references for a later item (not changed here):**
+  - `stryker.config.mjs` still excludes the deleted `no-effect-as-message.ts` and `utils/reports.ts`. No work item owns the Stryker config.
+  - `packages/oxlint-standards/README.md:86` still shows `no-effect-as` in an example.
+  - `docs/references/lint-glossary.md:20` and `docs/references/mutation-testing.md:88` describe `src/rules/effect/`, which no longer exists. WI-09 owns consumer docs.
+- **Negative controls:** each mutation failed with its intended message and was restored byte-for-byte.
+  - Removing the `prefer-effect-fn` edge failed `inventory:rules`.
+  - A replay suite for dropped `no-effect-never` failed it.
+  - A runtime entry for dropped `no-effect-never` failed it.
+  - An unregistered drop of `no-json-parse` failed it. A linteffect-origin flip of `no-effect-bind` failed the source-drop allowlist first.
+  - A const-alias exemption added back to `no-pipe-ladder` failed `fixture:replay` at its preset ownership case.
+  - An edge pointed at the `warn` rule `effecttsgo/lazy-effect` failed `rule-manifest.test.ts`.
+  - A retired helper name in `utils/ast.ts` failed `effect-ownership.test.ts`.
+  - Adding the active `no-effect-bind` to the smoke's dropped list failed `smoke:oxlint-packed-consumer`.
+- **Checks (each run separately at the uncommitted WI-03 tree):**
+  - `durable:refs`: exit 0.
+  - `effect-policy:check`: exit 0.
+  - `build`: exit 0.
+  - `/bin/sh -c "pnpm run lint"`: exit 0, with 0 warnings and 0 errors.
+  - `versions:check`: exit 0.
+  - `typecheck`: exit 0.
+  - `test`: exit 0, with 627 passing tests in 24 files.
+  - `check-release-workflow`: exit 0.
+  - `changesets:check`: exit 0.
+  - `SKIP_BUILD=true inventory:rules`: exit 0 (50 source rules represented, 23 linteffect rules implemented, 27 dropped).
+  - `SKIP_BUILD=true fixture:replay`: exit 0, with 50 suites and 315 cases.
+  - `SKIP_BUILD=true smoke:oxlint-packed-consumer`: exit 0.
+  - `smoke:tsconfig-packed-consumer`: exit 0.
+  - `pack:dry-run:no-build`: exit 0.
+  - `prose`: exit 0 after one wording fix in this section.
+  - `introspection:check`: exit 1 with the same `config.schema_violation` as the intake baseline.
+- **Process note:** a cleanup step briefly staged four deletions with `git rm --cached`. They were unstaged at once, and `git diff --cached` is empty. Nothing else was staged.
+- **Refactor gate:** three behavior-preserving refactors after the orchestrator's review passed with no findings.
+  - `hasMatchOrElseNull` calls `functionReturnNode`, and the byte-identical `exactFunctionReturnExpression` is deleted.
+  - `hasEffectTypeOrRuntimeImport` and its `imports.test.ts` block are removed; a repo-wide search found no other reference.
+  - The tuple-generated `no-flatmap-ladder` replay suite is folded into the detailed suite. Its two cases and generated controls duplicated existing ones, and its two branch IDs now tag the matching detailed cases.
+  - After the refactors: `test` exits 0 with 622 passing tests in 24 files, and `typecheck`, `/bin/sh -c "pnpm run lint"`, and `build` exit 0. `SKIP_BUILD=true fixture:replay` exits 0 with 49 suites and 311 cases, and `SKIP_BUILD=true inventory:rules` exits 0.
+- **Second refactor cycle:** two behavior-preserving refactors.
+  - Each active rule now has exactly one replay suite. The eight rules with a duplicate suite were merged into their detailed suite; each `*.invalid-reference` and `*.valid-reference` ID now tags the byte-identical detailed case. For `no-manual-tag-check` and `no-promise-catch`, that case is the generated non-Effect control, which carries the ID through a new `nonEffectControlBranchIds` suite option. The typed-parameter `no-redundant-error-factory` cases and all six `prefer-effect-predicate` branch cases moved over as distinct cases. An explicit `no-redundant-error-factory` valid case that repeated its generated control is removed. `inventory:rules` now indexes suites directly and fails on a duplicate suite name; adding a second `no-pipe-ladder` suite reproduced that failure. Unique case contracts (source, filename, expected diagnostics, line, and branch IDs per case) and required branch IDs are identical for all 41 rules before and after. Replay dropped from 49 suites and 311 cases to 41 and 282.
+  - A private `droppedRule` builder in `rule-manifest.ts` supplies the six fixed dropped fields through `sourceRule`, and all 30 dropped rows use it. Severity, provenance, domain, gating, reason, and `replacedBy` stay explicit at each call site. `JSON.stringify(ruleManifest)` is byte-identical before and after. The inventory's independent register and field validation are unchanged.
+  - The tuple-only `no-instanceof-error`, `no-instanceof-tagged-error`, and `no-json-parse` suites repeated their generated non-Effect control as an explicit valid case. Each is now an explicit suite whose generated control carries its `*.valid-reference` ID through `nonEffectControlBranchIds`, and the repeated case is gone. Unique case contracts and required branch IDs are still identical for all 41 rules, and no replay case runs twice. `SKIP_BUILD=true fixture:replay` exits 0 with 41 suites and 279 cases. `SKIP_BUILD=true inventory:rules` exits 0, and `test` exits 0 with 622 passing tests in 24 files.
+  - After the refactors: `test` exits 0 with 622 passing tests in 24 files. `typecheck`, `/bin/sh -c "pnpm run lint"` (0 warnings, 0 errors), and `build` exit 0. `SKIP_BUILD=true fixture:replay` exits 0 with 41 suites and 282 cases, and `SKIP_BUILD=true inventory:rules` exits 0.
+- **Review gate:** not run here; the orchestrator owns review.
+- **Commits:** none. The orchestrator commits.
+- **Action items for MP:** none.

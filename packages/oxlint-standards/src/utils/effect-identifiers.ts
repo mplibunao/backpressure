@@ -1,7 +1,5 @@
 export const effectNamespaceModuleSpecifiers = ['effect', 'effect/Effect'] as const;
 
-export const effectValueMappingMembers = ['as'] as const;
-
 export const isEffectStackModuleSource = (source: string): boolean =>
   source === '@effect-atom/atom-react' || source === 'effect' || source.startsWith('effect/');
 

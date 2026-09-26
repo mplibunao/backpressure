@@ -292,8 +292,8 @@ export const assertOxlintDistArtifact = (): void => {
       throw new Error('plugin meta.name did not equal package name');
     }
 
-    if (entry.default?.rules?.['no-effect-as'] === globalThis.undefined) {
-      throw new Error('plugin rules did not include no-effect-as');
+    if (entry.default?.rules?.['no-effect-escape-hatch'] === globalThis.undefined) {
+      throw new Error('plugin rules did not include no-effect-escape-hatch');
     }
   `;
   const result = runCommand('node', ['--input-type=module', '--eval', runtimeContract], {

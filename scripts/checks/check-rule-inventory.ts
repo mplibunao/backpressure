@@ -12,6 +12,7 @@ import {
   type RuleEntry,
   serializeArtifact,
 } from '../lib/effective-config.ts';
+import { tsgoRuleIds } from '../../packages/oxlint-standards/src/generated/tsgo-policy.ts';
 import { fail, repoRoot } from '../lib/script-runtime.ts';
 import { buildOxlintStandards, oxlintBin } from '../packages/oxlint-standards/package.ts';
 
@@ -23,7 +24,71 @@ const configDir = join(sourceRoot, 'configs');
 const fixtureRoot = join(sourceRoot, 'tests', 'fixtures');
 const expectedSourceRuleCount = 50;
 const sourceConfigs = ['core', 'web', 'ts-type', 'full'];
-const explicitDrops = ['no-effect-fn-generator', 'no-if-statement', 'no-ternary'];
+// Independent source-drop allowlist: every linteffect-origin rule the catalog drops. It is kept
+// apart from the manifest so that dropping a source rule by accident fails this gate.
+const explicitDrops = [
+  'no-call-tower',
+  'no-effect-as',
+  'no-effect-async',
+  'no-effect-do',
+  'no-effect-fn-generator',
+  'no-effect-never',
+  'no-effect-orElse-ladder',
+  'no-effect-succeed-variable',
+  'no-effect-sync-console',
+  'no-effect-type-alias',
+  'no-effect-wrapper-alias',
+  'no-family-collection-read',
+  'no-if-statement',
+  'no-inline-runtime-provide',
+  'no-manual-effect-channels',
+  'no-match-void-branch',
+  'no-naked-object-state-update',
+  'no-nested-effect-call',
+  'no-nested-effect-gen',
+  'no-return-in-arrow',
+  'no-return-in-callback',
+  'no-runtime-runfork',
+  'no-string-sentinel-const',
+  'no-string-sentinel-return',
+  'no-ternary',
+  'no-wrapgraphql-catchall',
+  'warn-effect-sync-wrapper',
+];
+// The full decided drop register, keyed by rule name with its exact replacement edges. The
+// manifest's dropped rows and their replacedBy lists must match it exactly, in both directions.
+const decidedDropRegister = new Map<string, readonly string[]>([
+  ['effect-no-multiple-provide', ['effecttsgo/multiple-effect-provide']],
+  ['no-call-tower', []],
+  ['no-effect-as', []],
+  ['no-effect-async', ['effecttsgo/outdated-api']],
+  ['no-effect-do', ['effecttsgo/effect-do-notation']],
+  ['no-effect-fn-generator', []],
+  ['no-effect-never', []],
+  ['no-effect-orElse-ladder', ['effecttsgo/outdated-api']],
+  ['no-effect-succeed-variable', []],
+  ['no-effect-sync-console', ['effecttsgo/global-console-in-effect']],
+  ['no-effect-type-alias', []],
+  ['no-effect-wrapper-alias', []],
+  ['no-family-collection-read', []],
+  ['no-if-statement', []],
+  ['no-inline-runtime-provide', ['effecttsgo/strict-effect-provide']],
+  ['no-manual-effect-channels', []],
+  ['no-match-void-branch', []],
+  ['no-naked-object-state-update', []],
+  ['no-nested-effect-call', []],
+  ['no-nested-effect-gen', ['effecttsgo/nested-effect-gen-yield']],
+  ['no-return-in-arrow', []],
+  ['no-return-in-callback', []],
+  ['no-runtime-runfork', ['effecttsgo/run-effect-inside-effect']],
+  ['no-string-sentinel-const', []],
+  ['no-string-sentinel-return', []],
+  ['no-ternary', []],
+  ['no-wrapgraphql-catchall', ['effecttsgo/outdated-api']],
+  ['prefer-effect-fn', ['effecttsgo/effect-fn-opportunity']],
+  ['prefer-yield-tagged-error', ['effecttsgo/unnecessary-fail-yieldable-error']],
+  ['warn-effect-sync-wrapper', []],
+]);
 const sourceConfigAnomalies = [
   'no-effect-succeed-variable',
   'no-inline-runtime-provide',
@@ -46,10 +111,12 @@ interface ManifestEntry {
   readonly note: string;
   readonly parityStatus: string;
   readonly rationaleClass: string;
+  readonly replacedBy?: readonly string[];
   readonly severity: string;
   readonly sourceOwnership: string;
   readonly sourcePresets: readonly string[];
   readonly testSource: string;
+  readonly testStatus: string;
 }
 
 interface ReplayCase {
@@ -122,10 +189,13 @@ const isManifestEntry = (value: unknown): value is ManifestEntry =>
   typeof value['note'] === 'string' &&
   typeof value['parityStatus'] === 'string' &&
   typeof value['rationaleClass'] === 'string' &&
+  (value['replacedBy'] === globalThis.undefined ||
+    (isStringArray(value['replacedBy']) && value['replacedBy'].length > 0)) &&
   typeof value['severity'] === 'string' &&
   typeof value['sourceOwnership'] === 'string' &&
   isStringArray(value['sourcePresets']) &&
-  typeof value['testSource'] === 'string';
+  typeof value['testSource'] === 'string' &&
+  typeof value['testStatus'] === 'string';
 const isReplayCase = (value: unknown): value is ReplayCase =>
   isObjectRecord(value) &&
   typeof value['name'] === 'string' &&
@@ -395,27 +465,17 @@ const droppedLinteffectNames = linteffectEntries
   .filter((entry) => entry.disposition === 'dropped')
   .map((entry) => entry.name);
 const runtimeRuleNames = new Set(Object.keys(rules));
-const replaySuiteByRule = new Map<string, ReplaySuite>();
-for (const replaySuite of replaySuites) {
-  const {
-    diagnostic: { ruleName },
-  } = replaySuite;
-  const existingSuite = replaySuiteByRule.get(ruleName);
-  replaySuiteByRule.set(
-    ruleName,
-    existingSuite === globalThis.undefined
-      ? replaySuite
-      : {
-          diagnostic: replaySuite.diagnostic,
-          invalid: [...existingSuite.invalid, ...replaySuite.invalid],
-          requiredBranchIds: uniqueSorted([
-            ...existingSuite.requiredBranchIds,
-            ...replaySuite.requiredBranchIds,
-          ]),
-          valid: [...existingSuite.valid, ...replaySuite.valid],
-        },
-  );
+// One suite per rule: a second suite would silently rerun cases and split its branch matrix.
+const replaySuiteRuleNames = replaySuites.map((replaySuite) => replaySuite.diagnostic.ruleName);
+const duplicateReplaySuiteNames = uniqueSorted(
+  replaySuiteRuleNames.filter((name, index) => replaySuiteRuleNames.indexOf(name) !== index),
+);
+if (duplicateReplaySuiteNames.length > 0) {
+  fail(`Replay declares more than one suite for: ${list(duplicateReplaySuiteNames)}.`);
 }
+const replaySuiteByRule = new Map(
+  replaySuites.map((replaySuite) => [replaySuite.diagnostic.ruleName, replaySuite]),
+);
 
 const assertSemanticReplayCaseCounts = (entry: ManifestEntry, replaySuite: ReplaySuite): void => {
   if (replaySuite.requiredBranchIds.length === 0) {
@@ -515,10 +575,63 @@ for (const entry of linteffectEntries) {
   }
 }
 
-for (const name of explicitDrops) {
-  if (!droppedLinteffectNames.includes(name)) {
-    fail(`Expected ${name} to be explicitly dropped.`);
-  }
+if (!sameList(sorted(droppedLinteffectNames), sorted(explicitDrops))) {
+  fail(
+    `Dropped linteffect rules must exactly match the source-drop allowlist. Expected [${sorted(explicitDrops).join(', ')}], got [${sorted(droppedLinteffectNames).join(', ')}].`,
+  );
+}
+
+const knownTsgoRuleIds = new Set<string>(tsgoRuleIds);
+const unknownRegisterTargets = uniqueSorted(
+  [...decidedDropRegister.values()].flat().filter((ruleId) => !knownTsgoRuleIds.has(ruleId)),
+);
+if (unknownRegisterTargets.length > 0) {
+  fail(
+    `Drop register names tsgo rules absent from the pinned policy: ${list(unknownRegisterTargets)}.`,
+  );
+}
+
+const droppedEntries = manifestEntries.filter((entry) => entry.disposition === 'dropped');
+const droppedNames = sorted(droppedEntries.map((entry) => entry.name));
+const registerNames = sorted([...decidedDropRegister.keys()]);
+if (!sameList(droppedNames, registerNames)) {
+  fail(
+    `Dropped manifest rows must exactly match the decided drop register. Missing rows: ${list(registerNames.filter((name) => !droppedNames.includes(name)))}; unregistered drops: ${list(droppedNames.filter((name) => !registerNames.includes(name)))}.`,
+  );
+}
+
+const malformedDroppedEntries = droppedEntries.filter(
+  (entry) =>
+    entry.implementationStatus !== 'not-implemented' ||
+    entry.testStatus !== 'not-applicable' ||
+    entry.parityStatus !== notApplicableParity ||
+    entry.collections.length > 0 ||
+    entry.testSource !== 'none' ||
+    entry.note.trim().length === 0,
+);
+if (malformedDroppedEntries.length > 0) {
+  fail(
+    `Dropped rows need not-implemented/not-applicable status, no collections, testSource none, and a reason: ${list(malformedDroppedEntries.map((entry) => entry.name))}.`,
+  );
+}
+
+const mismatchedReplacementEdges = droppedEntries.filter(
+  (entry) =>
+    !sameList(sorted(entry.replacedBy ?? []), sorted(decidedDropRegister.get(entry.name) ?? [])),
+);
+if (mismatchedReplacementEdges.length > 0) {
+  fail(
+    `Dropped rows' replacedBy must match the decided drop register: ${list(mismatchedReplacementEdges.map((entry) => entry.name))}.`,
+  );
+}
+
+const replacementEdgesOnActiveRows = manifestEntries.filter(
+  (entry) => entry.disposition !== 'dropped' && entry.replacedBy !== globalThis.undefined,
+);
+if (replacementEdgesOnActiveRows.length > 0) {
+  fail(
+    `Only dropped rows may declare replacedBy: ${list(replacementEdgesOnActiveRows.map((entry) => entry.name))}.`,
+  );
 }
 
 for (const name of sourceConfigAnomalies) {
@@ -632,21 +745,20 @@ for (const [collection, config] of Object.entries(configs)) {
   }
 }
 
-const implementedWithoutRuntimeRule = implementedCustomEntries.filter(
-  (entry) => !runtimeRuleNames.has(entry.name),
-);
-if (implementedWithoutRuntimeRule.length > 0) {
+// Active custom rows, runtime rules, and replay suites must be the same set: a runtime rule with
+// no manifest row escapes curation, and a dropped rule left in the runtime map still ships.
+const implementedCustomNames = sorted(implementedCustomEntries.map((entry) => entry.name));
+const runtimeNames = sorted([...runtimeRuleNames]);
+const replaySuiteNames = sorted([...replaySuiteByRule.keys()]);
+if (!sameList(runtimeNames, implementedCustomNames)) {
   fail(
-    `Implemented custom rules missing from runtime plugin map: ${list(implementedWithoutRuntimeRule.map((entry) => entry.name))}.`,
+    `Runtime plugin rules must exactly match implemented custom manifest rows. Missing from runtime: ${list(implementedCustomNames.filter((name) => !runtimeRuleNames.has(name)))}; runtime without an active row: ${list(runtimeNames.filter((name) => !implementedCustomNames.includes(name)))}.`,
   );
 }
 
-const implementedWithoutReplay = implementedCustomEntries.filter(
-  (entry) => !replaySuiteByRule.has(entry.name),
-);
-if (implementedWithoutReplay.length > 0) {
+if (!sameList(replaySuiteNames, implementedCustomNames)) {
   fail(
-    `Implemented custom rules missing fixture replay suites: ${list(implementedWithoutReplay.map((entry) => entry.name))}.`,
+    `Replay suites must exactly match implemented custom manifest rows. Missing replay: ${list(implementedCustomNames.filter((name) => !replaySuiteByRule.has(name)))}; replay without an active row: ${list(replaySuiteNames.filter((name) => !implementedCustomNames.includes(name)))}.`,
   );
 }
 
@@ -662,7 +774,12 @@ for (const entry of manifestEntries) {
     );
   }
 
-  if (hasSourceFixture && entry.sourceOwnership === 'linteffect') {
+  // Dropped rows keep their vendored fixtures as history; only active rows owe source parity.
+  if (
+    hasSourceFixture &&
+    entry.sourceOwnership === 'linteffect' &&
+    entry.disposition !== 'dropped'
+  ) {
     if (entry.testSource !== 'linteffect-fixture') {
       fail(`${entry.name} has upstream fixtures but testSource is ${entry.testSource}.`);
     }
@@ -686,8 +803,14 @@ for (const entry of manifestEntries) {
   }
 }
 
+const manifestEntryByName = new Map(manifestEntries.map((entry) => [entry.name, entry]));
 for (const [ruleName, fixtureSets] of sourceFixtureFiles.entries()) {
-  assertSourceFixtureReplayCoverage(ruleName, fixtureSets, replaySuiteByRule.get(ruleName));
+  const entry = manifestEntryByName.get(ruleName);
+  if (entry === globalThis.undefined) {
+    fail(`Upstream fixture directory ${ruleName} has no manifest row.`);
+  } else if (entry.disposition !== 'dropped') {
+    assertSourceFixtureReplayCoverage(ruleName, fixtureSets, replaySuiteByRule.get(ruleName));
+  }
 }
 
 if (!manifestEntries.some((entry) => entry.name === 'lsp/missingEffectServiceDependency')) {
