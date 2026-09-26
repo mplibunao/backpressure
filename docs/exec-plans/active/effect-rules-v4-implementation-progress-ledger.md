@@ -32,7 +32,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-07 | Install all six durable gates | L | DONE (local, not pushed) | `671fcb9` |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (local, not pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) | `dfff7d9` |
 | WI-09 | Complete consumer guidance, records, and changesets | M | DONE (local, not pushed) | `be8b5fa` |
-| WI-10 | Run acceptance and classify the remaining blocker accurately | S | in-scope verification complete / full acceptance blocked: external introspection `config.schema_violation`; executor typed coverage 1,355 of 1,922 files (open MP question) | |
+| WI-10 | Run acceptance and classify the remaining blocker accurately | S | in-scope verification complete / full acceptance blocked (local, not pushed): external introspection `config.schema_violation`; executor typed coverage 1,355 of 1,922 files (open MP question) | `c927ae0` |
 
 ## Per-item detail
 
