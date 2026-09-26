@@ -85,6 +85,40 @@ export const getCallExpressionArguments = (node: NodeLike): readonly unknown[] =
   return Array.isArray(maybeArguments) ? maybeArguments : [];
 };
 
+// Wrappers that change only the static type or grouping, never the runtime value.
+const transparentExpressionTypes = new Set([
+  'ParenthesizedExpression',
+  'TSAsExpression',
+  'TSNonNullExpression',
+  'TSSatisfiesExpression',
+  'TSTypeAssertion',
+]);
+
+export const peelTransparentExpression = (node: unknown): unknown => {
+  let current = node;
+  while (isNodeLike(current) && transparentExpressionTypes.has(current.type)) {
+    current = getNodeField(current, 'expression');
+  }
+  return current;
+};
+
+export const isStringLiteral = (node: unknown): boolean =>
+  isNodeLike(node) && node.type === 'Literal' && typeof getNodeField(node, 'value') === 'string';
+
+// A statically known member key: `value.name` or `value['name']`. A computed identifier such as
+// `value[name]` reads a runtime key, so it has no static name.
+export const staticMemberPropertyName = (node: unknown): string | null => {
+  if (!isNodeLike(node) || node.type !== 'MemberExpression') {
+    return null;
+  }
+
+  const property = getNodeField(node, 'property');
+  if (getNodeField(node, 'computed') === true) {
+    return isStringLiteral(property) ? getStringLiteralValue(property) : null;
+  }
+  return isIdentifierName(property) ? property.name : null;
+};
+
 export const hasAncestor = (
   node: NodeLike,
   predicate: (ancestor: NodeLike) => boolean,
@@ -134,4 +168,13 @@ export const walkDescendants = (node: unknown, visit: (node: NodeLike) => void):
       walkNodeFieldValue(value, visit, walkDescendants);
     }
   }
+};
+
+export const visitSelfAndDescendants = (node: unknown, visit: (node: NodeLike) => void): void => {
+  if (!isNodeLike(node)) {
+    return;
+  }
+
+  visit(node);
+  walkDescendants(node, visit);
 };

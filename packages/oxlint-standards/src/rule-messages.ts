@@ -25,7 +25,27 @@ const explicitRuleMessages = new Map<string, string>([
   ],
   [
     'no-manual-tag-check',
-    'Rule: no-manual-tag-check. Why: manual _tag checks couple code to representation details. Fix: use Predicate.isTagged or Match.',
+    'Rule: no-manual-tag-check. Why: comparing _tag by hand re-implements the tagged dispatch Effect already provides. Fix: use Effect.catchTag or catchTags for errors, Match.tag for values, and Effect.catchReason for nested reasons; reading _tag without branching is fine. Ref: house style, not an Effect rule.',
+  ],
+  [
+    'no-effect-call-in-effect-arg',
+    'Rule: no-effect-call-in-effect-arg. Why: an Effect call as the source of a data-first transformation, such as Effect.map(Effect.succeed(1), f), reads inside out. Fix: pipe the source (source.pipe(Effect.map(f))) or use Effect.gen. Runners, forks, and resource helpers may take an Effect. Ref: house style.',
+  ],
+  [
+    'no-effect-ladder',
+    'Rule: no-effect-ladder. Why: a const or returned data-first transformation whose source nests more Effect calls reads from the innermost call outward. Fix: start from the innermost source and pipe each step, or use Effect.gen. Ref: house style.',
+  ],
+  [
+    'no-flatmap-ladder',
+    'Rule: no-flatmap-ladder. Why: flatMap nested in flatMap, or flatten over map, stacks sequencing that hides the order of steps. Fix: write the steps in Effect.gen with yield*, or pipe them one after another. Ref: house style.',
+  ],
+  [
+    'no-pipe-ladder',
+    'Rule: no-pipe-ladder. Why: an Effect pipeline nested in another Effect pipeline, or in a transforming callback such as Effect.flatMap, hides control flow like nested try/catch. Fix: flatten the nested logic into Effect.gen and yield* each step. Nested Schedule, Layer, and Schema pipes are fine. Ref: house style.',
+  ],
+  [
+    'no-string-error-channel',
+    'Rule: no-string-error-channel. Why: a string failure gives callers no stable tag to recover on. Fix: fail with a named tagged error, Data-tagged for internal errors or Schema-tagged for wire errors, so callers can use Effect.catchTag. No autofix: the class, tag, and fields are domain choices. Ref: house style.',
   ],
   [
     'no-match-effect-branch',
@@ -45,7 +65,7 @@ const explicitRuleMessages = new Map<string, string>([
   ],
   [
     'no-unknown-error-message',
-    'Rule: no-unknown-error-message. Why: unknown caught values are not guaranteed to expose message safely. Fix: narrow or decode before reading message.',
+    "Rule: no-unknown-error-message. Why: a value caught by catch or an Effect.try or tryPromise handler is unknown; reading message or calling String() assumes an unchecked shape. Fix: keep it as a typed error's cause, or decode or narrow it into a validated binding. A cast does not make it safe. Ref: house style.",
   ],
 ]);
 

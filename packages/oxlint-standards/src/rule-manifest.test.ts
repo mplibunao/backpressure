@@ -21,6 +21,11 @@ import {
   type RuleCollection,
   type RuleManifestEntry,
 } from './rule-manifest.js';
+import {
+  ownershipRegistry,
+  validateOwnershipRegistry,
+  type OwnershipEdge,
+} from './utils/effect-ownership.js';
 
 vi.setConfig({ testTimeout: 1000 });
 
@@ -385,5 +390,96 @@ describe('replacement edges', () => {
     );
 
     expect(loweredEdges).toStrictEqual([]);
+  });
+});
+
+// ── Ownership registry ────────────────────────────────────────────────────────
+
+const edgeFor = (reporter: string, owner: string): OwnershipEdge => ({
+  reporter,
+  owners: [owner],
+  shape: 'test shape',
+  ownsShape: () => true,
+});
+
+const manifestWith = (
+  name: string,
+  change: Partial<RuleManifestEntry>,
+): readonly RuleManifestEntry[] =>
+  ruleManifest.map((entry) => (entry.name === name ? { ...entry, ...change } : entry));
+
+describe('validateOwnershipRegistry()', () => {
+  it('accepts the shipped registry against the shipped manifest', () => {
+    expect(validateOwnershipRegistry(ownershipRegistry, ruleManifest)).toStrictEqual([]);
+  });
+
+  it('rejects an owner that has no manifest row', () => {
+    const problems = validateOwnershipRegistry(
+      [edgeFor('no-effect-call-in-effect-arg', 'no-such-rule')],
+      ruleManifest,
+    );
+    expect(problems).toStrictEqual([
+      'no-effect-call-in-effect-arg -> no-such-rule (test shape): owner is not an active custom rule',
+    ]);
+  });
+
+  it('rejects a dropped owner', () => {
+    const problems = validateOwnershipRegistry(
+      [edgeFor('no-effect-call-in-effect-arg', 'no-effect-as')],
+      ruleManifest,
+    );
+    expect(problems).toStrictEqual([
+      'no-effect-call-in-effect-arg -> no-effect-as (test shape): owner is not an active custom rule',
+    ]);
+  });
+
+  it('rejects a warn owner suppressing an error reporter', () => {
+    const problems = validateOwnershipRegistry(
+      [edgeFor('no-effect-call-in-effect-arg', 'no-flatmap-ladder')],
+      ruleManifest,
+    );
+    expect(problems).toStrictEqual([
+      'no-effect-call-in-effect-arg -> no-flatmap-ladder (test shape): warning owner cannot suppress an error reporter',
+    ]);
+  });
+
+  it('rejects a shipped edge once its owner is lowered below the reporter', () => {
+    const problems = validateOwnershipRegistry(
+      ownershipRegistry,
+      manifestWith('no-effect-ladder', { severity: 'warning' }),
+    );
+    expect(problems).toContain(
+      'no-effect-call-in-effect-arg -> no-effect-ladder (const or returned data-first transformation with a deep first-argument chain): warning owner cannot suppress an error reporter',
+    );
+  });
+
+  it('rejects an owner missing from a collection that enables the reporter', () => {
+    const problems = validateOwnershipRegistry(
+      ownershipRegistry,
+      manifestWith('no-effect-internal-tags', { collections: ['generalPreset'] }),
+    );
+    expect(problems).toContain(
+      'no-manual-tag-check -> no-effect-internal-tags (_tag comparison against an imported Effect data-module tag): owner is not enabled in effectPreset',
+    );
+  });
+
+  it('rejects a built-in owner even when it is implemented and enabled', () => {
+    const problems = validateOwnershipRegistry(
+      ownershipRegistry,
+      manifestWith('no-effect-internal-tags', { disposition: 'built-in' }),
+    );
+    expect(problems).toStrictEqual([
+      'no-manual-tag-check -> no-effect-internal-tags (_tag comparison against an imported Effect data-module tag): owner is not an active custom rule',
+    ]);
+  });
+
+  it('rejects a reporter that is no longer active', () => {
+    const problems = validateOwnershipRegistry(
+      [edgeFor('no-effect-as', 'no-effect-ladder')],
+      ruleManifest,
+    );
+    expect(problems).toStrictEqual([
+      'no-effect-as (test shape): reporter is not an active custom rule',
+    ]);
   });
 });

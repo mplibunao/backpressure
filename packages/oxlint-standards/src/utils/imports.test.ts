@@ -3,15 +3,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { IdentifierLike } from './ast.js';
 import {
-  collectEffectNamespaceImports,
   collectImportNames,
+  collectNamedImportNames,
   collectNamespaceImports,
   getImportSource,
   hasEffectStackImport,
   hasImportFrom,
   importSpecifierName,
-  isEffectNamespaceImportReference,
   isNamespaceImportReference,
+  isUnshadowedGlobal,
 } from './imports.js';
 
 vi.setConfig({ testTimeout: 1000 });
@@ -292,29 +292,6 @@ describe('collectNamespaceImports()', () => {
   });
 });
 
-// ── collectEffectNamespaceImports ─────────────────────────────────────────────
-
-describe('collectEffectNamespaceImports()', () => {
-  it('collects Effect-aliased namespace import from effect barrel', () => {
-    expect(
-      collectEffectNamespaceImports(prog(importDecl('effect', [nsSpecifier('Effect')]))),
-    ).toStrictEqual(new Set(['Effect']));
-  });
-
-  it('excludes Option-aliased namespace import from effect barrel', () => {
-    // Filter 'Effect' is set — alias 'Option' does not match, so excluded
-    expect(
-      collectEffectNamespaceImports(prog(importDecl('effect', [nsSpecifier('Option')]))),
-    ).toStrictEqual(new Set());
-  });
-
-  it('collects any alias from effect/Effect submodule (filter does not apply to non-barrel)', () => {
-    expect(
-      collectEffectNamespaceImports(prog(importDecl('effect/Effect', [nsSpecifier('E')]))),
-    ).toStrictEqual(new Set(['E']));
-  });
-});
-
 // ── isRuntimeImportDeclaration boundary (some vs every) ──────────────────────
 
 // Private function exercised through collectNamespaceImports and hasImportFrom.
@@ -434,18 +411,46 @@ describe('isNamespaceImportReference()', () => {
   });
 });
 
-// ── isEffectNamespaceImportReference ─────────────────────────────────────────
+// ── collectNamedImportNames ───────────────────────────────────────────────────
 
-describe('isEffectNamespaceImportReference()', () => {
-  it('returns true for a bound import reference', () => {
-    expect(
-      isEffectNamespaceImportReference(importCtx('Effect'), ident('Effect'), new Set(['Effect'])),
-    ).toBe(true);
+describe('collectNamedImportNames()', () => {
+  it('collects named value imports and their aliases from the listed modules', () => {
+    const program = prog(
+      importDecl('effect/Function', [namedSpecifier('pipe', 'flow')]),
+      importDecl('effect', [namedSpecifier('pipe')]),
+    );
+    expect(collectNamedImportNames(program, ['effect/Function', 'effect'], 'pipe')).toStrictEqual(
+      new Set(['flow', 'pipe']),
+    );
   });
 
-  it('returns false when name is not in the namespace set', () => {
-    expect(
-      isEffectNamespaceImportReference(importCtx('Foo'), ident('Foo'), new Set(['Effect'])),
-    ).toBe(false);
+  it('excludes namespace imports, which bind a module rather than the function', () => {
+    const program = prog(importDecl('effect/Function', [nsSpecifier('pipe')]));
+    expect(collectNamedImportNames(program, ['effect/Function'], 'pipe')).toStrictEqual(new Set());
+  });
+
+  it('excludes type-only specifiers, type-only declarations, and other modules', () => {
+    const program = prog(
+      importDecl('effect/Function', [namedSpecifier('pipe', 'typePipe', 'type')]),
+      importDecl('effect/Function', [namedSpecifier('pipe', 'declPipe')], 'type'),
+      importDecl('other', [namedSpecifier('pipe', 'otherPipe')]),
+    );
+    expect(collectNamedImportNames(program, ['effect/Function'], 'pipe')).toStrictEqual(new Set());
+  });
+});
+
+// ── isUnshadowedGlobal ────────────────────────────────────────────────────────
+
+describe('isUnshadowedGlobal()', () => {
+  it('is true when no declaration resolves the name', () => {
+    expect(isUnshadowedGlobal(bareCtx, ident('String'))).toBe(true);
+  });
+
+  it('is true for an implicit global variable without definitions', () => {
+    expect(isUnshadowedGlobal(ctxWithDefs([]), ident('Effect'))).toBe(true);
+  });
+
+  it('is false when a local declaration shadows the global', () => {
+    expect(isUnshadowedGlobal(ctxWithDefs([{ type: 'Variable' }]), ident('Effect'))).toBe(false);
   });
 });

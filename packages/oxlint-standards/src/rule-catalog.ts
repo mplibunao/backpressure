@@ -12,21 +12,42 @@ import {
   hasAncestor,
   isIdentifierName,
   isNodeLike,
-  walkDescendants,
+  isStringLiteral,
   type NodeLike,
+  peelTransparentExpression,
+  visitSelfAndDescendants,
 } from './utils/ast.js';
+import {
+  caughtValueViolations,
+  effectTryCatchParameter,
+  isMessageDestructuringAssignment,
+  isMessageMemberRead,
+  objectPatternHasMessage,
+} from './utils/caught-values.js';
+import {
+  collectEffectCompositionFacts,
+  isDataFirstTransformingNesting,
+  isEffectLadder,
+  isFlatMapLadderShape,
+  isNestedEffectPipeline,
+  type EffectCompositionFacts,
+} from './utils/effect-composition.js';
+import { functionReturnNode, isFunctionLike, isInlineFunction } from './utils/effect-context.js';
 import { schemaCompilerMembers } from './utils/effect-identifiers.js';
 import {
+  collectOwnershipFacts,
   containsAnyBoundNamespaceCall,
-  functionReturnNode,
-  isFunctionLike,
+  isEffectDataTagComparison,
+  isOwnedElsewhere,
+  isTagEqualityComparison,
+  type OwnershipFacts,
 } from './utils/effect-ownership.js';
 import { ruleMessage } from './rule-messages.js';
 import {
+  boundNamespaceCallMember,
   collectImportNames,
   getImportSource,
   hasEffectStackImport,
-  importSpecifierName,
   isNamespaceImportReference,
 } from './utils/imports.js';
 import { containsSideEffectCall } from './utils/side-effects.js';
@@ -60,18 +81,7 @@ const isBoundMemberCall = (
   node: NodeLike,
   namespaceNames: ReadonlySet<string>,
   propertyName: string,
-): boolean => {
-  if (node.type !== 'CallExpression') {
-    return false;
-  }
-
-  const call = getStaticMemberCall(node);
-  return (
-    call !== null &&
-    call.propertyName === propertyName &&
-    isNamespaceImportReference(context, call.object, namespaceNames)
-  );
-};
+): boolean => boundNamespaceCallMember(context, node, namespaceNames) === propertyName;
 
 const isBoundMemberExpression = (
   context: Context,
@@ -95,14 +105,7 @@ const isAnyBoundNamespaceMemberCall = (
   context: Context,
   node: unknown,
   namespaceNames: ReadonlySet<string>,
-): boolean => {
-  if (!isNodeLike(node) || node.type !== 'CallExpression') {
-    return false;
-  }
-
-  const call = getStaticMemberCall(node);
-  return call !== null && isNamespaceImportReference(context, call.object, namespaceNames);
-};
+): boolean => boundNamespaceCallMember(context, node, namespaceNames) !== null;
 
 const memberPropertyName = (memberExpression: unknown): string | null => {
   if (!isNodeLike(memberExpression) || memberExpression.type !== 'MemberExpression') {
@@ -129,15 +132,6 @@ const pipeStepArguments = (node: NodeLike): readonly unknown[] => {
 };
 
 const firstArgument = (node: NodeLike): unknown => getCallExpressionArguments(node)[0] ?? null;
-
-const visitSelfAndDescendants = (node: unknown, visit: (node: NodeLike) => void): void => {
-  if (!isNodeLike(node)) {
-    return;
-  }
-
-  visit(node);
-  walkDescendants(node, visit);
-};
 
 const isStaticCall = (node: NodeLike, objectName: string, propertyName: string): boolean => {
   const call = getStaticMemberCall(node);
@@ -289,16 +283,8 @@ const isAnyBoundMemberCall = (
   namespaceNames: ReadonlySet<string>,
   propertyNames: ReadonlySet<string>,
 ): boolean => {
-  if (!isNodeLike(node) || node.type !== 'CallExpression') {
-    return false;
-  }
-
-  const call = getStaticMemberCall(node);
-  return (
-    call !== null &&
-    propertyNames.has(call.propertyName) &&
-    isNamespaceImportReference(context, call.object, namespaceNames)
-  );
+  const member = boundNamespaceCallMember(context, node, namespaceNames);
+  return member !== null && propertyNames.has(member);
 };
 
 const containsBoundMemberCall = (
@@ -325,18 +311,6 @@ const isNullishCoalesceToNullish = (node: unknown): boolean =>
   node.type === 'LogicalExpression' &&
   getNodeField(node, 'operator') === '??' &&
   isNullishLiteral(getNodeField(node, 'right'));
-
-const isCallToIdentifier = (node: unknown, name: string): boolean => {
-  if (!isNodeLike(node) || node.type !== 'CallExpression') {
-    return false;
-  }
-
-  const callee = getNodeField(node, 'callee');
-  return isIdentifierName(callee) && callee.name === name;
-};
-
-const isInlineFunction = (node: unknown): boolean =>
-  isFunctionLike(node) && node.type !== 'FunctionDeclaration';
 
 const isInlineIifeCall = (node: NodeLike): boolean =>
   node.type === 'CallExpression' && isInlineFunction(getNodeField(node, 'callee'));
@@ -410,36 +384,6 @@ const containsInlineIife = (node: unknown): boolean => {
   return found;
 };
 
-const directBoundEffectCallDepth = (
-  context: Context,
-  node: unknown,
-  effectNames: ReadonlySet<string>,
-): number => {
-  if (!isNodeLike(node) || node.type !== 'CallExpression') {
-    return 0;
-  }
-
-  if (!isAnyBoundNamespaceMemberCall(context, node, effectNames)) {
-    return 0;
-  }
-
-  const childDepth = getCallExpressionArguments(node).reduce<number>(
-    (depth, argument) =>
-      Math.max(depth, directBoundEffectCallDepth(context, argument, effectNames)),
-    0,
-  );
-  return singleItemCount + childDepth;
-};
-
-const hasNestedBoundEffectCall = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean =>
-  getCallExpressionArguments(node).some(
-    (argument) => directBoundEffectCallDepth(context, argument, effectNames) > 0,
-  );
-
 const isOwnedBySideEffectWrapperRule = (
   context: Context,
   node: NodeLike,
@@ -455,69 +399,6 @@ const isOwnedBySideEffectWrapperRule = (
   );
 };
 
-const isDirectArgumentOfBoundEffectCall = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean => {
-  const parent = getNodeField(node, 'parent');
-  return isNodeLike(parent) && isAnyBoundNamespaceMemberCall(context, parent, effectNames);
-};
-
-// Mirrors the no-effect-bind reporter exactly: every bound Effect.bind call is reported there.
-const isOwnedByEffectBindRule = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean => isBoundMemberCall(context, node, effectNames, 'bind');
-
-const isConstVariableInitializerOrReturnArgument = (node: NodeLike): boolean => {
-  const parent = getNodeField(node, 'parent');
-  if (!isNodeLike(parent)) {
-    return false;
-  }
-
-  if (parent.type === 'ReturnStatement') {
-    return getNodeField(parent, 'argument') === node;
-  }
-
-  if (parent.type !== 'VariableDeclarator' || getNodeField(parent, 'init') !== node) {
-    return false;
-  }
-
-  const declaration = getNodeField(parent, 'parent');
-  return (
-    isNodeLike(declaration) &&
-    declaration.type === 'VariableDeclaration' &&
-    getNodeField(declaration, 'kind') === 'const'
-  );
-};
-
-// Follows only the first argument at each Effect-call level (source parity for ladder rules).
-// This avoids falsely owning cases where only a non-first argument has deep Effect nesting.
-const directFirstArgEffectCallDepth = (
-  context: Context,
-  node: unknown,
-  effectNames: ReadonlySet<string>,
-): number => {
-  if (!isNodeLike(node) || node.type !== 'CallExpression') {
-    return 0;
-  }
-  if (!isAnyBoundNamespaceMemberCall(context, node, effectNames)) {
-    return 0;
-  }
-  return singleItemCount + directFirstArgEffectCallDepth(context, firstArgument(node), effectNames);
-};
-
-// Source parity: no-effect-ladder inspects only the first Effect argument ($first).
-// Checking all args would falsely own second-arg-only deep nesting.
-const hasDeepFirstBoundEffectCall = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean =>
-  directFirstArgEffectCallDepth(context, firstArgument(node), effectNames) > singleItemCount;
-
 const containsPipeCall = (node: unknown): boolean => {
   let found = false;
   visitSelfAndDescendants(node, (descendant) => {
@@ -528,23 +409,6 @@ const containsPipeCall = (node: unknown): boolean => {
     // Source parity: only standalone pipe(...) identifier counts as sequencing.
     // Member .pipe(...) is NOT listed as a source sequencing form.
     found = found || (isIdentifierName(callee) && callee.name === 'pipe');
-  });
-  return found;
-};
-
-// Detects nested pipe in arguments: both standalone pipe(...) and member .pipe(...).
-// Used by no-pipe-ladder, which covers both forms per source.
-const containsAnyPipeCall = (node: unknown): boolean => {
-  let found = false;
-  visitSelfAndDescendants(node, (descendant) => {
-    if (descendant.type !== 'CallExpression') {
-      return;
-    }
-    const callee = getNodeField(descendant, 'callee');
-    found =
-      found ||
-      (isIdentifierName(callee) && callee.name === 'pipe') ||
-      memberPropertyName(callee) === 'pipe';
   });
   return found;
 };
@@ -560,29 +424,6 @@ const pipeSourceExpression = (node: unknown): unknown => {
   }
 
   return memberPropertyName(callee) === 'pipe' ? getNodeField(callee, 'object') : null;
-};
-
-interface PipeExpressionParts {
-  readonly steps: readonly unknown[];
-  readonly target: unknown;
-}
-
-const pipeExpressionParts = (node: unknown): PipeExpressionParts | null => {
-  if (!isCallExpression(node)) {
-    return null;
-  }
-
-  const args = getCallExpressionArguments(node);
-  const callee = getNodeField(node, 'callee');
-  if (isIdentifierName(callee) && callee.name === 'pipe') {
-    return { steps: args.slice(1), target: firstArgument(node) };
-  }
-
-  if (memberPropertyName(callee) !== 'pipe') {
-    return null;
-  }
-
-  return { steps: args, target: isNodeLike(callee) ? getNodeField(callee, 'object') : null };
 };
 
 const effectBranchSequencingMembers = new Set(['flatMap', 'map', 'andThen', 'tap', 'zipRight']);
@@ -605,37 +446,6 @@ const returnsOrContainsEffectWork = (
 ): boolean =>
   containsAnyBoundNamespaceCall(context, node, effectNames) &&
   containsEffectBranchSequencing(context, node, effectNames, streamNames);
-
-// Mirrors the no-flatmap-ladder reporter exactly: const/return position with either a
-// flatMap(flatMap(...)) or a flatten(map(...)) shape.
-const isOwnedByFlatMapLadderEnabled = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean => {
-  if (!isConstVariableInitializerOrReturnArgument(node)) {
-    return false;
-  }
-  return (
-    (isBoundMemberCall(context, node, effectNames, 'flatMap') &&
-      getCallExpressionArguments(node).some((arg) =>
-        containsBoundMemberCall(context, arg, effectNames, new Set(['flatMap'])),
-      )) ||
-    (isBoundMemberCall(context, node, effectNames, 'flatten') &&
-      containsBoundMemberCall(context, firstArgument(node), effectNames, new Set(['map'])))
-  );
-};
-
-// Ladder rules are const/return-only — this gate prevents double-reporting.
-// Applies when depth > 1 in a const/return context, which those rules already own.
-const isOwnedByGeneralEffectLadderRule = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean =>
-  isConstVariableInitializerOrReturnArgument(node) &&
-  hasDeepFirstBoundEffectCall(context, node, effectNames) &&
-  !isOwnedByFlatMapLadderEnabled(context, node, effectNames);
 
 interface EffectMatchBranchContext {
   readonly context: Context;
@@ -874,25 +684,20 @@ const isKnownSchemaModelCall = (
   // Struct/TaggedStruct allowlist; new constructors are also valid schema roots.
   isAnyBoundNamespaceMemberCall(context, unwrapPipeSource(node), schemaNames);
 
-const isErrorLikeName = (name: string | null): boolean =>
-  name !== null && new Set(['cause', 'e', 'err', 'error', 'reason', 'unknownError']).has(name);
-
-const expressionName = (node: unknown): string | null => {
-  if (isIdentifierName(node)) {
-    return node.name;
-  }
-  return null;
-};
-
 const propertyName = (node: unknown): string | null =>
   isIdentifierName(node) ? node.name : getStringLiteralValue(node);
 
-const isTagProperty = (node: unknown): boolean => propertyName(node) === '_tag';
-
-const isTagAccess = (node: unknown): boolean =>
-  isNodeLike(node) &&
-  node.type === 'MemberExpression' &&
-  isTagProperty(getNodeField(node, 'property'));
+// Branching on a tag: an equality with a static `_tag` read on either side, or a literal
+// `'_tag' in value` presence test. A plain read such as logging the tag is not a branch.
+const isManualTagCheck = (node: NodeLike): boolean => {
+  const left = peelTransparentExpression(getNodeField(node, 'left'));
+  return (
+    isTagEqualityComparison(node) ||
+    (getNodeField(node, 'operator') === 'in' &&
+      isStringLiteral(left) &&
+      getStringLiteralValue(left) === '_tag')
+  );
+};
 
 const isTypeofExpression = (node: unknown): boolean =>
   isNodeLike(node) &&
@@ -968,107 +773,6 @@ const isOptionBooleanNormalizationMatch = (node: NodeLike): boolean => {
     isIdentifierLiteralTrueComparison(functionReturnNode(onSome), param.name) &&
     isFunctionLike(onNone) &&
     isLiteralValue(functionReturnNode(onNone), false)
-  );
-};
-
-const effectDataModuleTags = new Map([
-  [
-    'Cause',
-    new Set(['Fail', 'Die', 'Interrupt', 'Sequential', 'Parallel', 'Then', 'Both', 'Empty']),
-  ],
-  ['Either', new Set(['Left', 'Right'])],
-  ['Exit', new Set(['Success', 'Failure'])],
-  ['Option', new Set(['Some', 'None'])],
-  ['Result', new Set(['Success', 'Failure', 'Left', 'Right'])],
-]);
-
-// Handles the effect/X submodule case; returns true when tags were added so the
-// caller can skip the barrel-specifier path.
-const addEffectModuleTagsToSet = (tags: Set<string>, source: string): boolean => {
-  const moduleName = source.startsWith('effect/') ? source.slice('effect/'.length) : null;
-  const moduleTags = moduleName === null ? null : (effectDataModuleTags.get(moduleName) ?? null);
-  if (moduleTags === null) {
-    return false;
-  }
-  for (const tag of moduleTags) {
-    tags.add(tag);
-  }
-  return true;
-};
-
-// Handles one specifier from a bare 'effect' import, adding its data-module tags if any.
-const addSpecifierTagsToSet = (
-  tags: Set<string>,
-  specifier: ESTree.ImportDeclaration['specifiers'][number],
-): void => {
-  if (specifier.type !== 'ImportSpecifier' || specifier.importKind === 'type') {
-    return;
-  }
-  const importedTags = effectDataModuleTags.get(importSpecifierName(specifier) ?? '') ?? null;
-  if (importedTags === null) {
-    return;
-  }
-  for (const tag of importedTags) {
-    tags.add(tag);
-  }
-};
-
-const importEffectDataTags = (node: ESTree.ImportDeclaration): Set<string> => {
-  const tags = new Set<string>();
-  const source = getImportSource(node);
-  if (source === null || node.importKind === 'type') {
-    return tags;
-  }
-  // Short-circuit if the module path resolved to data tags, or if it's not the effect barrel.
-  if (addEffectModuleTagsToSet(tags, source) || source !== 'effect') {
-    return tags;
-  }
-  for (const specifier of node.specifiers) {
-    addSpecifierTagsToSet(tags, specifier);
-  }
-  return tags;
-};
-
-const effectDataTagComparison = (node: NodeLike, importedTags: ReadonlySet<string>): boolean => {
-  if (node.type !== 'BinaryExpression') {
-    return false;
-  }
-
-  const operator = String(getNodeField(node, 'operator'));
-  if (!['===', '!==', '==', '!='].includes(operator)) {
-    return false;
-  }
-
-  const left = getNodeField(node, 'left');
-  const right = getNodeField(node, 'right');
-  const leftTag = getStringLiteralValue(left);
-  const rightTag = getStringLiteralValue(right);
-  return (
-    (isTagAccess(left) && rightTag !== null && importedTags.has(rightTag)) ||
-    (isTagAccess(right) && leftTag !== null && importedTags.has(leftTag))
-  );
-};
-
-const tagAccessBelongsToEffectDataTagComparison = (
-  node: NodeLike,
-  importedTags: ReadonlySet<string>,
-): boolean => {
-  const parent = getNodeField(node, 'parent');
-  return isNodeLike(parent) && effectDataTagComparison(parent, importedTags);
-};
-
-const objectPatternHasMessageProperty = (node: unknown): boolean => {
-  if (!isNodeLike(node) || node.type !== 'ObjectPattern') {
-    return false;
-  }
-
-  const properties = getNodeField(node, 'properties');
-  return (
-    Array.isArray(properties) &&
-    properties.some(
-      (property) =>
-        isNodeLike(property) && propertyName(getNodeField(property, 'key')) === 'message',
-    )
   );
 };
 
@@ -1494,7 +1198,7 @@ const catalogRules: Record<string, Rule> = {
           effectNames = namesFor(node, 'effect/Effect', 'Effect');
         },
         CallExpression(node: NodeLike) {
-          if (isOwnedByEffectBindRule(context, node, effectNames)) {
+          if (isBoundMemberCall(context, node, effectNames, 'bind')) {
             context.report({ message: message('no-effect-bind'), node });
           }
         },
@@ -1507,22 +1211,16 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-effect-call-in-effect-arg': {
     create(context) {
-      let atomNames = new Set<string>();
-      let effectNames = new Set<string>();
+      let facts: OwnershipFacts | null = null;
       return {
         Program(node: ESTree.Program) {
-          atomNames = collectImportNames(node, ['@effect-atom/atom-react'], 'Atom');
-          effectNames = namesFor(node, 'effect/Effect', 'Effect');
+          facts = collectOwnershipFacts(context, node);
         },
         CallExpression(node: NodeLike) {
           if (
-            isAnyBoundNamespaceMemberCall(context, node, effectNames) &&
-            hasNestedBoundEffectCall(context, node, effectNames) &&
-            !isOwnedByFlatMapLadderEnabled(context, node, effectNames) &&
-            !isOwnedByGeneralEffectLadderRule(context, node, effectNames) &&
-            !isOwnedByEffectBindRule(context, node, effectNames) &&
-            !isOwnedBySideEffectWrapperRule(context, node, effectNames, atomNames) &&
-            !isDirectArgumentOfBoundEffectCall(context, node, effectNames)
+            facts !== null &&
+            isDataFirstTransformingNesting(facts, node) &&
+            !isOwnedElsewhere('no-effect-call-in-effect-arg', facts, node)
           ) {
             context.report({ message: message('no-effect-call-in-effect-arg'), node });
           }
@@ -1536,22 +1234,13 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-effect-ladder': {
     create(context) {
-      let atomNames = new Set<string>();
-      let effectNames = new Set<string>();
+      let facts: EffectCompositionFacts | null = null;
       return {
         Program(node: ESTree.Program) {
-          atomNames = collectImportNames(node, ['@effect-atom/atom-react'], 'Atom');
-          effectNames = namesFor(node, 'effect/Effect', 'Effect');
+          facts = collectEffectCompositionFacts(context, node);
         },
         CallExpression(node: NodeLike) {
-          if (
-            isConstVariableInitializerOrReturnArgument(node) &&
-            isAnyBoundNamespaceMemberCall(context, node, effectNames) &&
-            hasDeepFirstBoundEffectCall(context, node, effectNames) &&
-            !isOwnedByEffectBindRule(context, node, effectNames) &&
-            !isOwnedBySideEffectWrapperRule(context, node, effectNames, atomNames) &&
-            !isOwnedByFlatMapLadderEnabled(context, node, effectNames)
-          ) {
+          if (facts !== null && isEffectLadder(facts, node)) {
             context.report({ message: message('no-effect-ladder'), node });
           }
         },
@@ -1564,13 +1253,17 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-flatmap-ladder': {
     create(context) {
-      let effectNames = new Set<string>();
+      let facts: OwnershipFacts | null = null;
       return {
         Program(node: ESTree.Program) {
-          effectNames = namesFor(node, 'effect/Effect', 'Effect');
+          facts = collectOwnershipFacts(context, node);
         },
         CallExpression(node: NodeLike) {
-          if (isOwnedByFlatMapLadderEnabled(context, node, effectNames)) {
+          if (
+            facts !== null &&
+            isFlatMapLadderShape(facts, node) &&
+            !isOwnedElsewhere('no-flatmap-ladder', facts, node)
+          ) {
             context.report({ message: message('no-flatmap-ladder'), node });
           }
         },
@@ -1767,23 +1460,13 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-pipe-ladder': {
     create(context) {
-      let program: ESTree.Program | null = null;
+      let facts: EffectCompositionFacts | null = null;
       return {
         Program(node: ESTree.Program) {
-          program = node;
+          facts = collectEffectCompositionFacts(context, node);
         },
         CallExpression(node: NodeLike) {
-          const parts = pipeExpressionParts(node);
-          if (!simpleProgramGate(context, program) || parts === null) {
-            return;
-          }
-          const callee = getNodeField(node, 'callee');
-          const candidates =
-            isIdentifierName(callee) && callee.name === 'pipe'
-              ? [parts.target, ...parts.steps]
-              : parts.steps;
-          const nested = candidates.some((argument) => containsAnyPipeCall(argument));
-          if (nested) {
+          if (facts !== null && isNestedEffectPipeline(facts, node)) {
             context.report({ message: message('no-pipe-ladder'), node });
           }
         },
@@ -2194,35 +1877,18 @@ const catalogRules: Record<string, Rule> = {
   'no-manual-tag-check': {
     create(context) {
       let hasEffectImport = false;
-      const importedTags = new Set<string>();
+      let facts: OwnershipFacts | null = null;
       return {
         Program(node: ESTree.Program) {
           hasEffectImport = hasEffectStackImport(node);
-        },
-        ImportDeclaration(node: ESTree.ImportDeclaration) {
-          for (const tag of importEffectDataTags(node)) {
-            importedTags.add(tag);
-          }
+          facts = collectOwnershipFacts(context, node);
         },
         BinaryExpression(node: NodeLike) {
-          const operator = getNodeField(node, 'operator');
           if (
             hasEffectImport &&
-            !effectDataTagComparison(node, importedTags) &&
-            ((operator === 'in' && isTagProperty(getNodeField(node, 'left'))) ||
-              (typeof operator === 'string' &&
-                ['===', '!==', '==', '!='].includes(operator) &&
-                (isTagAccess(getNodeField(node, 'left')) ||
-                  isTagAccess(getNodeField(node, 'right')))))
-          ) {
-            context.report({ message: message('no-manual-tag-check'), node });
-          }
-        },
-        MemberExpression(node: NodeLike) {
-          if (
-            hasEffectImport &&
-            isTagProperty(getNodeField(node, 'property')) &&
-            !tagAccessBelongsToEffectDataTagComparison(node, importedTags)
+            facts !== null &&
+            isManualTagCheck(node) &&
+            !isOwnedElsewhere('no-manual-tag-check', facts, node)
           ) {
             context.report({ message: message('no-manual-tag-check'), node });
           }
@@ -2236,15 +1902,13 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-effect-internal-tags': {
     create(context) {
-      const importedTags = new Set<string>();
+      let facts: OwnershipFacts | null = null;
       return {
-        ImportDeclaration(node: ESTree.ImportDeclaration) {
-          for (const tag of importEffectDataTags(node)) {
-            importedTags.add(tag);
-          }
+        Program(node: ESTree.Program) {
+          facts = collectOwnershipFacts(context, node);
         },
         BinaryExpression(node: NodeLike) {
-          if (effectDataTagComparison(node, importedTags)) {
+          if (facts !== null && isEffectDataTagComparison(node, facts.effectDataTags)) {
             context.report({ message: message('no-effect-internal-tags'), node });
           }
         },
@@ -2258,38 +1922,48 @@ const catalogRules: Record<string, Rule> = {
   'no-unknown-error-message': {
     create(context) {
       let hasEffectImport = false;
+      let effectNames = new Set<string>();
+      const candidates = {
+        caughtParameters: [] as NodeLike[],
+        messageDestructures: [] as NodeLike[],
+        messageReads: [] as NodeLike[],
+        stringCalls: [] as NodeLike[],
+      };
+      const collectParameter = (parameter: unknown): void => {
+        if (isNodeLike(parameter)) {
+          candidates.caughtParameters.push(parameter);
+        }
+      };
       return {
         Program(node: ESTree.Program) {
           hasEffectImport = hasEffectStackImport(node);
+          effectNames = namesFor(node, 'effect/Effect', 'Effect');
+        },
+        CatchClause(node: NodeLike) {
+          collectParameter(getNodeField(node, 'param'));
         },
         CallExpression(node: NodeLike) {
-          if (
-            hasEffectImport &&
-            isCallToIdentifier(node, 'String') &&
-            getCallExpressionArguments(node).some((argument) =>
-              isErrorLikeName(expressionName(argument)),
-            )
-          ) {
-            context.report({ message: message('no-unknown-error-message'), node });
-          }
+          collectParameter(effectTryCatchParameter(context, node, effectNames));
+          candidates.stringCalls.push(node);
         },
         MemberExpression(node: NodeLike) {
-          if (
-            hasEffectImport &&
-            propertyName(getNodeField(node, 'property')) === 'message' &&
-            isErrorLikeName(expressionName(getNodeField(node, 'object')))
-          ) {
-            context.report({ message: message('no-unknown-error-message'), node });
+          if (isMessageMemberRead(node)) {
+            candidates.messageReads.push(node);
           }
         },
         VariableDeclarator(node: NodeLike) {
-          const id = getNodeField(node, 'id');
-          const init = getNodeField(node, 'init');
-          if (
-            hasEffectImport &&
-            objectPatternHasMessageProperty(id) &&
-            isErrorLikeName(expressionName(init))
-          ) {
+          if (objectPatternHasMessage(getNodeField(node, 'id'))) {
+            candidates.messageDestructures.push(node);
+          }
+        },
+        AssignmentExpression(node: NodeLike) {
+          if (isMessageDestructuringAssignment(node)) {
+            candidates.messageDestructures.push(node);
+          }
+        },
+        'Program:exit'() {
+          const violations = hasEffectImport ? caughtValueViolations(context, candidates) : [];
+          for (const node of violations) {
             context.report({ message: message('no-unknown-error-message'), node });
           }
         },
@@ -2297,6 +1971,34 @@ const catalogRules: Record<string, Rule> = {
     },
     meta: {
       docs: { description: message('no-unknown-error-message'), recommended: 'error' },
+      type: 'problem',
+    },
+  },
+  'no-string-error-channel': {
+    create(context) {
+      let effectNames = new Set<string>();
+      return {
+        Program(node: ESTree.Program) {
+          effectNames = namesFor(node, 'effect/Effect', 'Effect');
+        },
+        CallExpression(node: NodeLike) {
+          const args = getCallExpressionArguments(node);
+          // Type assertions and parentheses do not change the failure value, so
+          // `Effect.fail('timeout' as const)` is still a string failure.
+          const failure = peelTransparentExpression(args[firstItemIndex]);
+          if (
+            args.length === singleItemCount &&
+            isBoundMemberCall(context, node, effectNames, 'fail') &&
+            isNodeLike(failure) &&
+            (isStringLiteral(failure) || failure.type === 'TemplateLiteral')
+          ) {
+            context.report({ message: message('no-string-error-channel'), node: failure });
+          }
+        },
+      };
+    },
+    meta: {
+      docs: { description: message('no-string-error-channel'), recommended: 'error' },
       type: 'problem',
     },
   },

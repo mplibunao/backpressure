@@ -1,10 +1,13 @@
 import type { Context, ESTree, Scope, Variable } from '@oxlint/plugins';
 
-import { getStringLiteralValue, isIdentifierName, type IdentifierLike } from './ast.js';
 import {
-  effectNamespaceModuleSpecifiers,
-  isEffectStackModuleSource,
-} from './effect-identifiers.js';
+  getStaticMemberCall,
+  getStringLiteralValue,
+  isIdentifierName,
+  isNodeLike,
+  type IdentifierLike,
+} from './ast.js';
+import { isEffectStackModuleSource } from './effect-identifiers.js';
 
 const isRuntimeImportDeclaration = (declaration: ESTree.ImportDeclaration): boolean => {
   if (declaration.importKind === 'type') {
@@ -56,6 +59,18 @@ const findVariable = (scope: Scope | null, name: string): Variable | null => {
   }
 
   return null;
+};
+
+// Resolves an identifier through the lexical scope chain, so a local declaration shadows an import
+// or global of the same name.
+export const resolveVariable = (context: Context, identifier: IdentifierLike): Variable | null =>
+  findVariable(context.sourceCode.getScope(identifier), identifier.name);
+
+// Globals such as `String` and `Error` have no declaration in the file; any definition means a
+// local binding shadows the global.
+export const isUnshadowedGlobal = (context: Context, identifier: IdentifierLike): boolean => {
+  const variable = resolveVariable(context, identifier);
+  return variable === null || variable.defs.length === 0;
 };
 
 const hasImportBindingDefinition = (variable: Variable): boolean =>
@@ -118,6 +133,37 @@ export const collectImportNames = (
   return names;
 };
 
+// Local names of value `import { importedName } from ...` specifiers only. A namespace import of the
+// same module binds a module object, not the function itself.
+export const collectNamedImportNames = (
+  program: ESTree.Program,
+  moduleSpecifiers: readonly string[],
+  importedName: string,
+): Set<string> => {
+  const names = new Set<string>();
+  for (const statement of program.body) {
+    const source = statement.type === 'ImportDeclaration' ? getImportSource(statement) : null;
+    if (
+      statement.type === 'ImportDeclaration' &&
+      statement.importKind !== 'type' &&
+      source !== null &&
+      moduleSpecifiers.includes(source)
+    ) {
+      for (const specifier of statement.specifiers) {
+        if (
+          specifier.type === 'ImportSpecifier' &&
+          specifier.importKind !== 'type' &&
+          isIdentifierName(specifier.local) &&
+          importSpecifierName(specifier) === importedName
+        ) {
+          names.add(specifier.local.name);
+        }
+      }
+    }
+  }
+  return names;
+};
+
 export const collectNamespaceImports = (
   program: ESTree.Program,
   moduleSpecifiers: readonly string[],
@@ -141,11 +187,6 @@ export const collectNamespaceImports = (
 
   return namespaceNames;
 };
-
-export const collectEffectNamespaceImports = (program: ESTree.Program): Set<string> =>
-  // Only include barrel 'effect' namespace imports whose local alias is 'Effect'.
-  // This prevents Option/Match/etc. barrel aliases being added to the Effect namespace set.
-  collectNamespaceImports(program, effectNamespaceModuleSpecifiers, 'Effect');
 
 export const hasImportFrom = (
   program: ESTree.Program,
@@ -188,8 +229,19 @@ export const isNamespaceImportReference = (
   return variable !== null && hasImportBindingDefinition(variable);
 };
 
-export const isEffectNamespaceImportReference = (
+// The member name of a call such as `Effect.map(...)` whose object is an import binding named in
+// `namespaceNames`; `null` for any other node.
+export const boundNamespaceCallMember = (
   context: Context,
-  identifier: IdentifierLike,
+  node: unknown,
   namespaceNames: ReadonlySet<string>,
-): boolean => isNamespaceImportReference(context, identifier, namespaceNames);
+): string | null => {
+  if (!isNodeLike(node) || node.type !== 'CallExpression') {
+    return null;
+  }
+
+  const call = getStaticMemberCall(node);
+  return call !== null && isNamespaceImportReference(context, call.object, namespaceNames)
+    ? call.propertyName
+    : null;
+};

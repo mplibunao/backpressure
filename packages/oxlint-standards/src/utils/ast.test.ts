@@ -10,6 +10,10 @@ import {
   hasAncestor,
   isIdentifierName,
   isNodeLike,
+  isStringLiteral,
+  peelTransparentExpression,
+  staticMemberPropertyName,
+  visitSelfAndDescendants,
   walkDescendants,
 } from './ast.js';
 
@@ -276,5 +280,84 @@ describe('walkDescendants()', () => {
     const visited: NodeLike[] = [];
     walkDescendants(child, (node) => visited.push(node));
     expect(visited).not.toContain(parentNode);
+  });
+});
+
+describe('visitSelfAndDescendants()', () => {
+  it('visits the node itself before its descendants', () => {
+    const grandchild = mkNode('Identifier');
+    const child = mkNode('ExpressionStatement', { expression: grandchild });
+    const root = mkNode('Program', { body: [child] });
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendants(root, (node) => visited.push(node));
+    expect(visited).toStrictEqual([root, child, grandchild]);
+  });
+
+  it('visits nothing for a non-NodeLike input', () => {
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendants(null, (node) => visited.push(node));
+    expect(visited).toHaveLength(0);
+  });
+});
+
+// ── peelTransparentExpression ─────────────────────────────────────────────────
+
+describe('peelTransparentExpression()', () => {
+  it('peels nested type assertions, satisfies, non-null, and parentheses', () => {
+    const inner = mkNode('Literal', { value: 'timeout' });
+    const wrapped = mkNode('TSAsExpression', {
+      expression: mkNode('ParenthesizedExpression', {
+        expression: mkNode('TSSatisfiesExpression', {
+          expression: mkNode('TSNonNullExpression', {
+            expression: mkNode('TSTypeAssertion', { expression: inner }),
+          }),
+        }),
+      }),
+    });
+    expect(peelTransparentExpression(wrapped)).toBe(inner);
+  });
+
+  it('leaves a runtime-changing wrapper in place', () => {
+    const chain = mkNode('ChainExpression', { expression: mkNode('Identifier', { name: 'x' }) });
+    expect(peelTransparentExpression(chain)).toBe(chain);
+  });
+});
+
+// ── isStringLiteral ───────────────────────────────────────────────────────────
+
+describe('isStringLiteral()', () => {
+  it('accepts a string literal and rejects other literals', () => {
+    expect(isStringLiteral(mkNode('Literal', { value: 'text' }))).toBe(true);
+    expect(isStringLiteral(mkNode('Literal', { value: 1 }))).toBe(false);
+    expect(isStringLiteral(mkNode('TemplateLiteral', {}))).toBe(false);
+  });
+});
+
+// ── staticMemberPropertyName ──────────────────────────────────────────────────
+
+describe('staticMemberPropertyName()', () => {
+  it('returns the name of a non-computed identifier property', () => {
+    expect(
+      staticMemberPropertyName(mkNode('MemberExpression', memberExpr(ident('e'), ident('_tag')))),
+    ).toBe('_tag');
+  });
+
+  it('returns the value of a computed string-literal property', () => {
+    const property = mkNode('Literal', { value: '_tag' });
+    expect(
+      staticMemberPropertyName(mkNode('MemberExpression', memberExpr(ident('e'), property, true))),
+    ).toBe('_tag');
+  });
+
+  it('returns null for a computed identifier key, which is read at runtime', () => {
+    expect(
+      staticMemberPropertyName(
+        mkNode('MemberExpression', memberExpr(ident('e'), ident('_tag'), true)),
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null for a non-member node', () => {
+    expect(staticMemberPropertyName(ident('_tag'))).toBeNull();
   });
 });

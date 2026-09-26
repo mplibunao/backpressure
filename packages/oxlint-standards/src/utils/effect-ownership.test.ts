@@ -6,11 +6,7 @@ import type { Context } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { NodeLike } from './ast.js';
-import {
-  containsAnyBoundNamespaceCall,
-  functionReturnNode,
-  isFunctionLike,
-} from './effect-ownership.js';
+import { containsAnyBoundNamespaceCall } from './effect-ownership.js';
 
 vi.setConfig({ testTimeout: 1000 });
 
@@ -37,12 +33,6 @@ const memberCall = (obj: string, prop: string, args: unknown[] = []): NodeLike =
     range: RANGE,
   }) as unknown as NodeLike;
 
-const blockStmt = (...stmts: unknown[]): NodeLike =>
-  ({ type: 'BlockStatement', body: stmts, range: RANGE }) as unknown as NodeLike;
-
-const returnStmt = (argument: unknown): NodeLike =>
-  ({ type: 'ReturnStatement', argument, range: RANGE }) as unknown as NodeLike;
-
 // Context where the given names are resolved as namespace import bindings
 const importCtx = (...names: string[]): Context => {
   const vars = new Map(names.map((varName) => [varName, { defs: [{ type: 'ImportBinding' }] }]));
@@ -57,80 +47,6 @@ const bareCtx: Context = {
 } as unknown as Context;
 
 const effects = new Set(['Effect']);
-
-// ── isFunctionLike ────────────────────────────────────────────────────────────
-
-describe('isFunctionLike()', () => {
-  it.for(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression'])(
-    'returns true for %s',
-    (type) => {
-      expect(isFunctionLike({ type, range: RANGE })).toBe(true);
-    },
-  );
-
-  it('returns false for a non-NodeLike value (no range property)', () => {
-    expect(isFunctionLike({ type: 'ArrowFunctionExpression' })).toBe(false);
-  });
-
-  it('returns false for a NodeLike with a non-function type', () => {
-    expect(isFunctionLike(id('x'))).toBe(false);
-  });
-
-  it('returns false for null', () => {
-    expect(isFunctionLike(null)).toBe(false);
-  });
-});
-
-// ── functionReturnNode ────────────────────────────────────────────────────────
-
-describe('functionReturnNode()', () => {
-  it('returns null for a non-function node', () => {
-    expect(functionReturnNode(id('x'))).toBeNull();
-  });
-
-  it('returns the expression body for an expression-bodied arrow', () => {
-    const expr = memberCall('Effect', 'succeed');
-    expect(
-      functionReturnNode({ type: 'ArrowFunctionExpression', body: expr, params: [], range: RANGE }),
-    ).toBe(expr);
-  });
-
-  it('returns null for a BlockStatement body with two statements', () => {
-    const body = blockStmt(returnStmt(id('x')), id('y'));
-    expect(
-      functionReturnNode({ type: 'ArrowFunctionExpression', body, params: [], range: RANGE }),
-    ).toBeNull();
-  });
-
-  it('returns null for a BlockStatement body with zero statements', () => {
-    const body = blockStmt();
-    expect(
-      functionReturnNode({ type: 'ArrowFunctionExpression', body, params: [], range: RANGE }),
-    ).toBeNull();
-  });
-
-  it('returns null for a BlockStatement body with a single non-return statement', () => {
-    // A non-return statement has no return value, so the helper must normalize the result to null.
-    const body = blockStmt({ type: 'ExpressionStatement', expression: id('x'), range: RANGE });
-    expect(
-      functionReturnNode({ type: 'ArrowFunctionExpression', body, params: [], range: RANGE }),
-    ).toBeNull();
-  });
-
-  it('returns the return argument for a block body with a single return statement', () => {
-    const expr = memberCall('Effect', 'succeed');
-    const body = blockStmt(returnStmt(expr));
-    expect(
-      functionReturnNode({
-        type: 'FunctionDeclaration',
-        id: id('run'),
-        body,
-        params: [],
-        range: RANGE,
-      }),
-    ).toBe(expr);
-  });
-});
 
 // ── containsAnyBoundNamespaceCall ─────────────────────────────────────────────
 
@@ -162,16 +78,21 @@ describe('containsAnyBoundNamespaceCall()', () => {
   });
 });
 
-// ── Retired wrapper ownership ─────────────────────────────────────────────────
+// ── Retired ownership helpers ─────────────────────────────────────────────────
 
-// These helpers suppressed diagnostics on behalf of wrapper rules that no longer exist. A guard
-// that reintroduces one of them would hide real violations behind an owner that never reports.
+// These helpers suppressed diagnostics on behalf of an owner that no longer reports the shape:
+// dropped wrapper rules, any parent Effect call, or a variable-name guess. A guard that
+// reintroduces one of them would hide real violations outside the ownership registry.
 const retiredWrapperOwnershipHelpers = [
   'isConstPipeWrapperAliasSelf',
+  'isDirectArgumentOfBoundEffectCall',
   'isEffectWrapperPipeExpression',
+  'isErrorLikeName',
   'isInAnyWrapperOwnedExpression',
   'isInsideConstPipeWrapperAlias',
   'isInsideWrapperOwnedExpression',
+  'isOwnedByFlatMapLadderEnabled',
+  'isOwnedByGeneralEffectLadderRule',
   'isReturnedFromNamedWrapperDeclaration',
 ];
 const packageSourceRoot = join(dirname(fileURLToPath(import.meta.url)), '..');

@@ -4,9 +4,8 @@ import {
   getNodeField,
   getStaticMemberCall,
   isIdentifierName,
-  isNodeLike,
-  walkDescendants,
   type NodeLike,
+  visitSelfAndDescendants,
 } from './ast.js';
 import { isNamespaceImportReference } from './imports.js';
 
@@ -45,14 +44,8 @@ export const containsSideEffectCall = (
   atomNames: ReadonlySet<string>,
 ): boolean => {
   let found = false;
-
-  if (isNodeLike(node)) {
-    found = isSideEffectCall(context, node, effectNames, atomNames);
-  }
-
-  walkDescendants(node, (descendant) => {
-    found = found || isSideEffectCall(context, descendant, effectNames, atomNames);
+  visitSelfAndDescendants(node, (candidate) => {
+    found = found || isSideEffectCall(context, candidate, effectNames, atomNames);
   });
-
   return found;
 };
