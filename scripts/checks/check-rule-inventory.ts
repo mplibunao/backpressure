@@ -89,6 +89,15 @@ const decidedDropRegister = new Map<string, readonly string[]>([
   ['prefer-yield-tagged-error', ['effecttsgo/unnecessary-fail-yieldable-error']],
   ['warn-effect-sync-wrapper', []],
 ]);
+// Retained upstream fixtures of active rules whose replay expectation changed by decision, keyed
+// `<rule>/<fixture file>`. Each file stays vendored as history, and its replay case moves from the
+// invalid list to the valid list. An entry must name an existing invalid fixture of an active rule.
+const retiredSourceFixtureExpectations = new Map<string, string>([
+  [
+    'no-switch-statement/invalid-switch-atom-react.ts',
+    'v3 is out of scope (Effect v4 alignment decided record): the fixture imports only the v3 @effect-atom/atom-react package, which no longer marks an Effect file.',
+  ],
+]);
 const sourceConfigAnomalies = [
   'no-effect-succeed-variable',
   'no-inline-runtime-provide',
@@ -531,6 +540,30 @@ const assertSemanticScenarioReplayCoverage = (
   }
 };
 
+// Upstream fixtures replayed with the wrong expectation. A retired invalid fixture is expected in
+// the valid list instead of the invalid one.
+const sourceFixtureReplayGaps = (
+  ruleName: string,
+  fixtureSets: SourceFixtureSet,
+  replaySuite: ReplaySuite,
+): Record<'missingInvalid' | 'missingValid' | 'retiredStillInvalid', readonly string[]> => {
+  const replayInvalidNames = new Set(replaySuite.invalid.map((fixtureCase) => fixtureCase.name));
+  const replayValidNames = new Set(replaySuite.valid.map((fixtureCase) => fixtureCase.name));
+  const caseName = (file: string): string => `linteffect:${ruleName}/${file}`;
+  const isRetired = (file: string): boolean =>
+    retiredSourceFixtureExpectations.has(`${ruleName}/${file}`);
+  const retiredFiles = fixtureSets.invalid.filter(isRetired);
+  return {
+    missingInvalid: fixtureSets.invalid.filter(
+      (file) => !isRetired(file) && !replayInvalidNames.has(caseName(file)),
+    ),
+    missingValid: [...fixtureSets.valid, ...retiredFiles].filter(
+      (file) => !replayValidNames.has(caseName(file)),
+    ),
+    retiredStillInvalid: retiredFiles.filter((file) => replayInvalidNames.has(caseName(file))),
+  };
+};
+
 const assertSourceFixtureReplayCoverage = (
   ruleName: string,
   fixtureSets: SourceFixtureSet,
@@ -541,18 +574,19 @@ const assertSourceFixtureReplayCoverage = (
     return;
   }
 
-  const replayInvalidNames = new Set(replaySuite.invalid.map((fixtureCase) => fixtureCase.name));
-  const replayValidNames = new Set(replaySuite.valid.map((fixtureCase) => fixtureCase.name));
-  const missingInvalid = fixtureSets.invalid.filter(
-    (file) => !replayInvalidNames.has(`linteffect:${ruleName}/${file}`),
+  const { missingInvalid, missingValid, retiredStillInvalid } = sourceFixtureReplayGaps(
+    ruleName,
+    fixtureSets,
+    replaySuite,
   );
-  const missingValid = fixtureSets.valid.filter(
-    (file) => !replayValidNames.has(`linteffect:${ruleName}/${file}`),
-  );
-
   if (missingInvalid.length > 0 || missingValid.length > 0) {
     fail(
       `${ruleName} replay suite does not cover all upstream fixtures. Missing invalid: ${list(missingInvalid)}; missing valid: ${list(missingValid)}.`,
+    );
+  }
+  if (retiredStillInvalid.length > 0) {
+    fail(
+      `${ruleName} replays retired fixtures as invalid: ${list(retiredStillInvalid)}. A retired expectation is replayed as valid.`,
     );
   }
 };
@@ -804,6 +838,20 @@ for (const entry of manifestEntries) {
 }
 
 const manifestEntryByName = new Map(manifestEntries.map((entry) => [entry.name, entry]));
+const unknownRetiredFixtures = [...retiredSourceFixtureExpectations.keys()].filter((key) => {
+  const [ruleName = '', file = ''] = key.split('/');
+  const entry = manifestEntryByName.get(ruleName);
+  return (
+    entry === globalThis.undefined ||
+    entry.disposition === 'dropped' ||
+    !(sourceFixtureFiles.get(ruleName)?.invalid.includes(file) ?? false)
+  );
+});
+if (unknownRetiredFixtures.length > 0) {
+  fail(
+    `Retired fixture expectations must name an invalid upstream fixture of an active rule: ${list(unknownRetiredFixtures)}.`,
+  );
+}
 for (const [ruleName, fixtureSets] of sourceFixtureFiles.entries()) {
   const entry = manifestEntryByName.get(ruleName);
   if (entry === globalThis.undefined) {

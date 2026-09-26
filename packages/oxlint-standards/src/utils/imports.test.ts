@@ -362,6 +362,30 @@ describe('hasEffectStackImport()', () => {
   it('returns false for a non-effect import', () => {
     expect(hasEffectStackImport(prog(importDecl('rxjs', [nsSpecifier('Rx')])))).toBe(false);
   });
+
+  it.each(['@effect/atom-react', '@effect/atom-solid', '@effect/atom-vue'])(
+    'returns true for a runtime import of the Atom binding %s',
+    (source) => {
+      expect(hasEffectStackImport(prog(importDecl(source, [nsSpecifier('AtomBinding')])))).toBe(
+        true,
+      );
+    },
+  );
+
+  it('returns false for a type-only Atom binding import or another @effect package', () => {
+    expect(
+      hasEffectStackImport(prog(importDecl('@effect/atom-react', [nsSpecifier('A')], 'type'))),
+    ).toBe(false);
+    expect(hasEffectStackImport(prog(importDecl('@effect/vitest', [nsSpecifier('V')])))).toBe(
+      false,
+    );
+  });
+
+  it('returns false for the v3 @effect-atom/atom-react package', () => {
+    expect(
+      hasEffectStackImport(prog(importDecl('@effect-atom/atom-react', [nsSpecifier('A')]))),
+    ).toBe(false);
+  });
 });
 
 // ── isNamespaceImportReference ────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Rule } from '@oxlint/plugins';
 
 import { catalogRuleDefinitions, catalogRules } from './rule-catalog.js';
-import { ruleMessage } from './rule-messages.js';
+import { hasExplicitRuleMessage, ruleMessage } from './rule-messages.js';
 import { ownershipRegistry } from './utils/effect-ownership.js';
 
 vi.setConfig({ testTimeout: 1000 });
@@ -24,6 +24,8 @@ interface CatalogFixture {
   readonly code: string;
   readonly expectedErrors?: number;
   readonly filename?: string;
+  // Placeholder values for a rule whose message names the reported call.
+  readonly messageData?: Readonly<Record<string, string>>;
 }
 
 const upstreamFixtureRoot = join(process.cwd(), 'test-fixtures', 'linteffect', 'tests', 'fixtures');
@@ -52,15 +54,22 @@ const run = (
   ruleTester.run(name, requireRule(name), {
     invalid: cases.invalid.map((fixture) => {
       const catalogFixture = toCatalogFixture(fixture);
-      const { expectedErrors = 1, ...testCase } = catalogFixture;
+      const { expectedErrors = 1, messageData, ...testCase } = catalogFixture;
       return {
         ...testCase,
-        errors: Array.from({ length: expectedErrors }, () => ({ message: ruleMessage(name) })),
+        errors: Array.from({ length: expectedErrors }, () => ({
+          message: ruleMessage(name, messageData),
+        })),
       };
     }),
     valid: cases.valid.map(toCatalogFixture),
   });
 };
+
+const effectImport = "import * as Effect from 'effect/Effect';\n";
+const effectAndPipeImports = `${effectImport}import { pipe } from 'effect/Function';\n`;
+const withEffect = (body: string): string => `${effectImport}${body}`;
+const withEffectAndPipe = (body: string): string => `${effectAndPipeImports}${body}`;
 
 run('no-barrel-import', {
   invalid: [
@@ -75,35 +84,123 @@ run('no-barrel-import', {
   ],
 });
 
+const schemaImport = "import * as Schema from 'effect/Schema';\n";
+const withSchema = (body: string): string => `${schemaImport}${body}`;
+
 run('no-inline-schema-compile', {
   invalid: [
-    "import * as Schema from 'effect/Schema';\nconst User = Schema.Struct({ name: Schema.String });\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(User)(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(Schema.Struct({ name: Schema.String }))(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(models.User)(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(User))(raw);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (raw: unknown) => Schema.decodeSync(Schema.optional(User))(raw);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (raw: unknown) => Schema.decodeSync(Schema.transform(User, f))(raw);",
-    "import * as Schema from 'effect/Schema';\nexport const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(Schema.optional(User)))(raw);",
+    withSchema(
+      'export const parseUser = (input: unknown) => Schema.decodeUnknownEffect(Schema.Struct({ name: Schema.String }))(input);',
+    ),
+    withSchema(
+      'export const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(User))(raw);',
+    ),
+    withSchema(
+      'export const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(makeSchema()))(raw);',
+    ),
+    // Building the decoder is the smell, whether it is applied at once, returned, or assigned.
+    withSchema(
+      'export const makeParser = () => Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.String }));',
+    ),
+    withSchema(
+      'function parse(raw: unknown) { const decode = Schema.decodeUnknownSync(Schema.Array(Schema.String)); return decode(raw); }',
+    ),
+    withSchema(
+      'const write = (user: User) => Schema.encodeSync(Schema.Struct({ id: Schema.String }))(user);',
+    ),
+    withSchema(
+      'const check = (raw: unknown) => Schema.decodeUnknownResult(Schema.Struct({ id: Schema.String }))(raw);',
+    ),
+    withSchema(
+      'const parse = (raw: unknown) => Schema.decodeSync(Schema.Struct({ id: Schema.String }) as Schema.Codec<User>)(raw);',
+    ),
+    "import { Schema } from 'effect';\nconst parse = (raw: unknown) => Schema.decodeSync(Schema.Struct({}))(raw);",
+    "import * as S from 'effect/Schema';\nconst parse = (raw: unknown) => S.decodeSync(S.Struct({}))(raw);",
   ],
   valid: [
-    "import * as Schema from 'effect/Schema';\nexport const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(makeSchema()))(raw);",
-    "import * as Schema from 'effect/Schema';\nconst User = Schema.Struct({ name: Schema.String });\nconst decodeUser = Schema.decodeUnknownEffect(User);\nexport const parseUser = (input: unknown) => decodeUser(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseWith = <A, I>(schema: Schema.Codec<A, I>, input: unknown) => Schema.decodeUnknownEffect(schema)(input);",
-    "import * as Schema from 'effect/Schema';\nexport const makeDecoder = <A, I>(schema: Schema.Codec<A, I>) => Schema.decodeUnknownEffect(schema);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(makeSchema())(input);",
+    withSchema(
+      'const User = Schema.Struct({ name: Schema.String });\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(User)(input);',
+    ),
+    withSchema(
+      'export const parseUser = (input: unknown) => Schema.decodeUnknownEffect(models.User)(input);',
+    ),
+    withSchema(
+      'export const parseWith = <A, I>(schema: Schema.Codec<A, I>, input: unknown) => Schema.decodeUnknownEffect(schema)(input);',
+    ),
+    withSchema(
+      'export const makeDecoder = <A, I>(schema: Schema.Codec<A, I>) => Schema.decodeUnknownEffect(schema);',
+    ),
+    withSchema(
+      'export const decodeUser = Schema.decodeSync(Schema.Struct({ id: Schema.String }));',
+    ),
+    withSchema(
+      'export const parseUser = (input: unknown) => Schema.decodeUnknownEffect(makeSchema())(input);',
+    ),
+    // Predicates and transformation constructors are outside the decoder and encoder policy.
+    withSchema('const isUser = (value: unknown) => Schema.is(Schema.Struct({}))(value);'),
+    withSchema('const assertUser = (value: unknown) => Schema.asserts(Schema.Struct({}))(value);'),
+    withSchema('const toNumber = () => Schema.String.pipe(Schema.decodeTo(Schema.Number));'),
+    // Deliberately syntactic: a schema first assigned to a local is not tracked.
+    withSchema(
+      'const parse = (raw: unknown) => { const Local = Schema.Struct({}); return Schema.decodeSync(Local)(raw); };',
+    ),
+    'const Schema = { decodeSync: (s) => s, Struct: (s) => s };\nconst parse = (raw) => Schema.decodeSync(Schema.Struct({}))(raw);',
+    "import type * as Schema from 'effect/Schema';\nconst parse = (raw) => Schema.decodeSync(Schema.Struct({}))(raw);",
   ],
 });
 
 run('no-effect-side-effect-wrapper', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.as(setState(value), undefined);",
-    "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.as(Atom.set(atom, value), undefined);",
-    // Named wrappers and pipe aliases get no exemption: the eager side effect runs either way.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.zipRight(Effect.logInfo('x'), next);",
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.zipRight(Effect.logInfo('x'), next), Effect.map(f));",
+    // The value slot: the second argument data-first, the only argument data-last.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, console.log('x'));",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, setState(value));",
+    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.as(console.log('x')));",
+    "import * as Effect from 'effect/Effect';\nconst replace = Effect.as(setState(value));",
+    // An Effect passed as the value is never run.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, Effect.logInfo('x'));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.as(program, Atom.set(count, 1));",
+    "import * as Effect from 'effect/Effect';\nimport * as Atom from 'effect/reactivity/Atom';\nprogram.pipe(Effect.as(Atom.set(count, 1)));",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, (() => console.log('x'))());",
+    // Invoking a function evaluates its parameter defaults, even when a generator body waits.
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), (function* (v = console.log('now')) {})());",
+    // Computed keys, static fields, and static blocks run when the class is defined.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, class { static value = console.log('now'); });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, class { static { console.log('now'); } });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, class { [console.log('key')] = 1; });",
+    // A curried Atom.set returns a function, but its arguments are still evaluated eagerly.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.as(Effect.succeed(1), Atom.set(console.log('x')));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nprogram.pipe(Effect.as(Atom.set(console.log('x'))));",
+    // Named wrappers and pipe aliases get no exemption
+    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.as(program, console.log('x'));",
+    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\nconst run = pipe(program, Effect.as(setState(value)));",
   ],
-  valid: ["import * as Effect from 'effect/Effect';\nEffect.as(program, value);"],
+  valid: [
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, value);",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, { id: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Option from 'effect/Option';\nprogram.pipe(Effect.as(Option.some(1)));",
+    // Only the reviewed side-effect calls count; an arbitrary call is not presumed impure.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, makeValue());",
+    // The first data-first argument is the source Effect, not the value.
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.logInfo('x'), value);",
+    // A spread hides the argument count, so the overload and the value slot are unknown.
+    "import * as Effect from 'effect/Effect';\nEffect.as(...([Effect.logInfo('source'), 42] as const));",
+    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.as(...[console.log('x')]));",
+    // Defaults of a function that is never called, and instance fields, do not run.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, (v = console.log('later')) => v);",
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), class { value = console.log('later'); });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(setState(value), undefined);",
+    // A function value runs only when called.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, () => console.log('x'));",
+    // Invoking a generator function only creates an iterator; its body is deferred.
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), (function* () { console.log('later'); })());",
+    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.as((function* () { console.log('later'); })()));",
+    // The one-argument Atom.set returns a function, not an Effect, in both Effect.as arities.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.as(Effect.succeed(1), Atom.set(1));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nprogram.pipe(Effect.as(Atom.set(1)));",
+    "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.as(program, Atom.set(count, 1));",
+    "const Effect = { as: (a, b) => b };\nEffect.as(program, console.log('x'));",
+  ],
 });
 
 run('no-unknown-boolean-coercion-helper', {
@@ -142,11 +239,19 @@ run('no-switch-statement', {
   invalid: [
     sourceFixture('no-switch-statement', 'invalid-switch.ts'),
     sourceFixture('no-switch-statement', 'invalid-switch-submodule-import.ts'),
-    sourceFixture('no-switch-statement', 'invalid-switch-atom-react.ts'),
+    // A file whose only Effect-stack import is a v4 Atom binding is an Effect file.
+    "import { useAtomValue } from '@effect/atom-react';\nconst label = () => { switch (useAtomValue(statusAtom)) { case 'idle': return 'waiting'; default: return 'done'; } };",
+    "import { useAtom } from '@effect/atom-solid';\nswitch (state) { default: break; }",
+    "import { useAtom } from '@effect/atom-vue';\nswitch (state) { default: break; }",
   ],
   valid: [
     sourceFixture('no-switch-statement', 'valid-match-value.ts'),
     sourceFixture('no-switch-statement', 'valid-switch-without-effect.ts'),
+    // Retained upstream fixture: it imports only the v3 @effect-atom/atom-react package, which the
+    // v4-primary decision puts out of scope, so it no longer marks an Effect file.
+    sourceFixture('no-switch-statement', 'invalid-switch-atom-react.ts'),
+    "import type { AtomValue } from '@effect/atom-react';\nswitch (state) { default: break; }",
+    "import { describe } from '@effect/vitest';\nswitch (state) { default: break; }",
   ],
 });
 
@@ -159,21 +264,76 @@ run('no-arrow-ladder', {
   ],
 });
 
+const atomImports =
+  "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\n";
+const withAtom = (body: string): string => `${atomImports}${body}`;
+const atomCase = (code: string, method: string, expectedErrors = 1): CatalogFixture => ({
+  code,
+  expectedErrors,
+  messageData: { method: `Atom.${method}` },
+});
+
 run('no-atom-registry-effect-sync', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.sync(() => Atom.get(atom));",
+    atomCase(withAtom('Effect.sync(() => Atom.set(count, 1));'), 'set'),
+    atomCase(withAtom('Effect.sync(() => { Atom.refresh(count); });'), 'refresh'),
+    atomCase(withAtom('Effect.sync(() => Atom.get(count));'), 'get'),
+    atomCase(withAtom('Effect.sync(() => Atom.update(count, (n) => n + 1));'), 'update'),
+    atomCase(withAtom('Effect.sync(() => Atom.modify(count, (n) => [n, n + 1]));'), 'modify'),
+    atomCase(withAtom('Effect.sync(function () { return Atom.get(count); });'), 'get'),
+    // One diagnostic per offending call, at the call.
+    atomCase(withAtom('Effect.sync(() => { Atom.set(a, 1); Atom.set(b, 2); });'), 'set', 2),
+    // An inline function invoked on the spot runs inside the sync callback.
+    atomCase(withAtom('Effect.sync(() => (() => Atom.set(count, 1))());'), 'set'),
+    atomCase(withAtom('Effect.sync(() => (function () { return Atom.set(count, 1); })());'), 'set'),
+    // Effect.sync calls its callback, which evaluates the parameter defaults, even of a generator.
+    atomCase(withAtom('Effect.sync((v = Atom.set(count, 1)) => v);'), 'set'),
+    atomCase(withAtom('Effect.sync(function* (v = Atom.set(count, 1)) {});'), 'set'),
+    atomCase(withAtom('Effect.sync(() => class { static value = Atom.set(count, 1); });'), 'set'),
+    atomCase(
+      "import * as Effect from 'effect/Effect';\nimport * as A from 'effect/unstable/reactivity/Atom';\nEffect.sync(() => A.set(count, 1));",
+      'set',
+    ),
+    atomCase(
+      "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/reactivity';\nEffect.sync(() => Atom.set(count, 1));",
+      'set',
+    ),
+    atomCase(
+      "import { Effect } from 'effect';\nimport * as Atom from 'effect/reactivity/Atom';\nEffect.sync(() => Atom.refresh(count));",
+      'refresh',
+    ),
   ],
-  valid: ["import { Atom } from '@effect-atom/atom-react';\nAtom.get(atom);"],
+  valid: [
+    withAtom('Effect.gen(function* () { yield* Atom.set(count, 1); });'),
+    withAtom('const write = Atom.set(count, 1);'),
+    // Registry instance operations are synchronous in v4.
+    withAtom('Effect.sync(() => registry.set(count, 1));'),
+    withAtom('Effect.sync(() => atomRegistry.set(count, 1));'),
+    // A nested generator and a declared function are their own execution boundaries.
+    withAtom('Effect.sync(() => Effect.gen(function* () { yield* Atom.set(count, 1); }));'),
+    withAtom('Effect.sync(() => { const later = () => Atom.set(count, 1); return later; });'),
+    // A generator body is deferred, whether it is the callback or invoked inside it.
+    withAtom('Effect.sync(function* () { Atom.set(count, 1); });'),
+    withAtom('Effect.sync(() => (function* () { Atom.set(count, 1); })());'),
+    // Instance fields wait for instantiation; defaults of an uncalled function never run.
+    withAtom('Effect.sync(() => class { value = Atom.set(count, 1); });'),
+    withAtom('Effect.sync(() => { const later = (v = Atom.set(count, 1)) => v; return later; });'),
+    // The data-last form returns a function, not an Effect.
+    withAtom('Effect.sync(() => Atom.set(1));'),
+    withAtom('const run = (Atom) => Effect.sync(() => Atom.set(count, 1));'),
+    "import * as Effect from 'effect/Effect';\nconst Atom = { set: (a, v) => v };\nEffect.sync(() => Atom.set(count, 1));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.sync(() => Atom.set(count, 1));",
+    "import * as Effect from 'effect/Effect';\nimport type { Atom } from 'effect/unstable/reactivity';\nEffect.sync(() => Atom.set(count, 1));",
+  ],
 });
 
 run('no-branch-in-object', {
   invalid: [
     "import * as Option from 'effect/Option';\nconst value = { ready: Option.match(input, { onSome: () => true, onNone: () => false }) };",
     "import * as Match from 'effect/Match';\nconst value = { ready: Match.value(input).pipe(Match.when('a', () => true)) };",
-    "import * as Either from 'effect/Either';\nconst value = { ready: Either.match(input, { onRight: () => true, onLeft: () => false }) };",
     "import * as Match from 'effect/Match';\nconst value = ((branch) => ({ ready: branch }))(Match.value(input).pipe(Match.when('a', () => true)));",
     "import * as Option from 'effect/Option';\nconst value = ((branch) => { return { ready: branch }; })(Option.match(input, { onSome: () => true, onNone: () => false }));",
-    "import * as Either from 'effect/Either';\nconst value = (function (branch) { return { ready: branch }; })(Either.match(input, { onRight: () => true, onLeft: () => false }));",
+    "import * as Option from 'effect/Option';\nconst value = (function (branch) { return { ready: branch }; })(Option.match(input, { onSome: () => true, onNone: () => false }));",
     // Ownership regression: branch wrapped in a helper call inside an IIFE arg is source-covered via descendant scan.
     "import * as Option from 'effect/Option';\nconst value = ((branch) => ({ ready: branch }))(decorate(Option.match(input, { onSome: () => true, onNone: () => false })));",
   ],
@@ -181,7 +341,8 @@ run('no-branch-in-object', {
     'const value = { ready: condition ? true : false };',
     "import * as Match from 'effect/Match';\nconst value = { ready: decorate(Match.value(input).pipe(Match.when('a', () => true))) };",
     "import * as Option from 'effect/Option';\nconst value = { ready: decorate(Option.match(input, { onSome: () => true, onNone: () => false })) };",
-    "import * as Either from 'effect/Either';\nconst value = { ready: decorate(Either.match(input, { onRight: () => true, onLeft: () => false })) };",
+    // v4 has no Either module.
+    "import * as Either from 'effect/Either';\nconst value = { ready: Either.match(input, { onRight: () => true, onLeft: () => false }) };",
     "import * as Option from 'effect/Option';\nconst value = { ready: ((branch) => branch)(Option.match(input, { onSome: () => true, onNone: () => false })) };",
   ],
 });
@@ -191,11 +352,13 @@ run('no-effect-all-step-sequencing', {
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.asVoid);",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.logInfo('done')], { concurrency: 1 });",
-    // Atom.set from @effect-atom/atom-react counts as a state-changing sequential step.
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    // The v4 Atom.set Effect counts as a state-changing sequential step.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Atom from 'effect/reactivity/Atom';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.interrupt(fiber)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as SubscriptionRef from 'effect/SubscriptionRef';\nEffect.all([SubscriptionRef.set(ref, value)], { concurrency: 1 });",
-    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/unstable/reactivity/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport { Reactivity } from 'effect/reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
     // A pipeline reports when any direct step discards state-changing work with asVoid.
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.map(f), Effect.asVoid);",
     // A pipe alias gets no exemption: the sequential Effect.all still reports.
@@ -206,6 +369,11 @@ run('no-effect-all-step-sequencing', {
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => console.log('x'))], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => setState(value))], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.join(fiber)], { concurrency: 1 });",
+    // The curried Atom.set returns a function, not a state-changing Effect step.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.all([Effect.succeed(Atom.set(1))], { concurrency: 1 });",
+    // Retired v3 modules no longer identify Atom or Reactivity.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
   ],
 });
 
@@ -218,12 +386,30 @@ run('no-effect-bind', {
   valid: ["import * as Effect from 'effect/Effect';\nEffect.map(program, f);"],
 });
 
+const optionImport = "import * as Option from 'effect/Option';\n";
+const withOption = (body: string): string => `${optionImport}${body}`;
+
 run('no-fromnullable-nullish-coalesce', {
-  invalid: ["import * as Option from 'effect/Option';\nOption.fromNullable(value ?? null);"],
+  invalid: [
+    withOption('Option.fromNullishOr(value ?? null);'),
+    withOption('Option.fromUndefinedOr(value ?? undefined);'),
+    withOption('Option.fromNullishOr((value ?? null));'),
+    "import * as O from 'effect/Option';\nO.fromNullishOr(value ?? null);",
+    "import { Option } from 'effect';\nOption.fromUndefinedOr(value ?? undefined);",
+  ],
   valid: [
-    "import * as Option from 'effect/Option';\nOption.fromNullable(value);",
-    "import * as Option from 'effect/Option';\nOption.fromNullable(value || null);",
-    "import * as Option from 'effect/Option';\nOption.fromNullable(value && null);",
+    withOption('Option.fromNullishOr(value);'),
+    withOption('Option.fromUndefinedOr(value);'),
+    withOption('Option.fromUndefinedOr(value ?? fallback);'),
+    withOption('Option.fromNullishOr(value || null);'),
+    // Each constructor has its own redundant fallback; the pairs are not merged.
+    withOption('Option.fromNullishOr(value ?? undefined);'),
+    withOption('Option.fromUndefinedOr(value ?? null);'),
+    // `undefined` must be the global value.
+    withOption('const read = (undefined) => Option.fromUndefinedOr(value ?? undefined);'),
+    'const Option = { fromNullishOr: (x) => x };\nOption.fromNullishOr(value ?? null);',
+    // The removed v3 constructor belongs to tsgo's outdated-API check.
+    withOption('Option.fromNullable(value ?? null);'),
   ],
 });
 
@@ -282,8 +468,21 @@ run('no-option-boolean-normalization', {
 });
 
 run('no-react-state', {
-  invalid: ['const [value] = useState(0);', 'React.useEffect(() => {}, []);'],
-  valid: ['useAtom(atom);'],
+  invalid: [
+    'useEffect(() => {}, []);',
+    'React.useEffect(() => {}, []);',
+    'React.useReducer(reducer, initial);',
+    'useContext(ThemeContext);',
+    'React.useCallback(() => {}, []);',
+    'useSyncExternalStore(subscribe, getSnapshot);',
+  ],
+  valid: [
+    'const [value] = useState(0);',
+    'const [open] = React.useState(false);',
+    'useAtom(atom);',
+    "import * as Effect from 'effect/Effect';\nconst [value] = useState(0);",
+    "import { useAtom } from '@effect/atom-react';\nconst [count] = useAtom(countAtom);",
+  ],
 });
 
 run('no-render-side-effects', {
@@ -298,8 +497,59 @@ run('no-render-side-effects', {
 });
 
 run('no-return-null', {
-  invalid: ["import * as Effect from 'effect/Effect';\nfunction value() { return null; }"],
-  valid: ['function value() { return null; }'],
+  invalid: [
+    withEffect('Effect.gen(function* () { return null; });'),
+    withEffect('Effect.gen({ self: this }, function* () { return null; });'),
+    withEffect('Effect.gen(function* () { if (missing) { return null; } return 1; });'),
+    withEffect("Effect.fn('load')(function* () { return null; });"),
+    // A string constant or an unknown binding is a span name.
+    withEffect("const span = 'load';\nEffect.fn(span)(function* () { return null; });"),
+    withEffect('Effect.fn(`load`)(function* () { return null; });'),
+    withEffect(
+      // An interpolated template, assembled so the fixture itself is not a template.
+      'const span = `load.$' +
+        '{kind}`;\nEffect.fn(span, { attributes })(function* () { return null; });',
+    ),
+    withEffect("Effect.fn('load', { attributes })(function* () { return null; }, Effect.orDie);"),
+    withEffect('Effect.fn(function* () { return null; });'),
+    withEffect('Effect.succeed(null);'),
+    withEffect('const load = () => Effect.succeed(null as never);'),
+    "import { Effect as E } from 'effect';\nE.succeed(null);",
+  ],
+  valid: [
+    // React components and nullable boundary helpers keep returning null.
+    withEffect('export const View = () => { return null; };'),
+    withEffect('function find(): User | null { return null; }'),
+    // A nested ordinary helper is its own function boundary.
+    withEffect('Effect.gen(function* () { const pick = () => { return null; }; return pick(); });'),
+    withEffect(
+      "import * as Option from 'effect/Option';\nEffect.gen(function* () { return Option.none(); });",
+    ),
+    withEffect('const none = Effect.succeedNone;'),
+    withEffect('Effect.succeed(value);'),
+    withEffect('Effect.gen(function* () { return undefined; });'),
+    withEffect('function* values() { return null; }'),
+    withEffect('Effect.fnUntraced(function* () { return null; });'),
+    // With two arguments, Effect.gen takes the body second; the first is its options.
+    withEffect('Effect.gen(function* () { return null; }, extra);'),
+    // A traced function called with a generator argument is not the Effect.fn factory.
+    withEffect('Effect.fn(function* () { return 1; })(function* () { return null; });'),
+    // So is a traced function whose body is a provable function binding.
+    withEffect(
+      'const body = function* () { return 1; };\nEffect.fn(body)(function* () { return null; });',
+    ),
+    withEffect('function* body() { return 1; }\nEffect.fn(body)(function* () { return null; });'),
+    // An unresolved first argument leaves the Effect.fn overload unknown.
+    withEffect(
+      'export const make = (spanName: string) => Effect.fn(spanName)(function* () { return null; });',
+    ),
+    withEffect(
+      "import { spanName } from './names';\nEffect.fn(spanName)(function* () { return null; });",
+    ),
+    withEffect("let span = 'load';\nEffect.fn(span)(function* () { return null; });"),
+    'const Effect = { gen: (f) => f };\nEffect.gen(function* () { return null; });',
+    "import type * as Effect from 'effect/Effect';\nEffect.succeed(null);",
+  ],
 });
 
 run('no-try-catch', {
@@ -313,7 +563,10 @@ run('no-try-catch', {
 });
 
 run('no-json-parse', {
-  invalid: ["import * as Effect from 'effect/Effect';\nJSON.parse(payload);"],
+  invalid: [
+    "import * as Effect from 'effect/Effect';\nJSON.parse(payload);",
+    "import { useAtomValue } from '@effect/atom-react';\nJSON.parse(payload);",
+  ],
   valid: [
     'Schema.decodeUnknownSync(User)(payload);',
     'JSON.parse(payload);',
@@ -382,24 +635,18 @@ run('no-instanceof-tagged-error', {
 run('no-effect-internal-tags', {
   invalid: [
     "import { Option } from 'effect';\nif (option._tag === 'Some') use(option);",
-    "import * as Result from 'effect/Result';\nif (result._tag === 'Left') use(result);",
-    "import { Result } from 'effect';\nif (result._tag === 'Right') use(result);",
-    // Option/None (tests the 'None' tag string in effectDataModuleTags).
     "import * as Option from 'effect/Option';\nif (option._tag === 'None') use(option);",
-    // Either module tags.
-    "import * as Either from 'effect/Either';\nif (either._tag === 'Left') use(either);",
-    "import * as Either from 'effect/Either';\nif (either._tag === 'Right') use(either);",
-    // Exit module tags.
+    "import * as Result from 'effect/Result';\nif (result._tag === 'Success') use(result);",
+    "import { Result } from 'effect';\nif (result._tag === 'Failure') use(result);",
     "import * as Exit from 'effect/Exit';\nif (exit._tag === 'Success') use(exit);",
     "import * as Exit from 'effect/Exit';\nif (exit._tag === 'Failure') use(exit);",
+    // A v4 Cause is untagged; each of its reasons carries the tag.
     {
-      code: "import * as Cause from 'effect/Cause';\nif (c._tag==='Fail') f();\nif (c._tag==='Die') f();\nif (c._tag==='Interrupt') f();\nif (c._tag==='Sequential') f();\nif (c._tag==='Parallel') f();\nif (c._tag==='Then') f();\nif (c._tag==='Both') f();\nif (c._tag==='Empty') f();",
-      expectedErrors: 8,
+      code: "import * as Cause from 'effect/Cause';\nif (reason._tag === 'Fail') f();\nif (reason._tag === 'Die') f();\nif (reason._tag === 'Interrupt') f();",
+      expectedErrors: 3,
     },
-    // Barrel imports for modules not yet individually tested via `import { M } from 'effect'`.
-    "import { Either } from 'effect';\nif (either._tag === 'Left') use(either);",
     "import { Exit } from 'effect';\nif (exit._tag === 'Success') use(exit);",
-    "import { Cause } from 'effect';\nif (cause._tag === 'Fail') use(cause);",
+    "import { Cause } from 'effect';\nif (reason._tag === 'Fail') use(reason);",
   ],
   valid: [
     "if (option._tag === 'Custom') use(option);",
@@ -408,6 +655,10 @@ run('no-effect-internal-tags', {
     "import * as Exit from 'effect/Exit';\nif (option._tag === 'Some') use(option);",
     // Cause import with a non-internal tag comparison is fine.
     "import * as Cause from 'effect/Cause';\nif (cause._tag === 'CustomCause') use(cause);",
+    // v3 representations: the combinator Cause tags, Either, and Result Left/Right.
+    "import * as Cause from 'effect/Cause';\nif (cause._tag === 'Sequential') use(cause);",
+    "import * as Either from 'effect/Either';\nif (either._tag === 'Left') use(either);",
+    "import * as Result from 'effect/Result';\nif (result._tag === 'Left') use(result);",
     "import type { Option } from 'effect';\nif (option._tag === 'Some') use(option);",
     "import type * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);",
     // A computed identifier key is a runtime key, not a static _tag read.
@@ -449,15 +700,25 @@ run('no-redundant-primitive-cast', {
 
 run('no-effect-escape-hatch', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
-    "import * as Effect from 'effect/Effect';\nEffect.die(program);",
-    "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
-    "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+    withEffect('Effect.orDie(program);'),
+    withEffect('Effect.die(reason);'),
+    // A member reference reports as well as a call.
+    withEffect('program.pipe(Effect.orDie);'),
+    withEffect('const boom = () => Effect.orDie(program);'),
+    withEffect('function boom() { return Effect.orDie(program); }'),
     // A pipe alias gets no exemption.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.orDie(program), Effect.map(f));",
+    withEffectAndPipe('const run = pipe(program, Effect.orDie);'),
+    withEffect('const run = pipe(Effect.orDie(program), Effect.map(f));'),
+    "import { Effect } from 'effect';\nEffect.die(reason);",
   ],
   valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.catch(program, handler);",
+    withEffect('Effect.catch(program, handler);'),
+    withEffect('Effect.fail(new DomainError());'),
+    'const Effect = { orDie: (value) => value };\nEffect.orDie(program);',
+    "import type * as Effect from 'effect/Effect';\nEffect.orDie(program);",
+    // v4 exports only die and orDie; the removed names belong to tsgo's outdated-API check.
+    withEffect("Effect.dieMessage('fatal');"),
+    withEffect('Effect.orDieWith(program, mapError);'),
     {
       code: "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
       filename: `${process.cwd()}/src/program.test.ts`,
@@ -477,11 +738,11 @@ run('no-effect-escape-hatch', {
       filename: 'tests/program.ts',
     },
     {
-      code: "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+      code: "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.orDie);",
       filename: 'test/program.ts',
     },
     {
-      code: "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
+      code: "import * as Effect from 'effect/Effect';\nEffect.die(reason);",
       filename: 'src/program.test.mts',
     },
   ],
@@ -592,9 +853,11 @@ describe('catalog rule definitions export', () => {
 });
 
 describe('catalog rule metadata', () => {
-  it('each rule has a description, recommended severity, and type', () => {
-    for (const [, rule] of Object.entries(catalogRules)) {
-      expect(rule.meta?.docs?.description).not.toBe(ruleMessage(''));
+  it('each rule has a written description, recommended severity, and type', () => {
+    for (const [name, rule] of Object.entries(catalogRules)) {
+      expect(hasExplicitRuleMessage(name)).toBe(true);
+      expect(rule.meta?.docs?.description).toMatch(new RegExp(`^Rule: ${name}\\. Why: `));
+      expect(rule.meta?.docs?.description).not.toMatch(/\{\{\w+\}\}/);
       expect(rule.meta?.docs?.recommended).toMatch(/^(error|warn)$/);
       expect(rule.meta?.type).toMatch(/^(problem|suggestion)$/);
     }
@@ -660,11 +923,6 @@ run('no-cross-package-relative-imports', {
     },
   ],
 });
-
-const effectImport = "import * as Effect from 'effect/Effect';\n";
-const effectAndPipeImports = `${effectImport}import { pipe } from 'effect/Function';\n`;
-const withEffect = (body: string): string => `${effectImport}${body}`;
-const withEffectAndPipe = (body: string): string => `${effectAndPipeImports}${body}`;
 
 run('no-effect-call-in-effect-arg', {
   invalid: [

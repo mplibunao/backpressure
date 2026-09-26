@@ -8,12 +8,14 @@ import {
   getStaticMemberExpression,
   getStringLiteralValue,
   hasAncestor,
+  hasSpreadArgument,
   isIdentifierName,
   isNodeLike,
   isStringLiteral,
   peelTransparentExpression,
   staticMemberPropertyName,
   visitSelfAndDescendants,
+  visitSelfAndDescendantsWhere,
   walkDescendants,
 } from './ast.js';
 
@@ -296,6 +298,40 @@ describe('visitSelfAndDescendants()', () => {
   it('visits nothing for a non-NodeLike input', () => {
     const visited: NodeLike[] = [];
     visitSelfAndDescendants(null, (node) => visited.push(node));
+    expect(visited).toHaveLength(0);
+  });
+});
+
+describe('hasSpreadArgument()', () => {
+  it('is true only when an argument is a spread element', () => {
+    expect(hasSpreadArgument([ident('a'), mkNode('SpreadElement')])).toBe(true);
+    expect(hasSpreadArgument([ident('a'), mkNode('ArrayExpression')])).toBe(false);
+    expect(hasSpreadArgument([])).toBe(false);
+  });
+});
+
+describe('visitSelfAndDescendantsWhere()', () => {
+  it('neither visits nor descends into a node the predicate rejects', () => {
+    const hidden = mkNode('Identifier');
+    const skipped = mkNode('ArrowFunctionExpression', { body: hidden });
+    const kept = mkNode('Identifier');
+    const root = mkNode('ArrayExpression', { elements: [skipped, kept] });
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendantsWhere(
+      root,
+      (node) => node.type !== 'ArrowFunctionExpression',
+      (node) => visited.push(node),
+    );
+    expect(visited).toStrictEqual([root, kept]);
+  });
+
+  it('visits nothing when the root is rejected', () => {
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendantsWhere(
+      mkNode('Identifier'),
+      () => false,
+      (node) => visited.push(node),
+    );
     expect(visited).toHaveLength(0);
   });
 });

@@ -4,6 +4,7 @@ import {
   getCallExpressionArguments,
   getNodeField,
   getStaticMemberCall,
+  hasSpreadArgument,
   isIdentifierName,
   isNodeLike,
   type NodeLike,
@@ -78,9 +79,6 @@ export const transformingCombinatorMembers: ReadonlySet<string> = new Set([
 ]);
 
 // A spread hides the argument count that selects an overload.
-const hasSpreadArgument = (args: readonly unknown[]): boolean =>
-  args.some((argument) => isNodeLike(argument) && argument.type === 'SpreadElement');
-
 export const boundEffectCallMember = (
   facts: EffectCompositionFacts,
   node: unknown,

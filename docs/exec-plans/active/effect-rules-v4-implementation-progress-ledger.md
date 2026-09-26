@@ -23,8 +23,8 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-01 | Record ownership and initialize the execution ledger | S | DONE (local, not pushed) | `15fce6c` |
 | WI-02 | Establish pinned inputs and the isolated toolchain foundation | L | DONE (local, not pushed); Renovate app activation waits on MP | `c863fa5` |
 | WI-03 | Remove obsolete runtime policies and repair ownership contracts | L | DONE (local, not pushed) | `ec4f4f8` |
-| WI-04 | Narrow composition and error contracts | L | DONE (uncommitted) | |
-| WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | PENDING | |
+| WI-04 | Narrow composition and error contracts | L | DONE (local, not pushed) | `9c12bcc` |
+| WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (uncommitted) | |
 | WI-06 | Activate the full Effect config and both package surfaces | L | PENDING | |
 | WI-11 | Rule list with its generated page and local viewer | M | PENDING | |
 | WI-07 | Install all six durable gates | L | PENDING | |
@@ -467,3 +467,143 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
   - The t3code and executor diagnostics are identical before and after, by rule, file, message, and span. Checks: `test` 837 passing in 26 files; `build`; lint with 0 warnings and 0 errors; `typecheck`; `fixture:replay` with 42 suites and 368 cases; `inventory:rules`. All exit 0.
 - **Commits:** none. The orchestrator commits.
 - **Action items for MP:** none.
+
+### WI-05: Retarget v4 APIs and finish the remaining narrowings and messages (DONE)
+
+- **Build:** the six remaining §3.6 contracts and the named v3 cleanup are implemented. All 42 active custom rules now have written messages. Each behavior change has RuleTester cases, a required replay branch, and a manifest note.
+- **v4 names, checked against the pinned 4.0.0-rc.115 package and the rc.117 checkout:**
+  - Schema has 24 decoder and encoder factories: `decode` or `encode`, optionally `Unknown`, then `Effect`, `Exit`, `Option`, `Promise`, `Result`, or `Sync`. The old list lacked the four `Result` members and wrongly held `is` and `asserts`.
+  - Option has `fromNullishOr`, `fromUndefinedOr`, and `getOrNull`. Effect has only `die` and `orDie`, plus `succeedNone`.
+  - `Effect.gen` takes `(body)` or `(options, body)`. `Effect.fn` takes `(body, ...pipeables)` or `(name, options?)(body, ...pipeables)`.
+  - The Atom functions `get` and `refresh` take one argument and return an Effect. `set`, `update`, and `modify` are `dual(2)`: two arguments return an Effect, and one returns a function. Registry instance methods are synchronous.
+  - A v4 Cause is untagged. Its reasons carry `Fail`, `Die`, or `Interrupt`, with public `isFailReason`, `isDieReason`, and `isInterruptReason`. Result and Exit are tagged `Success` or `Failure`. rc.115 has no `effect/Either` module.
+  - Atom and Reactivity live under `effect/unstable/reactivity` in rc.115 and under `effect/reactivity` in rc.117.
+- **Rule contracts:**
+  - `no-inline-schema-compile` (now `warn`, `style`): a v4 factory inside a function whose schema argument is a direct bound `Schema.*(...)` call, peeling type wrappers. Returned and assigned decoders report. Hoisted, member, parameter, module-scope, and opaque `makeSchema()` schemas are valid, and so are `is`, `asserts`, `decodeTo`, and a schema first assigned to a local.
+  - `no-return-null` (now `warn`, `style`, gating `effect-callee`): `return null` whose nearest function is an `Effect.gen` or `Effect.fn` generator, plus a bound `Effect.succeed(null)`. Valid: React components, `T | null` helpers, nested ordinary helpers, `Option.none()`, `succeedNone`, arbitrary generators, `fnUntraced`, and a local lookalike. A generator passed to a traced function or placed in the options slot is valid too.
+  - `no-react-state`: bans the five hooks, as bare or member calls. `useState`, `React.useState`, and atom-react hooks are valid.
+  - `no-fromnullable-nullish-coalesce`: exactly `fromNullishOr(value ?? null)` and `fromUndefinedOr(value ?? undefined)` with the global `undefined`. Namespace aliases and the barrel import both match, including inside parentheses. The crossed pairs, other fallbacks, `||`, a shadowed `undefined`, a lookalike, and v3 `fromNullable` are valid. No autofix.
+  - `no-atom-registry-effect-sync`: each Effect-returning Atom call that runs synchronously in an inline `Effect.sync` callback, including an invoked ordinary inline function and the callback's parameter defaults, with one report per call. Nested generators and declared functions are skipped. Registry and `atomRegistry` calls, data-last `Atom.set(value)`, shadowed and local objects, the v3 atom-react package, and type-only imports are valid.
+  - `no-effect-escape-hatch`: `die` and `orDie` only, as calls or member references (`program.pipe(Effect.orDie)`), with const, function, and pipe-alias wrappers. `dieMessage`, `orDieWith`, typed recovery, lookalikes, test files, and a justified inline disable (replay, real engine) are valid.
+- **v3 cleanup:**
+  - `no-branch-in-object` loses its Either branch.
+  - `no-effect-internal-tags` maps Cause to its three reason tags, and Result and Exit to `Success`/`Failure`. Either, the five v3 Cause combinator tags, and Result `Left`/`Right` are now valid controls.
+  - `no-effect-all-step-sequencing` and `no-effect-side-effect-wrapper` resolve Atom and Reactivity through `collectReactivityModuleNames`.
+  - `zipRight` is gone from `no-effect-side-effect-wrapper`.
+- **`Effect.as` value slot:** the rule reads argument 0 of a one-argument call and argument 1 of a two-argument call; other counts are ignored. The data-first source is not checked. Controls: console, `setState`, `Effect.logInfo`, and v4 `Atom.set` values in both arities, plus an invoked inline function, named wrappers, and pipe aliases. Pure controls: identifiers, object literals, `Option.some(1)`, an unclassified `makeValue()`, source-slot side effects, a function value, v3 `zipRight`, and the v3 Atom.
+- **Classifier fix (`utils/side-effects.ts`):** `containsSideEffectCall` no longer enters a function unless it is invoked on the spot, because a function value's body does not run when the Effect is built. The reviewed eager-call list is unchanged. Two unit tests cover a function value and an invoked function.
+- **Messages:** `ruleMessage` throws for a rule with no written message and for an unfilled `{{placeholder}}`; the generated fallback is gone. `hasExplicitRuleMessage` is internal, not a package-root export. Each of the 42 messages reads `Rule: <name>. Why: … Fix: … Ref: …`, citing linteffect, executor, an Effect module, an ADR, a PA decision, or house style. The Atom message names the reported method. `rule-messages.test.ts` checks:
+  - every catalog rule has a message, and no dropped rule does;
+  - the Why/Fix/Ref shape;
+  - `maxDiagnosticLineLength` (370) for each rendered `x @mplibunao/oxlint-standards(<rule>): <message>` line;
+  - the unknown-rule and missing-placeholder errors.
+  The longest line is 368 columns.
+- **New helpers:**
+  - `utils/effect-identifiers.ts`: `schemaCodecFactoryMembers` and `reactivityBarrelSpecifiers`.
+  - `utils/imports.ts`: `collectReactivityModuleNames`.
+  - `utils/effect-context.ts`: `nearestEnclosingFunction`, `isEffectGeneratorBody`, `runsWhenReached`, and `visitSynchronousBody`.
+  - `utils/ast.ts`: `visitSelfAndDescendantsWhere`.
+- **Replay:**
+  - The four tuple suites (Atom, Option, hooks, return null) are now explicit branch matrices.
+  - A case can carry `messageData`, so replay asserts the exact rendered method.
+  - Preset ownership cases that used `zipRight` or a side effect in the `Effect.as` source slot were rewritten to the value slot. Seven decided-allowed shapes were added.
+  - The allowed-shapes replay now fails on any plugin diagnostic, because a `warn` report leaves the exit code at 0.
+- **Governance:**
+  - PA-3 and the taxonomy row in `preset-architecture.md` changed in the same edit as the hook behavior. The row now lists the three surviving `effect-react` rules.
+  - BP-TD-010 was moved by hand to `docs/records/tech-debt/done/bp-td-010.md`. Its status and status tag are now `done`, and it gains a new `updated_at` plus a resolution citing `ec4f4f8` and the decided entry. ID, creation time, source, and visibility are unchanged.
+  - The record validates against the canonical introspection schemas with ajv. A bad-status copy fails, as a control.
+- **Judgment calls:**
+  - **Both reactivity paths:** the pinned rc.115 has only `effect/unstable/reactivity`, and both apps import it (199 barrel imports and 13 `Atom` subpath imports). Binding only `effect/reactivity/Atom`, as §3.6 names it, would never fire on the pinned version, so both v4 paths count. Each path is a v4 identity; v3 `@effect-atom/atom-react` does not count.
+  - **Atom arity:** only the Effect-returning argument count reports. A spread call is unknown, and data-last `set`, `update`, and `modify` return a function, so the "returns an Effect" message would be false there.
+  - **Cause tags kept:** `Fail`, `Die`, and `Interrupt` are verified v4 reason tags with public predicates, not a flat v3 mapping.
+  - **Rationale class:** `no-inline-schema-compile` and `no-return-null` are `style` at `warn`. ADR-004 puts preferences at the quieter level, and a `correctness` row at `warn` fails the manifest grading test.
+  - **Named `Effect.fn`:** `Effect.fn(x)(body)` counts as the named factory only when `x` is provably a span name. A span name is a string literal or untagged template, directly or through a `const`. Any other `x` leaves the overload unknown and does not report. That covers a provable function, a parameter, an import, and a reassignable variable.
+  - **Schema pipe chains:** only a direct bound `Schema.*(...)` call is evidence. `Schema.Struct({}).pipe(...)` passed inline is not matched.
+  - **Directive wording:** the `no-ts-nocheck` message avoids the literal directive, so the repository's own rule does not report `rule-messages.ts`.
+- **Negative controls:** each mutation was reverted afterward, and checksums of all 14 changed files confirmed the restore.
+  - Putting `useState` back in the ban failed 3 cases.
+  - Ignoring Atom arity failed 1.
+  - Letting the synchronous walker enter every function failed 4.
+  - Checking the `Effect.as` source slot failed 8.
+  - Accepting any `Effect.gen` argument position failed 1, after a position case was added: the first attempt failed 0.
+  - Treating any generator as an owner failed 4.
+  - Letting `fromNullishOr` accept `?? undefined` failed 1. The first mutation for the crossed pair was a no-op, because the `undefined` name check still held.
+  - Accepting a shadowed `undefined` failed 1.
+  - Reporting any schema argument failed 6.
+  - Restoring the Either and `Left`/`Right` tags failed 2.
+  - Restoring the generated message fallback failed the message test.
+  - Restoring `dieMessage` and `orDieWith` failed 2.
+  - Through the built bundle and real oxlint, a constant Atom method name failed the replay's refresh case, and an ungated `return null` failed the allowed-shapes React component.
+- **App observation:** the built plugin ran through oxlint 1.58.0 on t3code `53456bc01` and executor `480b390ee`, excluding `.repos`, `dist`, `node_modules`, `.d.ts`, and generated files. Counts are source / test hits, as a review sample for WI-08.
+
+  | Rule | t3code | executor |
+  | --- | --- | --- |
+  | `no-react-state` | 1931 / 5 | 238 / 0 |
+  | `no-return-null` | 196 / 34 | 162 / 47 |
+  | `no-effect-escape-hatch` | 103 / 0 | 27 / 0 |
+  | `no-effect-internal-tags` | 58 / 99 | 0 |
+  | `no-inline-schema-compile` | 19 / 12 | 3 / 1 |
+  | `no-fromnullable-nullish-coalesce` | 2 / 1 | 0 |
+  | `no-effect-all-step-sequencing` | 1 / 0 | 0 |
+  | `no-atom-registry-effect-sync`, `no-effect-side-effect-wrapper` | 0 | 0 |
+
+  - `no-react-state` reports only the five hooks. The t3code split is 1,192 `useCallback`, 688 `useEffect`, 27 `useContext`, 24 `useSyncExternalStore`, and 5 `useReducer`, with no `useState`.
+  - The decided record's false positives no longer report: `PreviewAutomationHosts.tsx:278` (React `return null`) and executor `main.ts:2428` (nullable helper). Its live case `DesktopWindow.test.ts:350` reports.
+  - Every sampled `no-return-null` hit is an `Effect.gen` or `Effect.fn` generator or an `Effect.succeed(null)`. In t3code, 105 of the 230 hits are `Effect.succeed(null)`, and 19 of those are `Schema.withDecodingDefault(Effect.succeed(null))` defaults for `NullOr` fields, which the contract reports.
+- **For later items:**
+  - **WI-08:** measure the `Schema.withDecodingDefault(Effect.succeed(null))` share of `no-return-null`, and the `useCallback` share of `no-react-state`.
+  - **WI-11:** `docs/references/rules.md` still describes the old behavior until it is generated.
+  - **WI-09:** the rest of `preset-architecture.md`, including its status line and the `@effect-atom` gate wording in the historical audit.
+- **Effect-stack gate (resolved by the orchestrator: decided record is v4-primary; v3 is out of scope):** `isEffectStackModuleSource` recognizes exactly the v4 Atom bindings published from the Effect repository: `@effect/atom-react`, `@effect/atom-solid`, and `@effect/atom-vue` (rc.117 `packages/atom/*/package.json`, each a peer of `effect`). The v3 `@effect-atom/atom-react` entry is removed, because §3.7 forbids keeping an obsolete matcher only to preserve old tests.
+  - **Retained fixture:** the vendored `no-switch-statement/invalid-switch-atom-react.ts` imports only the v3 package, so it no longer marks an Effect file. The file stays vendored as history. `check-rule-inventory.ts` records its changed expectation in `retiredSourceFixtureExpectations`, a register keyed by rule and fixture, with the v3-out-of-scope reason. For a registered fixture the inventory requires a valid replay case and rejects an invalid one. It also rejects a register entry that does not name an invalid fixture of an active rule. The replay and RuleTester suites now list the fixture as valid.
+  - **Register controls:** `inventory:rules` failed with its intended message for an unknown register key and for a removed register entry. Replaying the retired case as invalid failed it too.
+  - RuleTester: `hasEffectStackImport` holds for each of the three v4 bindings. It is false for a type-only `@effect/atom-react` import, for `@effect/vitest`, and for the v3 package. `no-switch-statement` reports in files importing only one of the three v4 bindings, and `no-json-parse` reports with `@effect/atom-react` alone.
+  - Replay: the `no-switch-statement` and `no-json-parse` suites each gain a `@effect/atom-react`-only invalid case, with a type-only valid control beside the first. A preset run adds the component-level proof: the full AST Effect preset reports exactly one `no-json-parse` and one `no-switch-statement` in a `.tsx` component that imports only `@effect/atom-react`.
+  - Negative controls: removing `@effect/atom-react` from the gate failed 3 unit tests and the preset replay (`unexpectedly passed`). Putting the v3 package back failed the retained fixture's valid case and the v3 unit test. Each restored file matched its checksum.
+  - The composed-preset replays now use `@effect/atom-react` as their React-file import.
+- **Review fixes:** four correctness fixes, each with RuleTester cases and a required replay branch.
+  - **Generator bodies are deferred (`effect-context.ts`):** calling a generator function only creates an iterator. `runsWhenReached` no longer enters an invoked generator, and `visitSynchronousBody` visits nothing when the callback itself is a generator. `Effect.as(Effect.succeed(1), (function* () { console.log('later') })())` and its data-last form are now valid. A generator callback such as `Effect.sync(function* () { Atom.set(count, 1) })` is valid, as is a generator invoked inside the callback. An ordinary invoked function still reports in both rules. Branches: `no-effect-side-effect-wrapper` `valid.invoked-generator-deferred`, and `no-atom-registry-effect-sync` `valid.generator-bodies-deferred`.
+  - **Curried `Atom.set` (`side-effects.ts`):** the classifier counts `Atom.set` only with the Effect-returning argument count. The count rule is now the shared `boundAtomEffectMember` in `utils/imports.ts`, over `atomEffectArgumentCounts` in `effect-identifiers.ts`, and `no-atom-registry-effect-sync` uses the same helper. `Effect.as(Effect.succeed(1), Atom.set(1))` and `program.pipe(Effect.as(Atom.set(1)))` are valid. The classifier still walks the arguments, so `Atom.set(console.log('x'))` reports in both arities. Branches: `valid.curried-atom-set` and `invalid.curried-atom-set-eager-argument`.
+  - **`Effect.fn` with an identifier (`effect-context.ts`):** see the named `Effect.fn` judgment call. `Effect.fn(body)(function* () { return null })` is valid when `body` is a `const` generator or a function declaration. A string-constant span name still reports; the second review made a parameter valid (see below). Branches: `valid.traced-function-bindings` and `invalid.span-name-bindings`.
+  - **v3 gate entry removed:** see the Effect-stack gate entry above.
+  - **Negative controls:** each mutation was reverted afterward, and checksums of all 16 changed TypeScript files confirmed the restore.
+    - Entering invoked generators failed 4 cases.
+    - Visiting a generator callback failed 1.
+    - Counting a curried `Atom.set` failed 3.
+    - Treating a function binding as a span name failed 2.
+    - Restoring the v3 gate entry failed 2.
+- **Second review fixes:** four more contract fixes, each with RuleTester cases and a required replay branch.
+  - **Spread in `Effect.as` (`rule-catalog.ts` `hasEagerEffectAsValue`):** a spread argument hides the real argument count, so the rule picks no overload and checks no value slot. `Effect.as(...([Effect.logInfo('source'), 42] as const))` and `program.pipe(Effect.as(...[console.log('x')]))` are valid, beside the non-spread eager-value invalid controls. Branch: `valid.spread-arguments`.
+  - **Parameter defaults run at the call (`effect-context.ts`):** an invoked function evaluates its parameter defaults even when its generator body waits, and `Effect.sync` calls its direct callback. `runsWhenReached` now enters an invoked function of either kind and skips only a generator's body. `visitSynchronousBody` walks the callback's parameters and, unless it is a generator, its body. Defaults of a function that is never called stay unvisited.
+    - `Effect.as(Effect.succeed(1), (function* (v = console.log('now')) {})())` reports.
+    - `Effect.sync((v = Atom.set(count, 1)) => v)` and `Effect.sync(function* (v = Atom.set(count, 2)) {})` each report.
+    - Branches: `invalid.invoked-parameter-defaults`, `valid.uncalled-parameter-defaults`, and `invalid.callback-parameter-defaults`. Two unit tests in `side-effects.test.ts` cover an invoked generator's deferred body and its defaults.
+  - **Class instance fields are deferred:** an instance field initializer (`PropertyDefinition` or `AccessorProperty` value without `static`) runs only on instantiation, so it is not visited. Computed keys, static fields, and static blocks run at class definition and stay visited.
+    - `Effect.as(Effect.succeed(1), class { value = console.log('later') })` and `Effect.sync(() => class { value = Atom.set(count, 1) })` are valid.
+    - The static-field, static-block, and computed-key forms report, as does `class { static value = Atom.set(count, 1) }` returned from the sync callback.
+    - Branches: `invalid.class-definition-time`, `valid.class-instance-fields`, `invalid.static-field-atom-call`, and `valid.deferred-class-and-default-code`.
+  - **Unresolved `Effect.fn` argument (`isProvableSpanName`):** see the named `Effect.fn` judgment call. `isProvableFunction` is gone; the factory test now asks for a provable span name.
+    - A parameter, an import, and a `let` are valid, as are a `const` generator and a function declaration.
+    - A string constant, a plain template, and a `const` bound to an interpolated template still report.
+    - Branches: `valid.unknown-fn-argument`, plus the revised `invalid.span-name-bindings` (string constant and template).
+  - **Negative controls:** each mutation was reverted afterward, and checksums of all changed TypeScript files confirmed the restore.
+    - Ignoring spreads failed 2 cases.
+    - Skipping an invoked generator's defaults failed 2.
+    - Visiting instance fields failed 2, and deferring static fields too failed 2.
+    - Skipping the sync callback's defaults failed 2.
+    - Reverting to "any non-function is a span name" failed 5.
+- **Third review:** no must-fix issues remained. One consistency fix and one declined note.
+  - **Curried `Atom.set` in `no-effect-all-step-sequencing`:** `hasSequentialStep` now counts `Atom.set` only through the shared `boundAtomEffectMember(...) === 'set'` check, so the one-argument curried form is not a state-changing step. `Effect.all([Effect.succeed(Atom.set(1))], { concurrency: 1 })` is valid in RuleTester and in replay (branch `valid.curried-atom-set-step`). The two-argument invalid controls are unchanged.
+  - **Declined: skip parameter defaults when an argument is supplied.** A default runs only when its argument is `undefined`, so `(function* (v = console.log('now')) {})(value)` evaluates no default. MP judged tracking that over-precise: the rule reports a default whenever the function is invoked, and the case of passing an argument to an invoked inline function with an eager default is rare. Behavior is unchanged.
+- **Refactor (behavior-preserving):** `utils/ast.ts` gains a private `childNodes` helper that both `walkDescendants` and `visitSelfAndDescendantsWhere` use, replacing `walkNodeFieldValue`. Each walker keeps its own root, predicate, and recursion, and the execution rules stay in `effect-context.ts`. `hasSpreadArgument` moved from `effect-composition.ts` to `utils/ast.ts` and now serves `hasEagerEffectAsValue` and `boundAtomEffectMember`; the overload tables and the `effectCounts === 'any'` short-circuit are unchanged. With all 42 active custom rules at `error`, the sorted t3code (7,077) and executor (3,445) diagnostics are identical before and after, by rule, file, position, and message. Every check in the list below passes: `test` has 980 tests in 27 files, and `fixture:replay` has 42 suites and 435 cases.
+- **Files touched outside the WI-05 key-file list:** `utils/ast.ts` and `utils/imports.ts` and their tests (`imports.test.ts` for the stack gate), `utils/effect-context.ts`, `utils/effect-ownership.ts`, and the new `rule-messages.test.ts`. All are helpers or tests for the listed rules. `scripts/checks/check-rule-inventory.ts` gains the retired-fixture register, as directed for the v3 gate removal.
+- **Checks (each run separately at the uncommitted WI-05 tree):**
+  - `durable:refs`, `effect-policy:check`, `build`, `versions:check`, `typecheck`, `check-release-workflow`, `changesets:check`: exit 0.
+  - `/bin/sh -c "pnpm run lint"`: exit 0, with 0 warnings and 0 errors. `vp fmt --check`: clean.
+  - `test`: exit 0, with 980 passing tests in 27 files.
+  - `SKIP_BUILD=true inventory:rules`: exit 0 (50 source rules represented, 23 linteffect rules implemented, 27 dropped).
+  - `SKIP_BUILD=true fixture:replay`: exit 0, with 42 suites and 435 cases.
+  - `SKIP_BUILD=true smoke:oxlint-packed-consumer`, `smoke:tsconfig-packed-consumer`, `pack:dry-run:no-build`: exit 0.
+  - `prose`: exit 0 after wording fixes in this section.
+  - `introspection:check`: exit 1 with the same `config.schema_violation` as the intake baseline.
+- **Commits:** none. The orchestrator commits.

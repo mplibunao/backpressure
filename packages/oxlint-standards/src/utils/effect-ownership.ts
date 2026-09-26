@@ -35,15 +35,13 @@ export const containsAnyBoundNamespaceCall = (
   return found;
 };
 
+// The `_tag` values of v4 Effect data types that each module also exposes through public
+// predicates and matchers. A v4 `Cause` has no tag of its own; its reasons are tagged.
 const effectDataModuleTags = new Map([
-  [
-    'Cause',
-    new Set(['Fail', 'Die', 'Interrupt', 'Sequential', 'Parallel', 'Then', 'Both', 'Empty']),
-  ],
-  ['Either', new Set(['Left', 'Right'])],
+  ['Cause', new Set(['Fail', 'Die', 'Interrupt'])],
   ['Exit', new Set(['Success', 'Failure'])],
   ['Option', new Set(['Some', 'None'])],
-  ['Result', new Set(['Success', 'Failure', 'Left', 'Right'])],
+  ['Result', new Set(['Success', 'Failure'])],
 ]);
 
 const importedEffectDataTags = (declaration: ESTree.ImportDeclaration): readonly string[] => {

@@ -5,19 +5,31 @@ repo_key: BP
 record_type: tech-debt
 number: 10
 title: "`no-effect-as` named barrel import policy"
-status: open
+status: done
 type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-06-10T00:00:00Z
-updated_at: 2026-06-10T00:00:00Z
+updated_at: 2026-09-26T03:09:08Z
 tags:
   - record/tech-debt
   - repo/backpressure
-  - status/open
+  - status/done
   - visibility/local-only
 source:
   discovered_at: 2026-06-10T00:00:00Z
+resolution:
+  disposition: done
+  resolved_at: 2026-09-26T03:09:08Z
+  rationale: The Effect v4 alignment dropped `no-effect-as` because `Effect.as` is idiomatic v4 code, so the named barrel import gap was deleted with the rule rather than fixed. No surviving rule inherits the policy question; `no-barrel-import` still rejects every value import from the `effect` barrel.
+  evidence_refs:
+    - kind: commit
+      ref: ec4f4f8
+      label: "refactor(oxlint-standards): drop 27 Effect rules replaced by tsgo or v4"
+      note: Deleted the standalone no-effect-as rule, its message module, and its RuleTester file; the manifest row is now dropped.
+    - kind: plan
+      ref: docs/exec-plans/active/effect-rules-v4-alignment-2026-09-25.md
+      label: Decided entry for no-effect-as (option B, pattern 7)
 ---
 `no-effect-as` named barrel import policy.
 
@@ -32,3 +44,5 @@ Kept as an active backpressure follow-up during the introspection migration disp
 ## Revisit trigger
 
 Revisit in backpressure when the original tracker condition above is ready to build.
+
+Resolved 2026-09-26: the rule was deleted in the Effect v4 alignment, so no trigger remains.

@@ -5,9 +5,10 @@ import {
   getStaticMemberCall,
   isIdentifierName,
   type NodeLike,
-  visitSelfAndDescendants,
+  visitSelfAndDescendantsWhere,
 } from './ast.js';
-import { isNamespaceImportReference } from './imports.js';
+import { runsWhenReached } from './effect-context.js';
+import { boundAtomEffectMember, isNamespaceImportReference } from './imports.js';
 
 export const isSideEffectCall = (
   context: Context,
@@ -31,12 +32,14 @@ export const isSideEffectCall = (
 
   return (
     call.objectName === 'console' ||
-    (call.propertyName === 'set' && isNamespaceImportReference(context, call.object, atomNames)) ||
+    boundAtomEffectMember(context, node, atomNames) === 'set' ||
     (call.propertyName.startsWith('log') &&
       isNamespaceImportReference(context, call.object, effectNames))
   );
 };
 
+// A side-effect call that runs when `node` is evaluated. A call inside a function value runs only
+// when that function is called, so it is not part of the evaluation.
 export const containsSideEffectCall = (
   context: Context,
   node: unknown,
@@ -44,7 +47,7 @@ export const containsSideEffectCall = (
   atomNames: ReadonlySet<string>,
 ): boolean => {
   let found = false;
-  visitSelfAndDescendants(node, (candidate) => {
+  visitSelfAndDescendantsWhere(node, runsWhenReached, (candidate) => {
     found = found || isSideEffectCall(context, candidate, effectNames, atomNames);
   });
   return found;

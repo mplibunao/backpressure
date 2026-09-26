@@ -1,13 +1,20 @@
 import type { Context, ESTree, Scope, Variable } from '@oxlint/plugins';
 
 import {
+  getNodeField,
   getStaticMemberCall,
   getStringLiteralValue,
+  hasSpreadArgument,
   isIdentifierName,
   isNodeLike,
   type IdentifierLike,
 } from './ast.js';
-import { isEffectStackModuleSource } from './effect-identifiers.js';
+import {
+  atomEffectArgumentCounts,
+  isEffectStackModuleSource,
+  reactivityBarrelSpecifiers,
+  type ReactivityModuleName,
+} from './effect-identifiers.js';
 
 const isRuntimeImportDeclaration = (declaration: ESTree.ImportDeclaration): boolean => {
   if (declaration.importKind === 'type') {
@@ -188,6 +195,20 @@ export const collectNamespaceImports = (
   return namespaceNames;
 };
 
+// Local names bound to a v4 reactivity module: a namespace import of its subpath, or the named
+// namespace export of a reactivity barrel. Any other namespace import of a barrel is the barrel.
+export const collectReactivityModuleNames = (
+  program: ESTree.Program,
+  moduleName: ReactivityModuleName,
+): Set<string> =>
+  new Set([
+    ...collectNamespaceImports(
+      program,
+      reactivityBarrelSpecifiers.map((barrel) => `${barrel}/${moduleName}`),
+    ),
+    ...collectNamedImportNames(program, reactivityBarrelSpecifiers, moduleName),
+  ]);
+
 export const hasImportFrom = (
   program: ESTree.Program,
   moduleSpecifiers: readonly string[],
@@ -243,5 +264,23 @@ export const boundNamespaceCallMember = (
   const call = getStaticMemberCall(node);
   return call !== null && isNamespaceImportReference(context, call.object, namespaceNames)
     ? call.propertyName
+    : null;
+};
+
+// The member of a bound v4 Atom call whose argument count selects the Effect-returning overload,
+// such as `Atom.set(atom, value)`. A spread call has an unknown count, and the curried
+// `Atom.set(value)` returns a function, so both give `null`.
+export const boundAtomEffectMember = (
+  context: Context,
+  node: unknown,
+  atomNames: ReadonlySet<string>,
+): string | null => {
+  const member = boundNamespaceCallMember(context, node, atomNames);
+  const args = isNodeLike(node) ? getNodeField(node, 'arguments') : null;
+  return member !== null &&
+    Array.isArray(args) &&
+    atomEffectArgumentCounts.get(member) === args.length &&
+    !hasSpreadArgument(args)
+    ? member
     : null;
 };

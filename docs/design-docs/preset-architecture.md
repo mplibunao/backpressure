@@ -34,7 +34,7 @@ stack-neutral). This doc applies that principle to the rest of the catalog.
 | Preset | Presumes | Holds | Notes |
 |---|---|---|---|
 | `effect` | Effect (gen-first) | Composition-shape + structural Effect rules | The core opinion, with carve-outs confined here. |
-| `effect-react` | Effect + `@effect-atom` in React | Atom/state/render rules (`no-react-state`, `no-render-side-effects`, `no-atom-registry-effect-sync`, `no-inline-runtime-provide`, `no-naked-object-state-update`, `no-family-collection-read`) | Effect's opinion extended into React. |
+| `effect-react` | Effect and its Atom modules in React | Atom/state/render rules (`no-react-state`, `no-render-side-effects`, `no-atom-registry-effect-sync`) | Effect's opinion extended into React. |
 | `general` | Nothing (stack-neutral) | Universal TS/JS hygiene (`no-double-cast`, `no-ts-nocheck`, `no-nested-ternary`, `prevent-dynamic-imports`) | Safe for any project, Effect or not. |
 | `boundaries` | Monorepo layout | Cross-package/layer import rules (`no-cross-package-relative-imports`) | Architecture rules that are not stack rules. |
 | `react` *(reserved)* | Nothing (general React) | Not created in v0. | Reserved name for future stack-neutral React rules such as rules-of-hooks. |
@@ -48,7 +48,7 @@ Some presets encode contradictory philosophies and must never be enabled togethe
 The docs state this explicitly so a consumer cannot assemble a self-contradictory
 rule set:
 
-- **`effect-react` owns the React state-hook ban** (`no-react-state` means "use `@effect-atom`").
+- **`effect-react` owns the React state-hook ban** (`no-react-state` means "use atoms").
   A future general **`react`** preset would *regulate* those same hooks
   such as exhaustive-deps. Enabling both means one rule forbids a hook the other
   polices. They target different audiences (atom-first vs hooks-first) by design.
@@ -72,7 +72,7 @@ Every rule is classified on one axis:
 - **`no-family-collection-read`** gates on `@effect-atom`. Safe in non-atom projects.
 - **`no-effect-as`, `no-effect-all-step-sequencing`** are distinctive-callee. Low risk.
 - **Two ungated/broad-firing rules** are the bite risks:
-  - **`no-react-state`** bans `useState`/`useReducer`/`useContext`/`useCallback`/`useEffect`/`useSyncExternalStore` on any file. Resolved: it belongs in **`effect-react`**, and the broad ungated ban is the intended shape for that preset.
+  - **`no-react-state`** bans `useState`/`useReducer`/`useContext`/`useCallback`/`useEffect`/`useSyncExternalStore` on any file. Resolved: it belongs in **`effect-react`**, and the broad ungated ban is the intended shape for that preset. PA-3 later narrowed it to five hooks.
   - **`prevent-dynamic-imports`** matches any `import()` with a generic "keep dependencies explicit" message. This is a **stack-neutral general-JS opinion, not Effect**. Resolved: it moves to **`general`**, where banning `import()` and code-splitting is a strong opt-in opinion the consumer chooses knowingly. It is not silently bundled with the Effect rules.
 
 ### Method (how this stays enforced)
@@ -88,7 +88,7 @@ a common construct (needs an import gate, or a stack-neutral preset)?*
 
 - **PA-1: Stack-coupling axis.** Presets group by presumed stack, not file type.
 - **PA-2: `effect-react` split.** Effect/atom-in-React rules ship in `effect-react`, not a generic `react`. The unqualified `react` name is reserved for future stack-neutral React rules. This decision happens before publish because preset names are public API; renaming after publish is breaking.
-- **PA-3: `no-react-state` stays a broad ban.** Kept ungated because it bans React state hooks wholesale, aligned with the React team's "You Might Not Need an Effect" direction and modern alternatives such as TanStack Query/Start, RSC, and dedicated state libs. It is an opinion of `effect-react`, not a general rule.
+- **PA-3: `no-react-state` bans five hooks and allows `useState`.** It bans `useEffect`, `useReducer`, `useContext`, `useCallback`, and `useSyncExternalStore`, in line with the React team's "You Might Not Need an Effect" direction. Atoms hold shared and server state, and atom-react's `ScopedAtom` replaces context: it subscribes per atom instead of re-rendering every context consumer. `useState` stays allowed for state local to one component, because per-instance state has no clean atom equivalent. The rule cannot tell whether a `useState` value is shared; the house-style instructions carry that limit. It stays ungated because it runs only where `effect-react` is enabled, and it is an opinion of `effect-react`, not a general rule. Amended 2026-09-26 from a six-hook ban by the [Effect v4 alignment](../exec-plans/active/effect-rules-v4-alignment-2026-09-25.md).
 - **PA-4: `prevent-dynamic-imports` moves to `general`.** Reclassified out of the Effect rule set; it is a stack-neutral general-JS opinion. Enabled by default in `general` as deliberate backpressure toward explicit imports; per-rule overridable by setting it to `off`. It bans ALL `import()`, not only perf-motivated lazy loading, so disable it when adopting code-splitting and measuring perf. CDP or Lighthouse can capture Web Vitals, but the app needs to run under a representative workload.
 - **PA-5: Mutually exclusive presets are documented.** Item 15's preset docs state which presets must not be enabled together, such as `effect-react` versus a future general `react`.
 

@@ -10,6 +10,7 @@ import {
   getStaticMemberCall,
   getStringLiteralValue,
   hasAncestor,
+  hasSpreadArgument,
   isIdentifierName,
   isNodeLike,
   isStringLiteral,
@@ -32,8 +33,15 @@ import {
   isNestedEffectPipeline,
   type EffectCompositionFacts,
 } from './utils/effect-composition.js';
-import { functionReturnNode, isFunctionLike, isInlineFunction } from './utils/effect-context.js';
-import { schemaCompilerMembers } from './utils/effect-identifiers.js';
+import {
+  functionReturnNode,
+  isEffectGeneratorBody,
+  isFunctionLike,
+  isInlineFunction,
+  nearestEnclosingFunction,
+  visitSynchronousBody,
+} from './utils/effect-context.js';
+import { schemaCodecFactoryMembers } from './utils/effect-identifiers.js';
 import {
   collectOwnershipFacts,
   containsAnyBoundNamespaceCall,
@@ -44,11 +52,14 @@ import {
 } from './utils/effect-ownership.js';
 import { ruleMessage } from './rule-messages.js';
 import {
+  boundAtomEffectMember,
   boundNamespaceCallMember,
   collectImportNames,
+  collectReactivityModuleNames,
   getImportSource,
   hasEffectStackImport,
   isNamespaceImportReference,
+  isUnshadowedGlobal,
 } from './utils/imports.js';
 import { containsSideEffectCall } from './utils/side-effects.js';
 
@@ -57,13 +68,27 @@ interface CatalogRuleDefinition {
   readonly rule: Rule;
 }
 
-const schemaCompilerMemberSet = new Set<string>(schemaCompilerMembers);
+const schemaCodecFactoryMemberSet = new Set(schemaCodecFactoryMembers);
 const primitiveTypes = new Set(['TSStringKeyword', 'TSNumberKeyword', 'TSBooleanKeyword']);
 const lastPathPartOffset = -1;
 const firstItemIndex = 0;
 const secondItemIndex = 1;
 const singleItemCount = 1;
-const escapeHatches = new Set(['die', 'dieMessage', 'orDie', 'orDieWith']);
+const pairItemCount = 2;
+const escapeHatches = new Set(['die', 'orDie']);
+const reactHookBans = new Set([
+  'useEffect',
+  'useReducer',
+  'useContext',
+  'useCallback',
+  'useSyncExternalStore',
+]);
+// `Effect.as` is dual(2): the value is the only argument data-last and the second data-first,
+// where the first argument is the source Effect.
+const effectAsValueIndexByArity = new Map([
+  [singleItemCount, firstItemIndex],
+  [pairItemCount, secondItemIndex],
+]);
 const nullishOperators = new Set(['!==', '!=', '===', '==']);
 const workspaceRootMarkers = new Set(['apps', 'examples', 'packages']);
 const anyOrUnknownCastTypes = new Set(['TSAnyKeyword', 'TSUnknownKeyword']);
@@ -176,43 +201,6 @@ const hasMatchOrElseNull = (
   return found;
 };
 
-const isStaticSchemaNode = (node: NodeLike): boolean | null => {
-  if (node.type === 'Identifier') {
-    const first = node.name.at(0) ?? null;
-    return first !== null && first.toUpperCase() === first;
-  }
-  if (node.type === 'MemberExpression') {
-    return true;
-  }
-  return null;
-};
-
-const isStaticSchemaReference = (
-  context: Context,
-  node: unknown,
-  schemaNames: ReadonlySet<string>,
-): boolean => {
-  if (!isNodeLike(node)) {
-    return false;
-  }
-  const shortCircuit = isStaticSchemaNode(node);
-  if (shortCircuit !== null) {
-    return shortCircuit;
-  }
-  const call = getStaticMemberCall(node);
-  if (call === null || !isNamespaceImportReference(context, call.object, schemaNames)) {
-    return false;
-  }
-  return call.propertyName === 'fromJsonString'
-    ? isStaticSchemaReference(context, firstArgument(node), schemaNames)
-    : true;
-};
-
-const isImmediatelyInvoked = (node: NodeLike): boolean => {
-  const parent = getNodeField(node, 'parent');
-  return isCallExpression(parent) && getNodeField(parent, 'callee') === node;
-};
-
 const isPrimitiveType = (node: unknown): boolean =>
   isNodeLike(node) && primitiveTypes.has(node.type);
 
@@ -306,11 +294,18 @@ const callArgumentAt = (node: NodeLike, index: number): unknown =>
 const isLiteralValue = (node: unknown, expected: unknown): boolean =>
   isNodeLike(node) && node.type === 'Literal' && getNodeField(node, 'value') === expected;
 
-const isNullishCoalesceToNullish = (node: unknown): boolean =>
-  isNodeLike(node) &&
-  node.type === 'LogicalExpression' &&
-  getNodeField(node, 'operator') === '??' &&
-  isNullishLiteral(getNodeField(node, 'right'));
+const isNullLiteral = (node: unknown): boolean =>
+  isLiteralValue(peelTransparentExpression(node), null);
+
+// The fallback of `value ?? fallback`, or null for any other expression.
+const nullishCoalesceFallback = (node: unknown): unknown => {
+  const expression = peelTransparentExpression(node);
+  return isNodeLike(expression) &&
+    expression.type === 'LogicalExpression' &&
+    getNodeField(expression, 'operator') === '??'
+    ? peelTransparentExpression(getNodeField(expression, 'right'))
+    : null;
+};
 
 const isInlineIifeCall = (node: NodeLike): boolean =>
   node.type === 'CallExpression' && isInlineFunction(getNodeField(node, 'callee'));
@@ -384,18 +379,23 @@ const containsInlineIife = (node: unknown): boolean => {
   return found;
 };
 
-const isOwnedBySideEffectWrapperRule = (
+// `Effect.as` evaluates its value argument when the Effect is built. A side-effect call there runs
+// once, early, and an Effect passed as the value never runs.
+const hasEagerEffectAsValue = (
   context: Context,
   node: NodeLike,
   effectNames: ReadonlySet<string>,
   atomNames: ReadonlySet<string>,
 ): boolean => {
-  const call = getStaticMemberCall(node);
+  const args = getCallExpressionArguments(node);
+  // A spread hides the real argument count, so the overload and its value slot are unknown.
+  const valueIndex = hasSpreadArgument(args)
+    ? globalThis.undefined
+    : effectAsValueIndexByArity.get(args.length);
   return (
-    call !== null &&
-    (call.propertyName === 'as' || call.propertyName === 'zipRight') &&
-    isNamespaceImportReference(context, call.object, effectNames) &&
-    containsSideEffectCall(context, firstArgument(node), effectNames, atomNames)
+    valueIndex !== globalThis.undefined &&
+    isBoundMemberCall(context, node, effectNames, 'as') &&
+    containsSideEffectCall(context, args[valueIndex], effectNames, atomNames)
   );
 };
 
@@ -582,7 +582,6 @@ const matchValuePipeHasRenderBranch = (
 
 interface ObjectPropertyBranchContext {
   readonly context: Context;
-  readonly eitherNames: ReadonlySet<string>;
   readonly matchNames: ReadonlySet<string>;
   readonly optionNames: ReadonlySet<string>;
 }
@@ -592,15 +591,12 @@ const containsObjectBranchExpression = (
   node: unknown,
   branchContext: ObjectPropertyBranchContext,
 ): boolean => {
-  const { eitherNames, matchNames, optionNames } = branchContext;
+  const { matchNames, optionNames } = branchContext;
   if (!isNodeLike(node)) {
     return false;
   }
 
   if (isAnyBoundMemberCall(context, node, optionNames, new Set(['match']))) {
-    return true;
-  }
-  if (isAnyBoundMemberCall(context, node, eitherNames, new Set(['match']))) {
     return true;
   }
 
@@ -1048,58 +1044,56 @@ const catalogRules: Record<string, Rule> = {
     create(context) {
       let atomNames = new Set<string>();
       let effectNames = new Set<string>();
-      const atomMethods = new Set(['get', 'set', 'update', 'modify', 'refresh']);
       return {
         Program(node: ESTree.Program) {
-          atomNames = namesFor(node, '@effect-atom/atom-react', 'Atom');
+          atomNames = collectReactivityModuleNames(node, 'Atom');
           effectNames = namesFor(node, 'effect/Effect', 'Effect');
         },
         CallExpression(node: NodeLike) {
-          if (!isBoundMemberCall(context, node, effectNames, 'sync')) {
+          const callback = firstArgument(node);
+          if (
+            !isBoundMemberCall(context, node, effectNames, 'sync') ||
+            !isInlineFunction(callback)
+          ) {
             return;
           }
-          const fn = firstArgument(node);
-          let found: NodeLike | null = null;
-          visitSelfAndDescendants(fn, (descendant) => {
-            const call = getStaticMemberCall(descendant);
-            if (
-              found === null &&
-              call !== null &&
-              atomMethods.has(call.propertyName) &&
-              (call.objectName === 'atomRegistry' ||
-                isNamespaceImportReference(context, call.object, atomNames))
-            ) {
-              found = descendant;
+          visitSynchronousBody(callback, (descendant) => {
+            const member = boundAtomEffectMember(context, descendant, atomNames);
+            if (member !== null) {
+              context.report({
+                message: message('no-atom-registry-effect-sync', { method: `Atom.${member}` }),
+                node: descendant,
+              });
             }
           });
-          if (found !== null) {
-            context.report({ message: message('no-atom-registry-effect-sync'), node: found });
-          }
         },
       };
     },
     meta: {
-      docs: { description: message('no-atom-registry-effect-sync'), recommended: 'error' },
+      docs: {
+        description: message('no-atom-registry-effect-sync', {
+          method: 'Atom.get, set, update, modify, or refresh',
+        }),
+        recommended: 'error',
+      },
       type: 'problem',
     },
   },
   'no-branch-in-object': {
     create(context) {
-      let eitherNames = new Set<string>();
       let matchNames = new Set<string>();
       let optionNames = new Set<string>();
       let program: ESTree.Program | null = null;
       return {
         Program(node: ESTree.Program) {
           program = node;
-          eitherNames = namesFor(node, 'effect/Either', 'Either');
           matchNames = namesFor(node, 'effect/Match', 'Match');
           optionNames = namesFor(node, 'effect/Option', 'Option');
         },
         Property(node: NodeLike) {
           if (
             simpleProgramGate(context, program) &&
-            hasObjectPropertyBranch(node, { context, eitherNames, matchNames, optionNames })
+            hasObjectPropertyBranch(node, { context, matchNames, optionNames })
           ) {
             context.report({ message: message('no-branch-in-object'), node });
           }
@@ -1109,7 +1103,6 @@ const catalogRules: Record<string, Rule> = {
             simpleProgramGate(context, program) &&
             isObjectReturningIifeWithBranchArgument(context, node, {
               context,
-              eitherNames,
               matchNames,
               optionNames,
             })
@@ -1138,7 +1131,7 @@ const catalogRules: Record<string, Rule> = {
           found =
             found ||
             isAnyBoundMemberCall(context, descendant, refNames, new Set(['set'])) ||
-            isAnyBoundMemberCall(context, descendant, atomNames, new Set(['set'])) ||
+            boundAtomEffectMember(context, descendant, atomNames) === 'set' ||
             isAnyBoundMemberCall(context, descendant, subscriptionRefNames, new Set(['set'])) ||
             isAnyBoundMemberCall(context, descendant, reactivityNames, new Set(['invalidate'])) ||
             isAnyBoundMemberCall(context, descendant, fiberNames, new Set(['interrupt'])) ||
@@ -1163,11 +1156,11 @@ const catalogRules: Record<string, Rule> = {
       };
       return {
         Program(node: ESTree.Program) {
-          atomNames = namesFor(node, '@effect-atom/atom-react', 'Atom');
+          atomNames = collectReactivityModuleNames(node, 'Atom');
           effectNames = namesFor(node, 'effect/Effect', 'Effect');
           fiberNames = namesFor(node, 'effect/Fiber', 'Fiber');
           refNames = namesFor(node, 'effect/Ref', 'Ref');
-          reactivityNames = namesFor(node, 'effect/Reactivity', 'Reactivity');
+          reactivityNames = collectReactivityModuleNames(node, 'Reactivity');
           subscriptionRefNames = namesFor(node, 'effect/SubscriptionRef', 'SubscriptionRef');
         },
         CallExpression(node: NodeLike) {
@@ -1328,11 +1321,11 @@ const catalogRules: Record<string, Rule> = {
       let effectNames = new Set<string>();
       return {
         Program(node: ESTree.Program) {
-          atomNames = collectImportNames(node, ['@effect-atom/atom-react'], 'Atom');
+          atomNames = collectReactivityModuleNames(node, 'Atom');
           effectNames = collectImportNames(node, ['effect/Effect', 'effect'], 'Effect');
         },
         CallExpression(node: NodeLike) {
-          if (isOwnedBySideEffectWrapperRule(context, node, effectNames, atomNames)) {
+          if (hasEagerEffectAsValue(context, node, effectNames, atomNames)) {
             context.report({ message: message('no-effect-side-effect-wrapper'), node });
           }
         },
@@ -1351,10 +1344,19 @@ const catalogRules: Record<string, Rule> = {
           optionNames = namesFor(node, 'effect/Option', 'Option');
         },
         CallExpression(node: NodeLike) {
-          if (
-            isBoundMemberCall(context, node, optionNames, 'fromNullable') &&
-            isNullishCoalesceToNullish(firstArgument(node))
-          ) {
+          const args = getCallExpressionArguments(node);
+          const fallback = nullishCoalesceFallback(args[firstItemIndex]);
+          // Each constructor pairs with one fallback: `?? null` adds nothing to fromNullishOr, and
+          // `?? undefined` makes fromUndefinedOr treat null as absent, which fromNullishOr states
+          // directly. The two pairs are not interchangeable.
+          const redundantFallback =
+            (isBoundMemberCall(context, node, optionNames, 'fromNullishOr') &&
+              isNullLiteral(fallback)) ||
+            (isBoundMemberCall(context, node, optionNames, 'fromUndefinedOr') &&
+              isIdentifierName(fallback) &&
+              fallback.name === 'undefined' &&
+              isUnshadowedGlobal(context, fallback));
+          if (args.length === singleItemCount && redundantFallback) {
             context.report({ message: message('no-fromnullable-nullish-coalesce'), node });
           }
         },
@@ -1479,19 +1481,11 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-react-state': {
     create(context) {
-      const hookNames = new Set([
-        'useState',
-        'useReducer',
-        'useContext',
-        'useCallback',
-        'useEffect',
-        'useSyncExternalStore',
-      ]);
       return {
         CallExpression(node: NodeLike) {
           const callee = getNodeField(node, 'callee');
           const name = isIdentifierName(callee) ? callee.name : memberPropertyName(callee);
-          if (name !== null && hookNames.has(name)) {
+          if (name !== null && reactHookBans.has(name)) {
             context.report({ message: message('no-react-state'), node });
           }
         },
@@ -1530,15 +1524,27 @@ const catalogRules: Record<string, Rule> = {
   },
   'no-return-null': {
     create(context) {
-      let program: ESTree.Program | null = null;
+      let effectNames = new Set<string>();
       return {
         Program(node: ESTree.Program) {
-          program = node;
+          effectNames = namesFor(node, 'effect/Effect', 'Effect');
         },
         ReturnStatement(node: NodeLike) {
+          const owner = nearestEnclosingFunction(node);
           if (
-            simpleProgramGate(context, program) &&
-            isLiteralValue(getNodeField(node, 'argument'), null)
+            isNullLiteral(getNodeField(node, 'argument')) &&
+            owner !== null &&
+            isEffectGeneratorBody(context, owner, effectNames)
+          ) {
+            context.report({ message: message('no-return-null'), node });
+          }
+        },
+        CallExpression(node: NodeLike) {
+          const args = getCallExpressionArguments(node);
+          if (
+            args.length === singleItemCount &&
+            isNullLiteral(args[firstItemIndex]) &&
+            isBoundMemberCall(context, node, effectNames, 'succeed')
           ) {
             context.report({ message: message('no-return-null'), node });
           }
@@ -1546,8 +1552,8 @@ const catalogRules: Record<string, Rule> = {
       };
     },
     meta: {
-      docs: { description: message('no-return-null'), recommended: 'error' },
-      type: 'problem',
+      docs: { description: message('no-return-null'), recommended: 'warn' },
+      type: 'suggestion',
     },
   },
   'no-try-catch': {
@@ -1575,14 +1581,15 @@ const catalogRules: Record<string, Rule> = {
         },
         CallExpression(node: NodeLike) {
           const call = getStaticMemberCall(node);
-          const [firstArg] = getCallExpressionArguments(node);
+          const [schema] = getCallExpressionArguments(node);
+          // The schema-construction call is the evidence. A hoisted identifier, member reference,
+          // or schema parameter reuses one schema, and the parser cache is keyed by its AST.
           if (
             call !== null &&
-            schemaCompilerMemberSet.has(call.propertyName) &&
+            schemaCodecFactoryMemberSet.has(call.propertyName) &&
             isNamespaceImportReference(context, call.object, schemaNames) &&
             hasAncestor(node, isFunctionLike) &&
-            isImmediatelyInvoked(node) &&
-            isStaticSchemaReference(context, firstArg, schemaNames)
+            isAnyBoundNamespaceMemberCall(context, peelTransparentExpression(schema), schemaNames)
           ) {
             context.report({
               message: message('no-inline-schema-compile'),
@@ -1593,8 +1600,8 @@ const catalogRules: Record<string, Rule> = {
       };
     },
     meta: {
-      docs: { description: message('no-inline-schema-compile'), recommended: 'error' },
-      type: 'problem',
+      docs: { description: message('no-inline-schema-compile'), recommended: 'warn' },
+      type: 'suggestion',
     },
   },
   'no-model-overlay-cast': {

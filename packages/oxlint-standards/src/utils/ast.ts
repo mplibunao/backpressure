@@ -136,37 +136,24 @@ export const hasAncestor = (
   return false;
 };
 
-// Handles one field value during AST traversal: visits and recurses into array items or single nodes.
-// Takes `recurse` as a parameter (rather than referencing walkDescendants directly) so that
-// the two helpers stay ordered without triggering no-use-before-define on a shared const binding.
-const walkNodeFieldValue = (
-  value: unknown,
-  visit: (node: NodeLike) => void,
-  recurse: (node: unknown, visit: (node: NodeLike) => void) => void,
-): void => {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (isNodeLike(item)) {
-        visit(item);
-      }
-      recurse(item, visit);
-    }
-    return;
-  }
-  if (isNodeLike(value)) {
-    visit(value);
-    recurse(value, visit);
-  }
-};
+export const hasSpreadArgument = (args: readonly unknown[]): boolean =>
+  args.some((argument) => isNodeLike(argument) && argument.type === 'SpreadElement');
+
+// A node's direct child nodes in field order. Array fields contribute their node items; nested
+// arrays and the parent, location, and range fields are not children.
+const childNodes = (node: NodeLike): NodeLike[] =>
+  Object.entries(node)
+    .filter(([key]) => !ignoredTraversalKeys.has(key))
+    .flatMap(([, value]: [string, unknown]) => (Array.isArray(value) ? value : [value]))
+    .filter(isNodeLike);
 
 export const walkDescendants = (node: unknown, visit: (node: NodeLike) => void): void => {
   if (!isNodeLike(node)) {
     return;
   }
-  for (const [key, value] of Object.entries(node)) {
-    if (!ignoredTraversalKeys.has(key)) {
-      walkNodeFieldValue(value, visit, walkDescendants);
-    }
+  for (const child of childNodes(node)) {
+    visit(child);
+    walkDescendants(child, visit);
   }
 };
 
@@ -177,4 +164,21 @@ export const visitSelfAndDescendants = (node: unknown, visit: (node: NodeLike) =
 
   visit(node);
   walkDescendants(node, visit);
+};
+
+// Like visitSelfAndDescendants, but a node for which `enter` is false is neither visited nor
+// descended into.
+export const visitSelfAndDescendantsWhere = (
+  node: unknown,
+  enter: (node: NodeLike) => boolean,
+  visit: (node: NodeLike) => void,
+): void => {
+  if (!isNodeLike(node) || !enter(node)) {
+    return;
+  }
+
+  visit(node);
+  for (const child of childNodes(node)) {
+    visitSelfAndDescendantsWhere(child, enter, visit);
+  }
 };

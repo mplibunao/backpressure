@@ -17,11 +17,16 @@ import {
   createTempDir,
   ensureFailure,
   ensureSuccess,
+  fail,
   printLine,
   removeTempDir,
   repoRoot,
 } from '../lib/script-runtime.ts';
-import { buildOxlintStandards, distPluginPath } from '../packages/oxlint-standards/package.ts';
+import {
+  buildOxlintStandards,
+  distPluginPath,
+  oxlintPackageName,
+} from '../packages/oxlint-standards/package.ts';
 import {
   type CommandResult,
   type RuleConfig,
@@ -63,6 +68,10 @@ const effectImportLine = "import * as Effect from 'effect/Effect';\n";
 const withEffect = (body: string): string => `${effectImportLine}${body}`;
 const effectAndPipeImportLines = `${effectImportLine}import { pipe } from 'effect/Function';\n`;
 const withEffectAndPipe = (body: string): string => `${effectAndPipeImportLines}${body}`;
+const withSchema = (body: string): string => `import * as Schema from 'effect/Schema';\n${body}`;
+const withOption = (body: string): string => `import * as Option from 'effect/Option';\n${body}`;
+const atomImportLines = `${effectImportLine}import { Atom } from 'effect/unstable/reactivity';\n`;
+const withAtom = (body: string): string => `${atomImportLines}${body}`;
 
 const linteffectFixtureRoot = join(repoRoot, 'test-fixtures', 'linteffect', 'tests', 'fixtures');
 
@@ -70,6 +79,8 @@ interface ReplayCaseOptions {
   readonly branchIds?: readonly string[];
   readonly expectedDiagnostics?: number;
   readonly expectedLine?: number;
+  // Placeholder values for a rule whose message names the reported call.
+  readonly messageData?: Readonly<Record<string, string>>;
   readonly sourceFileName?: string;
   // Called with the temp dir path before oxlint runs; use to seed package.json roots.
   readonly setupTempDir?: (tempDir: string) => void;
@@ -231,51 +242,159 @@ export const replaySuites = [
     invalid: [
       sourceCase('no-switch-statement', 'invalid-switch.ts'),
       sourceCase('no-switch-statement', 'invalid-switch-submodule-import.ts'),
-      sourceCase('no-switch-statement', 'invalid-switch-atom-react.ts'),
+      scenario(
+        'a v4 @effect/atom-react import alone makes the file an Effect file',
+        "import { useAtomValue } from '@effect/atom-react';\nexport const label = () => { switch (useAtomValue(statusAtom)) { case 'idle': return 'waiting'; default: return 'done'; } };\n",
+      ),
     ],
     valid: [
       sourceCase('no-switch-statement', 'valid-match-value.ts'),
       sourceCase('no-switch-statement', 'valid-switch-without-effect.ts'),
+      // Retained upstream fixture with a changed expectation: its only import is the v3
+      // @effect-atom/atom-react package. check-rule-inventory registers the exception.
+      sourceCase('no-switch-statement', 'invalid-switch-atom-react.ts'),
+      scenario(
+        'a type-only @effect/atom-react import does not activate the rule',
+        "import type { AtomValue } from '@effect/atom-react';\nswitch (state) { default: break; }\n",
+      ),
     ],
   }),
   suite({
     ruleName: 'no-effect-side-effect-wrapper',
     requiredBranchIds: [
-      'invalid.effect-as-side-effect',
-      'invalid.zip-right-log',
+      'invalid.data-first-value-slot',
+      'invalid.data-last-value-slot',
+      'invalid.effect-valued-value',
+      'invalid.v4-atom-set-value',
       'invalid.named-wrapper-not-exempt',
       'invalid.pipe-alias-not-exempt',
-      'valid.non-side-effect-first-arg',
+      'valid.pure-values',
+      'valid.data-first-source-slot',
+      'valid.function-value',
+      'valid.retired-v3-identities',
+      'valid.invoked-generator-deferred',
+      'valid.curried-atom-set',
+      'invalid.curried-atom-set-eager-argument',
+      'valid.spread-arguments',
+      'invalid.invoked-parameter-defaults',
+      'valid.uncalled-parameter-defaults',
+      'invalid.class-definition-time',
+      'valid.class-instance-fields',
     ],
     invalid: [
       scenario(
-        'source shape: Effect.as hides a setState side effect',
-        "import * as Effect from 'effect/Effect';\nEffect.as(setState(value), undefined);\n",
-        { branchIds: ['invalid.effect-as-side-effect'] },
+        'data-first Effect.as evaluates a console call in its value slot',
+        withEffect("Effect.as(program, console.log('x'));\n"),
+        { branchIds: ['invalid.data-first-value-slot'] },
       ),
       scenario(
-        'source shape: Effect.zipRight discards an Effect log result',
-        "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);\n",
-        { branchIds: ['invalid.zip-right-log'] },
+        'data-first Effect.as evaluates a setState call in its value slot',
+        withEffect('Effect.as(program, setState(value));\n'),
+        { branchIds: ['invalid.data-first-value-slot'] },
+      ),
+      scenario(
+        'data-last Effect.as in a pipe evaluates its only argument',
+        withEffect("program.pipe(Effect.as(console.log('x')));\n"),
+        { branchIds: ['invalid.data-last-value-slot'] },
+      ),
+      scenario(
+        'an Effect log passed as the value never runs',
+        withEffect("Effect.as(program, Effect.logInfo('x'));\n"),
+        { branchIds: ['invalid.effect-valued-value'] },
+      ),
+      scenario(
+        'a v4 Atom.set passed as the value never runs',
+        `${effectImportLine}import { Atom } from 'effect/unstable/reactivity';\nEffect.as(program, Atom.set(count, 1));\n`,
+        { branchIds: ['invalid.v4-atom-set-value'] },
+      ),
+      scenario(
+        'a later-v4 Atom.set passed data-last as the value never runs',
+        `${effectImportLine}import * as Atom from 'effect/reactivity/Atom';\nprogram.pipe(Effect.as(Atom.set(count, 1)));\n`,
+        { branchIds: ['invalid.v4-atom-set-value'] },
       ),
       scenario(
         'a named wrapper gets no exemption from the eager side effect',
-        "import * as Effect from 'effect/Effect';\nconst run = () => Effect.zipRight(Effect.logInfo('x'), next);\n",
+        withEffect("const run = () => Effect.as(program, console.log('x'));\n"),
         { branchIds: ['invalid.named-wrapper-not-exempt'] },
       ),
       scenario(
         'a pipe alias gets no exemption from the eager side effect',
-        "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.zipRight(Effect.logInfo('x'), next), Effect.map(f));\n",
+        withEffectAndPipe('const run = pipe(program, Effect.as(setState(value)));\n'),
         { branchIds: ['invalid.pipe-alias-not-exempt'] },
+      ),
+      scenario(
+        'a curried Atom.set still evaluates an eager argument, in both Effect.as arities',
+        withAtom(
+          "Effect.as(Effect.succeed(1), Atom.set(console.log('x')));\nprogram.pipe(Effect.as(Atom.set(console.log('y'))));\n",
+        ),
+        { branchIds: ['invalid.curried-atom-set-eager-argument'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'an invoked generator still evaluates its parameter defaults',
+        withEffect("Effect.as(Effect.succeed(1), (function* (v = console.log('now')) {})());\n"),
+        { branchIds: ['invalid.invoked-parameter-defaults'] },
+      ),
+      scenario(
+        'a static field, a static block, and a computed key run at class definition',
+        withEffect(
+          "Effect.as(program, class { static value = console.log('a'); });\nEffect.as(program, class { static { console.log('b'); } });\nEffect.as(program, class { [console.log('c')] = 1; });\n",
+        ),
+        { branchIds: ['invalid.class-definition-time'], expectedDiagnostics: 3 },
       ),
     ],
     valid: [
       scenario(
-        'allows value replacement without side effect first arg',
-        "import * as Effect from 'effect/Effect';\nEffect.as(program, value);\n",
-        {
-          branchIds: ['valid.non-side-effect-first-arg'],
-        },
+        'pure values and an unclassified call are not side effects',
+        `${effectImportLine}import * as Option from 'effect/Option';\nEffect.as(program, value);\nEffect.as(program, { id: 1 });\nprogram.pipe(Effect.as(Option.some(1)));\nEffect.as(program, makeValue());\n`,
+        { branchIds: ['valid.pure-values'] },
+      ),
+      scenario(
+        'the first data-first argument is the source Effect',
+        withEffect(
+          "Effect.as(Effect.logInfo('x'), value);\nEffect.as(setState(value), undefined);\n",
+        ),
+        { branchIds: ['valid.data-first-source-slot'] },
+      ),
+      scenario(
+        'a function value runs only when called',
+        withEffect("Effect.as(program, () => console.log('x'));\n"),
+        { branchIds: ['valid.function-value'] },
+      ),
+      scenario(
+        'an invoked generator only creates an iterator, in both Effect.as arities',
+        withEffect(
+          "Effect.as(Effect.succeed(1), (function* () { console.log('later'); })());\nprogram.pipe(Effect.as((function* () { console.log('later'); })()));\n",
+        ),
+        { branchIds: ['valid.invoked-generator-deferred'] },
+      ),
+      scenario(
+        'a spread argument leaves the Effect.as overload unknown',
+        withEffect(
+          "Effect.as(...([Effect.logInfo('source'), 42] as const));\nprogram.pipe(Effect.as(...[console.log('x')]));\n",
+        ),
+        { branchIds: ['valid.spread-arguments'] },
+      ),
+      scenario(
+        'the defaults of a function that is never called do not run',
+        withEffect("Effect.as(program, (v = console.log('later')) => v);\n"),
+        { branchIds: ['valid.uncalled-parameter-defaults'] },
+      ),
+      scenario(
+        'an instance field initializer waits for instantiation',
+        withEffect("Effect.as(Effect.succeed(1), class { value = console.log('later'); });\n"),
+        { branchIds: ['valid.class-instance-fields'] },
+      ),
+      scenario(
+        'the curried Atom.set returns a function, in both Effect.as arities',
+        withAtom(
+          'Effect.as(Effect.succeed(1), Atom.set(1));\nprogram.pipe(Effect.as(Atom.set(1)));\n',
+        ),
+        { branchIds: ['valid.curried-atom-set'] },
+      ),
+      scenario(
+        'the v3 zipRight and atom-react Atom are retired identities',
+        `${effectImportLine}import { Atom } from '@effect-atom/atom-react';\nEffect.zipRight(Effect.logInfo('x'), next);\nEffect.as(program, Atom.set(count, 1));\n`,
+        { branchIds: ['valid.retired-v3-identities'] },
       ),
     ],
   }),
@@ -366,69 +485,105 @@ export const replaySuites = [
   suite({
     ruleName: 'no-inline-schema-compile',
     requiredBranchIds: [
-      'invalid.static-identifier-schema',
-      'invalid.static-member-schema',
-      'invalid.static-from-json-string',
-      'invalid.static-optional-call',
-      'invalid.static-transform-call',
-      'invalid.static-from-json-string-recursive-call',
-      'valid.dynamic-factory-call',
-      'valid.dynamic-from-json-string',
+      'invalid.inline-struct-applied',
+      'invalid.inline-from-json-string',
+      'invalid.returned-decoder-factory',
+      'invalid.assigned-decoder-factory',
+      'invalid.inline-encoder',
+      'invalid.v4-result-decoder',
+      'invalid.barrel-and-alias-bindings',
+      'valid.hoisted-schema-reference',
+      'valid.schema-parameter',
+      'valid.module-scope-construction',
+      'valid.opaque-factory-call',
+      'valid.predicates-and-transformations',
+      'valid.local-schema-not-tracked',
     ],
     invalid: [
       scenario(
-        't3code scenario: compile decoder inside function and immediately apply it',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(User)(raw);\n",
-        { branchIds: ['invalid.static-identifier-schema'] },
+        'an inline Struct passed to a decoder that is applied at once',
+        withSchema(
+          'const parseUser = (input) => Schema.decodeUnknownEffect(Schema.Struct({ name: Schema.String }))(input);\n',
+        ),
+        { branchIds: ['invalid.inline-struct-applied'] },
       ),
       scenario(
-        'reference scenario: static member schema input is still static',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(models.User)(raw);\n",
-        { branchIds: ['invalid.static-member-schema'] },
+        't3code scenario: an inline fromJsonString wrapper is a new schema per call',
+        withSchema('const parse = (raw) => Schema.decodeSync(Schema.fromJsonString(User))(raw);\n'),
+        { branchIds: ['invalid.inline-from-json-string'] },
       ),
       scenario(
-        't3code scenario: nested static Schema.fromJsonString compiler input',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(Schema.fromJsonString(User))(raw);\n",
-        { branchIds: ['invalid.static-from-json-string'] },
+        'a returned decoder factory with an inline schema',
+        withSchema(
+          'const makeParser = () => Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.String }));\n',
+        ),
+        { branchIds: ['invalid.returned-decoder-factory'] },
       ),
       scenario(
-        't3code scenario: any nested Schema.* call is static schema input',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(Schema.optional(User))(raw);\n",
-        { branchIds: ['invalid.static-optional-call'] },
+        'a decoder assigned before application still rebuilds its schema',
+        withSchema(
+          'function parse(raw) { const decode = Schema.decodeUnknownSync(Schema.Array(Schema.String)); return decode(raw); }\n',
+        ),
+        { branchIds: ['invalid.assigned-decoder-factory'] },
       ),
       scenario(
-        't3code scenario: Schema.transform static call is static schema input',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(Schema.transform(User, f))(raw);\n",
-        { branchIds: ['invalid.static-transform-call'] },
+        'an encoder with an inline schema',
+        withSchema(
+          'const write = (user) => Schema.encodeSync(Schema.Struct({ id: Schema.String }))(user);\n',
+        ),
+        { branchIds: ['invalid.inline-encoder'] },
       ),
       scenario(
-        't3code scenario: Schema.fromJsonString recurses into nested static Schema call',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(Schema.fromJsonString(Schema.optional(User)))(raw);\n",
-        { branchIds: ['invalid.static-from-json-string-recursive-call'] },
+        'the v4 Result decoder factory',
+        withSchema(
+          'const check = (raw) => Schema.decodeUnknownResult(Schema.Struct({ id: Schema.String }))(raw);\n',
+        ),
+        { branchIds: ['invalid.v4-result-decoder'] },
+      ),
+      scenario(
+        'barrel and aliased Schema bindings',
+        "import { Schema } from 'effect';\nimport * as S from 'effect/Schema';\nconst a = (raw) => Schema.decodeSync(Schema.Struct({}))(raw);\nconst b = (raw) => S.decodeSync(S.Struct({}))(raw);\n",
+        { branchIds: ['invalid.barrel-and-alias-bindings'], expectedDiagnostics: 2 },
       ),
     ],
     valid: [
       scenario(
-        't3code scenario: module-scope compiler reused by parser',
-        "import * as Schema from 'effect/Schema';\nconst parse = Schema.decodeSync(User);\n",
+        'decoding a hoisted schema or a member reference inline reuses one schema',
+        withSchema(
+          'const User = Schema.Struct({ name: Schema.String });\nconst parseUser = (input) => Schema.decodeUnknownEffect(User)(input);\nconst parseModel = (input) => Schema.decodeUnknownEffect(models.User)(input);\n',
+        ),
+        { branchIds: ['valid.hoisted-schema-reference'] },
       ),
       scenario(
-        'reference scenario: dynamic schema helper compiles caller-provided schema',
-        "import * as Schema from 'effect/Schema';\nconst parseWith = (schema, raw) => Schema.decodeUnknownEffect(schema)(raw);\n",
+        'reference scenario: a caller-provided schema',
+        withSchema(
+          'const parseWith = (schema, raw) => Schema.decodeUnknownEffect(schema)(raw);\nconst makeDecoder = (schema) => Schema.decodeUnknownEffect(schema);\n',
+        ),
+        { branchIds: ['valid.schema-parameter'] },
       ),
       scenario(
-        'reference scenario: dynamic schema factory returns reusable compiler',
-        "import * as Schema from 'effect/Schema';\nconst makeDecoder = (schema) => Schema.decodeUnknownEffect(schema);\n",
+        't3code scenario: module-scope construction runs once',
+        withSchema('const decodeUser = Schema.decodeSync(Schema.Struct({ id: Schema.String }));\n'),
+        { branchIds: ['valid.module-scope-construction'] },
       ),
       scenario(
-        'reference scenario: dynamic factory call is not a static schema input',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeUnknownEffect(makeSchema())(raw);\n",
-        { branchIds: ['valid.dynamic-factory-call'] },
+        'an opaque factory call is not a recognized Schema constructor',
+        withSchema('const parse = (raw) => Schema.decodeUnknownEffect(makeSchema())(raw);\n'),
+        { branchIds: ['valid.opaque-factory-call'] },
       ),
       scenario(
-        'reference scenario: Schema.fromJsonString dynamic factory stays dynamic',
-        "import * as Schema from 'effect/Schema';\nconst parse = () => Schema.decodeSync(Schema.fromJsonString(makeSchema()))(raw);\n",
-        { branchIds: ['valid.dynamic-from-json-string'] },
+        'predicates and transformation constructors are outside this policy',
+        withSchema(
+          'const isUser = (value) => Schema.is(Schema.Struct({}))(value);\nconst assertUser = (value) => Schema.asserts(Schema.Struct({}))(value);\nconst toNumber = () => Schema.String.pipe(Schema.decodeTo(Schema.Number));\n',
+        ),
+        { branchIds: ['valid.predicates-and-transformations'] },
+      ),
+      scenario(
+        'a schema first assigned to a local is not tracked',
+        withSchema(
+          'const parse = (raw) => { const Local = Schema.Struct({}); return Schema.decodeSync(Local)(raw); };\n',
+        ),
+        { branchIds: ['valid.local-schema-not-tracked'] },
       ),
     ],
   }),
@@ -509,33 +664,71 @@ export const replaySuites = [
     ruleName: 'no-effect-escape-hatch',
     requiredBranchIds: [
       'invalid.escape-hatch',
+      'invalid.die',
+      'invalid.member-reference',
+      'invalid.named-wrappers',
       'invalid.pipe-alias-not-exempt',
+      'valid.typed-recovery',
+      'valid.local-lookalike',
+      'valid.removed-v3-names',
+      'valid.justified-inline-disable',
       'valid.test-file-carveout',
     ],
     invalid: [
       scenario(
         'executor scenario: Effect.orDie escape hatch',
-        "import * as Effect from 'effect/Effect';\nEffect.orDie(program);\n",
-        { branchIds: ['invalid.escape-hatch'] },
+        withEffect('Effect.orDie(program);\n'),
+        {
+          branchIds: ['invalid.escape-hatch'],
+        },
+      ),
+      scenario('Effect.die turns a reason into a defect', withEffect('Effect.die(reason);\n'), {
+        branchIds: ['invalid.die'],
+      }),
+      scenario(
+        'a piped member reference reports without a call',
+        withEffect('program.pipe(Effect.orDie);\n'),
+        { branchIds: ['invalid.member-reference'] },
+      ),
+      scenario(
+        'const arrow and function wrappers get no exemption',
+        withEffect(
+          'const boom = () => Effect.orDie(program);\nfunction crash() { return Effect.orDie(program); }\n',
+        ),
+        { branchIds: ['invalid.named-wrappers'], expectedDiagnostics: 2 },
       ),
       scenario(
         'a pipe alias gets no exemption from the escape-hatch ban',
-        "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.orDie(program), Effect.map(f));\n",
+        withEffectAndPipe('const run = pipe(program, Effect.orDie);\n'),
         { branchIds: ['invalid.pipe-alias-not-exempt'] },
       ),
     ],
     valid: [
       scenario(
-        'allows ordinary Effect error handling',
-        "import * as Effect from 'effect/Effect';\nEffect.catch(program, handler);\n",
+        'allows typed failure and recovery',
+        withEffect('Effect.catch(program, handler);\nEffect.fail(new DomainError());\n'),
+        { branchIds: ['valid.typed-recovery'] },
       ),
       scenario(
         'leaves local escape-hatch-shaped helper alone',
         'const Effect = { orDie: (value) => value };\nEffect.orDie(program);\n',
+        { branchIds: ['valid.local-lookalike'] },
+      ),
+      scenario(
+        'the v3-only dieMessage and orDieWith belong to the outdated-API check',
+        withEffect("Effect.dieMessage('fatal');\nEffect.orDieWith(program, mapError);\n"),
+        { branchIds: ['valid.removed-v3-names'] },
+      ),
+      scenario(
+        'a justified inline disable marks an unrecoverable entry failure',
+        withEffect(
+          '// oxlint-disable-next-line @mplibunao/oxlint-standards/no-effect-escape-hatch -- the app cannot start without its config\nconst config = Effect.orDie(loadConfig);\n',
+        ),
+        { branchIds: ['valid.justified-inline-disable'] },
       ),
       scenario(
         'reference carve-out: test files may use escape hatches',
-        "import * as Effect from 'effect/Effect';\nEffect.orDie(program);\n",
+        withEffect('Effect.orDie(program);\n'),
         {
           branchIds: ['valid.test-file-carveout'],
           sourceFileName: 'src/program.test.ts',
@@ -1178,8 +1371,12 @@ export const replaySuites = [
       'invalid.pipe-as-void',
       'invalid.effect-log-step',
       'invalid.pipe-alias-not-exempt',
+      'invalid.v4-atom-set-step',
+      'invalid.v4-reactivity-invalidate-step',
       'valid.console-not-source-step',
       'valid.set-state-not-source-step',
+      'valid.retired-v3-modules',
+      'valid.curried-atom-set-step',
     ],
     invalid: [
       scenario(
@@ -1210,6 +1407,26 @@ export const replaySuites = [
           branchIds: ['invalid.pipe-alias-not-exempt'],
         },
       ),
+      scenario(
+        'a v4 Atom.set step from the pinned reactivity barrel',
+        withAtom('Effect.all([Atom.set(atom, value)], { concurrency: 1 });\n'),
+        { branchIds: ['invalid.v4-atom-set-step'] },
+      ),
+      scenario(
+        'a v4 Atom.set step from the later reactivity subpath',
+        `${effectImportLine}import * as Atom from 'effect/reactivity/Atom';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });\n`,
+        { branchIds: ['invalid.v4-atom-set-step'] },
+      ),
+      scenario(
+        'a v4 Reactivity.invalidate step',
+        `${effectImportLine}import * as Reactivity from 'effect/unstable/reactivity/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });\n`,
+        { branchIds: ['invalid.v4-reactivity-invalidate-step'] },
+      ),
+      scenario(
+        'a v4 Reactivity.invalidate step from the later reactivity barrel',
+        `${effectImportLine}import { Reactivity } from 'effect/reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });\n`,
+        { branchIds: ['invalid.v4-reactivity-invalidate-step'] },
+      ),
     ],
     valid: [
       scenario(
@@ -1225,6 +1442,16 @@ export const replaySuites = [
         {
           branchIds: ['valid.set-state-not-source-step'],
         },
+      ),
+      scenario(
+        'the v3 atom-react and effect/Reactivity modules no longer identify steps',
+        `${effectImportLine}import { Atom } from '@effect-atom/atom-react';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Atom.set(atom, value), Reactivity.invalidate(signal)], { concurrency: 1 });\n`,
+        { branchIds: ['valid.retired-v3-modules'] },
+      ),
+      scenario(
+        'the curried Atom.set returns a function, not a state-changing step',
+        withAtom('Effect.all([Effect.succeed(Atom.set(1))], { concurrency: 1 });\n'),
+        { branchIds: ['valid.curried-atom-set-step'] },
       ),
     ],
   }),
@@ -1726,11 +1953,13 @@ export const replaySuites = [
     requiredBranchIds: [
       'invalid.option-some-tag',
       'invalid.barrel-option-some-tag',
-      'invalid.result-left-tag',
-      'invalid.barrel-result-right-tag',
+      'invalid.result-success-tag',
+      'invalid.barrel-result-failure-tag',
+      'invalid.cause-reason-tags',
       'valid.bare-effect-import',
       'valid.option-import-success-tag',
       'valid.exit-import-some-tag',
+      'valid.v3-representations',
     ],
     invalid: [
       scenario(
@@ -1748,18 +1977,19 @@ export const replaySuites = [
         },
       ),
       scenario(
-        'executor branch: Result import reports Left tag',
-        "import * as Result from 'effect/Result';\nif (result._tag === 'Left') use(result);\n",
-        {
-          branchIds: ['invalid.result-left-tag'],
-        },
+        'executor branch: Result import reports the v4 Success tag',
+        "import * as Result from 'effect/Result';\nif (result._tag === 'Success') use(result);\n",
+        { branchIds: ['invalid.result-success-tag'] },
       ),
       scenario(
-        'executor branch: barrel Result import reports Right tag',
-        "import { Result } from 'effect';\nif (result._tag === 'Right') use(result);\n",
-        {
-          branchIds: ['invalid.barrel-result-right-tag'],
-        },
+        'executor branch: barrel Result import reports the v4 Failure tag',
+        "import { Result } from 'effect';\nif (result._tag === 'Failure') use(result);\n",
+        { branchIds: ['invalid.barrel-result-failure-tag'] },
+      ),
+      scenario(
+        'Cause import reports each v4 reason tag',
+        "import * as Cause from 'effect/Cause';\nif (reason._tag === 'Fail') f();\nif (reason._tag === 'Die') f();\nif (reason._tag === 'Interrupt') f();\n",
+        { branchIds: ['invalid.cause-reason-tags'], expectedDiagnostics: 3 },
       ),
     ],
     valid: [
@@ -1783,6 +2013,11 @@ export const replaySuites = [
         {
           branchIds: ['valid.exit-import-some-tag'],
         },
+      ),
+      scenario(
+        'v3 Cause combinator, Either, and Result Left tags are not v4 representations',
+        "import * as Cause from 'effect/Cause';\nimport * as Either from 'effect/Either';\nimport * as Result from 'effect/Result';\nif (cause._tag === 'Sequential') f();\nif (either._tag === 'Left') f();\nif (result._tag === 'Right') f();\n",
+        { branchIds: ['valid.v3-representations'] },
       ),
     ],
   }),
@@ -2258,14 +2493,13 @@ export const replaySuites = [
 
       'invalid.direct-option-match',
       'invalid.direct-match-value-pipe',
-      'invalid.direct-either-match',
       'invalid.iife-object-return-match-arg',
       'invalid.iife-object-return-option-arg',
-      'invalid.iife-object-return-either-arg',
+      'invalid.function-iife-object-return-option-arg',
       'invalid.iife-object-return-wrapped-branch-arg',
       'valid.wrapped-match-value-property',
       'valid.wrapped-option-match-property',
-      'valid.wrapped-either-match-property',
+      'valid.v3-either-match',
       'valid.property-value-iife',
     ],
     invalid: [
@@ -2280,11 +2514,6 @@ export const replaySuites = [
         { branchIds: ['invalid.direct-match-value-pipe'] },
       ),
       scenario(
-        'source branch: direct Either.match property value',
-        "import * as Either from 'effect/Either';\nconst value = { ready: Either.match(input, { onRight: () => true, onLeft: () => false }) };\n",
-        { branchIds: ['invalid.direct-either-match'] },
-      ),
-      scenario(
         'source branch: expression-bodied IIFE returns object and arg contains Match.value pipe',
         "import * as Match from 'effect/Match';\nconst value = ((branch) => ({ ready: branch }))(Match.value(input).pipe(Match.when('a', () => true)));\n",
         { branchIds: ['invalid.iife-object-return-match-arg'] },
@@ -2295,9 +2524,9 @@ export const replaySuites = [
         { branchIds: ['invalid.iife-object-return-option-arg'] },
       ),
       scenario(
-        'source branch: block-bodied function IIFE returns object and arg contains Either.match',
-        "import * as Either from 'effect/Either';\nconst value = (function (branch) { return { ready: branch }; })(Either.match(input, { onRight: () => true, onLeft: () => false }));\n",
-        { branchIds: ['invalid.iife-object-return-either-arg'] },
+        'source branch: block-bodied function IIFE returns object and arg contains Option.match',
+        "import * as Option from 'effect/Option';\nconst value = (function (branch) { return { ready: branch }; })(Option.match(input, { onSome: () => true, onNone: () => false }));\n",
+        { branchIds: ['invalid.function-iife-object-return-option-arg'] },
       ),
       scenario(
         'Ownership regression: object-returning IIFE with branch wrapped in helper call is source-covered via descendant scan',
@@ -2326,11 +2555,9 @@ export const replaySuites = [
         },
       ),
       scenario(
-        'source parity: wrapped Either.match property value is not a direct branch value',
-        "import * as Either from 'effect/Either';\nconst value = { ready: decorate(Either.match(input, { onRight: () => true, onLeft: () => false })) };\n",
-        {
-          branchIds: ['valid.wrapped-either-match-property'],
-        },
+        'v4 has no Either module, so the v3 Either.match branch is gone',
+        "import * as Either from 'effect/Either';\nconst value = { ready: Either.match(input, { onRight: () => true, onLeft: () => false }) };\n",
+        { branchIds: ['valid.v3-either-match'] },
       ),
       scenario(
         'source parity: property-value IIFE is not the object-returning IIFE branch',
@@ -2384,6 +2611,10 @@ export const replaySuites = [
           branchIds: ['no-json-parse.invalid-reference'],
         },
       ),
+      scenario(
+        'a v4 @effect/atom-react import alone activates the rule',
+        "import { useAtomValue } from '@effect/atom-react';\nJSON.parse(payload);\n",
+      ),
     ],
     valid: [],
   }),
@@ -2423,6 +2654,358 @@ export const replaySuites = [
     ],
     valid: [],
   }),
+  suite({
+    ruleName: 'no-atom-registry-effect-sync',
+    message: ruleMessage('no-atom-registry-effect-sync', { method: 'Atom.set' }),
+    requiredBranchIds: [
+      'no-atom-registry-effect-sync.invalid-reference',
+      'no-atom-registry-effect-sync.valid-reference',
+      'invalid.expression-callback',
+      'invalid.block-callback',
+      'invalid.each-effect-member',
+      'invalid.one-diagnostic-per-call',
+      'invalid.invoked-inline-function',
+      'invalid.v4-module-bindings',
+      'valid.yielded-atom-effect',
+      'valid.direct-effect-value',
+      'valid.registry-instance-calls',
+      'valid.own-execution-boundaries',
+      'valid.data-last-returns-function',
+      'valid.unbound-or-retired-atom',
+      'valid.generator-bodies-deferred',
+      'invalid.callback-parameter-defaults',
+      'invalid.static-field-atom-call',
+      'valid.deferred-class-and-default-code',
+    ],
+    invalid: [
+      scenario(
+        'Atom.set wrapped in an expression-bodied Effect.sync',
+        withAtom('Effect.sync(() => Atom.set(count, 1));\n'),
+        {
+          branchIds: [
+            'invalid.expression-callback',
+            'no-atom-registry-effect-sync.invalid-reference',
+          ],
+        },
+      ),
+      scenario(
+        'Atom.refresh in a block-bodied Effect.sync',
+        withAtom('Effect.sync(() => { Atom.refresh(count); });\n'),
+        { branchIds: ['invalid.block-callback'], messageData: { method: 'Atom.refresh' } },
+      ),
+      scenario(
+        'Atom.get names the actual method',
+        withAtom('Effect.sync(() => Atom.get(count));\n'),
+        { branchIds: ['invalid.each-effect-member'], messageData: { method: 'Atom.get' } },
+      ),
+      scenario(
+        'Atom.update names the actual method',
+        withAtom('Effect.sync(() => Atom.update(count, (n) => n + 1));\n'),
+        { branchIds: ['invalid.each-effect-member'], messageData: { method: 'Atom.update' } },
+      ),
+      scenario(
+        'Atom.modify names the actual method',
+        withAtom('Effect.sync(() => Atom.modify(count, (n) => [n, n + 1]));\n'),
+        { branchIds: ['invalid.each-effect-member'], messageData: { method: 'Atom.modify' } },
+      ),
+      scenario(
+        'each offending call reports once',
+        withAtom('Effect.sync(() => { Atom.set(a, 1); Atom.set(b, 2); });\n'),
+        { branchIds: ['invalid.one-diagnostic-per-call'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'an inline function invoked on the spot runs inside the callback',
+        withAtom('Effect.sync(() => (() => Atom.set(count, 1))());\n'),
+        { branchIds: ['invalid.invoked-inline-function'] },
+      ),
+      scenario(
+        'a namespace alias of the pinned Atom subpath',
+        `${effectImportLine}import * as A from 'effect/unstable/reactivity/Atom';\nEffect.sync(() => A.set(count, 1));\n`,
+        { branchIds: ['invalid.v4-module-bindings'] },
+      ),
+      scenario(
+        'the later-v4 reactivity barrel',
+        `${effectImportLine}import { Atom } from 'effect/reactivity';\nEffect.sync(() => Atom.set(count, 1));\n`,
+        { branchIds: ['invalid.v4-module-bindings'] },
+      ),
+      scenario(
+        'Effect.sync evaluates its callback parameter defaults, even for a generator',
+        withAtom(
+          'Effect.sync((v = Atom.set(count, 1)) => v);\nEffect.sync(function* (v = Atom.set(count, 2)) {});\n',
+        ),
+        { branchIds: ['invalid.callback-parameter-defaults'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'a static field initializer runs when the class is defined',
+        withAtom('Effect.sync(() => class { static value = Atom.set(count, 1); });\n'),
+        { branchIds: ['invalid.static-field-atom-call'] },
+      ),
+    ],
+    valid: [
+      scenario(
+        'yielding the Atom Effect from a generator',
+        withAtom('Effect.gen(function* () { yield* Atom.set(count, 1); });\n'),
+        { branchIds: ['valid.yielded-atom-effect'] },
+      ),
+      scenario('an Atom Effect used as a value', withAtom('const write = Atom.set(count, 1);\n'), {
+        branchIds: ['valid.direct-effect-value', 'no-atom-registry-effect-sync.valid-reference'],
+      }),
+      scenario(
+        'registry instance calls are synchronous in v4',
+        withAtom(
+          'Effect.sync(() => registry.set(count, 1));\nEffect.sync(() => atomRegistry.set(count, 1));\n',
+        ),
+        { branchIds: ['valid.registry-instance-calls'] },
+      ),
+      scenario(
+        'a nested generator and a declared function are their own boundaries',
+        withAtom(
+          'Effect.sync(() => Effect.gen(function* () { yield* Atom.set(count, 1); }));\nEffect.sync(() => { const later = () => Atom.set(count, 1); return later; });\n',
+        ),
+        { branchIds: ['valid.own-execution-boundaries'] },
+      ),
+      scenario(
+        'the data-last Atom.set returns a function, not an Effect',
+        withAtom('Effect.sync(() => Atom.set(1));\n'),
+        { branchIds: ['valid.data-last-returns-function'] },
+      ),
+      scenario(
+        'a generator callback or an invoked generator runs no Atom call',
+        withAtom(
+          'Effect.sync(function* () { Atom.set(count, 1); });\nEffect.sync(() => (function* () { Atom.set(count, 1); })());\n',
+        ),
+        { branchIds: ['valid.generator-bodies-deferred'] },
+      ),
+      scenario(
+        'an instance field and the defaults of an uncalled function do not run',
+        withAtom(
+          'Effect.sync(() => class { value = Atom.set(count, 1); });\nEffect.sync(() => { const later = (v = Atom.set(count, 1)) => v; return later; });\n',
+        ),
+        { branchIds: ['valid.deferred-class-and-default-code'] },
+      ),
+      scenario(
+        'shadowed, local, and v3 atom-react Atom objects',
+        `${effectImportLine}import { Atom as V3Atom } from '@effect-atom/atom-react';\nconst Local = { set: (a, v) => v };\nconst run = (Atom) => Effect.sync(() => Atom.set(count, 1));\nEffect.sync(() => Local.set(count, 1));\nEffect.sync(() => V3Atom.set(count, 1));\n`,
+        { branchIds: ['valid.unbound-or-retired-atom'] },
+      ),
+    ],
+  }),
+  suite({
+    ruleName: 'no-fromnullable-nullish-coalesce',
+    requiredBranchIds: [
+      'no-fromnullable-nullish-coalesce.invalid-reference',
+      'no-fromnullable-nullish-coalesce.valid-reference',
+      'invalid.from-nullish-or-null-fallback',
+      'invalid.from-undefined-or-undefined-fallback',
+      'invalid.alias-and-barrel-bindings',
+      'valid.plain-constructors',
+      'valid.other-fallbacks',
+      'valid.unpaired-fallbacks',
+      'valid.shadowed-undefined',
+      'valid.removed-v3-name',
+    ],
+    invalid: [
+      scenario(
+        't3code scenario: ?? null inside fromNullishOr',
+        withOption('Option.fromNullishOr(value ?? null);\n'),
+        {
+          branchIds: [
+            'invalid.from-nullish-or-null-fallback',
+            'no-fromnullable-nullish-coalesce.invalid-reference',
+          ],
+        },
+      ),
+      scenario(
+        '?? undefined inside fromUndefinedOr',
+        withOption('Option.fromUndefinedOr(value ?? undefined);\n'),
+        { branchIds: ['invalid.from-undefined-or-undefined-fallback'] },
+      ),
+      scenario(
+        'namespace alias and barrel Option bindings',
+        "import * as O from 'effect/Option';\nimport { Option } from 'effect';\nO.fromNullishOr(value ?? null);\nOption.fromUndefinedOr(value ?? undefined);\n",
+        { branchIds: ['invalid.alias-and-barrel-bindings'], expectedDiagnostics: 2 },
+      ),
+    ],
+    valid: [
+      scenario(
+        'the plain constructors',
+        withOption('Option.fromNullishOr(value);\nOption.fromUndefinedOr(value);\n'),
+        {
+          branchIds: [
+            'valid.plain-constructors',
+            'no-fromnullable-nullish-coalesce.valid-reference',
+          ],
+        },
+      ),
+      scenario(
+        'a real fallback or a different operator',
+        withOption(
+          'Option.fromUndefinedOr(value ?? fallback);\nOption.fromNullishOr(value || null);\n',
+        ),
+        { branchIds: ['valid.other-fallbacks'] },
+      ),
+      scenario(
+        'the two constructor and fallback pairs are not merged',
+        withOption(
+          'Option.fromNullishOr(value ?? undefined);\nOption.fromUndefinedOr(value ?? null);\n',
+        ),
+        { branchIds: ['valid.unpaired-fallbacks'] },
+      ),
+      scenario(
+        'a shadowed undefined is not the global value',
+        withOption('const read = (undefined) => Option.fromUndefinedOr(value ?? undefined);\n'),
+        { branchIds: ['valid.shadowed-undefined'] },
+      ),
+      scenario(
+        'the removed v3 fromNullable belongs to the outdated-API check',
+        withOption('Option.fromNullable(value ?? null);\n'),
+        { branchIds: ['valid.removed-v3-name'] },
+      ),
+    ],
+  }),
+  suite({
+    ruleName: 'no-react-state',
+    requiredBranchIds: [
+      'no-react-state.invalid-reference',
+      'no-react-state.valid-reference',
+      'invalid.bare-banned-hooks',
+      'invalid.member-banned-hooks',
+      'valid.use-state',
+      'valid.atom-hooks',
+    ],
+    invalid: [
+      scenario(
+        'bare calls of the banned hooks',
+        'useEffect(() => {}, []);\nuseContext(ThemeContext);\nuseSyncExternalStore(subscribe, getSnapshot);\n',
+        {
+          branchIds: ['invalid.bare-banned-hooks', 'no-react-state.invalid-reference'],
+          expectedDiagnostics: 3,
+        },
+      ),
+      scenario(
+        'member calls of the banned hooks',
+        'React.useReducer(reducer, initial);\nReact.useCallback(() => {}, []);\nReact.useEffect(() => {}, []);\n',
+        { branchIds: ['invalid.member-banned-hooks'], expectedDiagnostics: 3 },
+      ),
+    ],
+    valid: [
+      scenario(
+        'useState stays allowed for component-local state',
+        `${effectImportLine}const [value] = useState(0);\nconst [open] = React.useState(false);\n`,
+        { branchIds: ['valid.use-state', 'no-react-state.valid-reference'] },
+      ),
+      scenario(
+        'atom-react hooks',
+        "import { useAtom } from '@effect/atom-react';\nconst [count] = useAtom(countAtom);\n",
+        { branchIds: ['valid.atom-hooks'] },
+      ),
+    ],
+  }),
+  suite({
+    ruleName: 'no-return-null',
+    requiredBranchIds: [
+      'no-return-null.invalid-reference',
+      'no-return-null.valid-reference',
+      'invalid.effect-gen-return',
+      'invalid.effect-gen-options-return',
+      'invalid.effect-fn-named-return',
+      'invalid.effect-fn-direct-return',
+      'invalid.span-name-bindings',
+      'invalid.succeed-null',
+      'valid.react-component',
+      'valid.nullable-boundary-helper',
+      'valid.nested-helper-boundary',
+      'valid.option-results',
+      'valid.other-generators',
+      'valid.traced-function-bindings',
+      'valid.unknown-fn-argument',
+      'valid.unbound-effect',
+    ],
+    invalid: [
+      scenario(
+        'return null in an Effect.gen generator',
+        withEffect('Effect.gen(function* () { if (missing) { return null; } return 1; });\n'),
+        { branchIds: ['invalid.effect-gen-return', 'no-return-null.invalid-reference'] },
+      ),
+      scenario(
+        'return null in the options form of Effect.gen',
+        withEffect('Effect.gen({ self: service }, function* () { return null; });\n'),
+        { branchIds: ['invalid.effect-gen-options-return'] },
+      ),
+      scenario(
+        'return null in a named Effect.fn generator with pipeables',
+        withEffect("Effect.fn('load')(function* () { return null; }, Effect.orElseSucceed(f));\n"),
+        { branchIds: ['invalid.effect-fn-named-return'] },
+      ),
+      scenario(
+        'return null in a direct Effect.fn generator',
+        withEffect('const load = Effect.fn(function* () { return null; });\n'),
+        { branchIds: ['invalid.effect-fn-direct-return'] },
+      ),
+      scenario(
+        'a string constant and a template are provable span names',
+        withEffect(
+          "const span = 'load';\nEffect.fn(span)(function* () { return null; });\nEffect.fn(`save`)(function* () { return null; });\n",
+        ),
+        { branchIds: ['invalid.span-name-bindings'], expectedDiagnostics: 2 },
+      ),
+      scenario(
+        'Effect.succeed(null) anywhere',
+        withEffect('const load = () => Effect.succeed(null);\n'),
+        { branchIds: ['invalid.succeed-null'] },
+      ),
+    ],
+    valid: [
+      scenario(
+        't3code scenario: a React component returning null in an Effect file',
+        withEffect('export const View = () => { return null; };\n'),
+        { branchIds: ['valid.react-component', 'no-return-null.valid-reference'] },
+      ),
+      scenario(
+        'executor scenario: a nullable boundary helper',
+        withEffect('function find(): User | null { return null; }\n'),
+        { branchIds: ['valid.nullable-boundary-helper'] },
+      ),
+      scenario(
+        'a nested ordinary helper is its own function boundary',
+        withEffect(
+          'Effect.gen(function* () { const pick = () => { return null; }; return pick(); });\n',
+        ),
+        { branchIds: ['valid.nested-helper-boundary'] },
+      ),
+      scenario(
+        'Option results and a non-null success value',
+        `${effectImportLine}import * as Option from 'effect/Option';\nEffect.gen(function* () { return Option.none(); });\nconst none = Effect.succeedNone;\nEffect.succeed(value);\nEffect.gen(function* () { return undefined; });\n`,
+        { branchIds: ['valid.option-results'] },
+      ),
+      scenario(
+        'arbitrary generators and fnUntraced are outside the settled scope',
+        withEffect(
+          'function* values() { return null; }\nEffect.fnUntraced(function* () { return null; });\n',
+        ),
+        { branchIds: ['valid.other-generators'] },
+      ),
+      scenario(
+        'a traced function called with a generator is not the Effect.fn factory',
+        withEffect(
+          'const body = function* () { return 1; };\nEffect.fn(body)(function* () { return null; });\nfunction* traced() { return 1; }\nEffect.fn(traced)(function* () { return null; });\n',
+        ),
+        { branchIds: ['valid.traced-function-bindings'] },
+      ),
+      scenario(
+        'an unresolved or reassignable first argument leaves the Effect.fn overload unknown',
+        withEffect(
+          "import { spanName } from './names';\nexport const make = (name) => Effect.fn(name)(function* () { return null; });\nEffect.fn(spanName)(function* () { return null; });\nlet span = 'load';\nEffect.fn(span)(function* () { return null; });\n",
+        ),
+        { branchIds: ['valid.unknown-fn-argument'] },
+      ),
+      scenario(
+        'a local Effect lookalike',
+        'const Effect = { gen: (f) => f, succeed: (v) => v };\nEffect.gen(function* () { return null; });\nEffect.succeed(null);\n',
+        { branchIds: ['valid.unbound-effect'] },
+      ),
+    ],
+  }),
   ...(
     [
       [
@@ -2431,19 +3014,9 @@ export const replaySuites = [
         'const value = ((x) => ((y) => y)(x))(input);\n',
       ],
       [
-        'no-atom-registry-effect-sync',
-        "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.sync(() => Atom.get(atom));\n",
-        "import { Atom } from '@effect-atom/atom-react';\nAtom.get(atom);\n",
-      ],
-      [
         'no-effect-bind',
         "import * as Effect from 'effect/Effect';\nEffect.bind('user', loadUser);\n",
         "import * as Effect from 'effect/Effect';\nEffect.map(program, f);\n",
-      ],
-      [
-        'no-fromnullable-nullish-coalesce',
-        "import * as Option from 'effect/Option';\nOption.fromNullable(value ?? null);\n",
-        "import * as Option from 'effect/Option';\nOption.fromNullable(value);\n",
       ],
       [
         'no-iife-wrapper',
@@ -2459,12 +3032,6 @@ export const replaySuites = [
         'no-option-boolean-normalization',
         "import * as Option from 'effect/Option';\nOption.match(input, { onSome: (value) => value === true, onNone: () => false });\n",
         "import * as Option from 'effect/Option';\nOption.match(input, { onSome: () => flag === true, onNone: () => false });\n",
-      ],
-      ['no-react-state', 'const [value] = useState(0);\n', 'const [value] = useAtom(atom);\n'],
-      [
-        'no-return-null',
-        "import * as Effect from 'effect/Effect';\nfunction value() { return null; }\n",
-        'function value() { return null; }\n',
       ],
       [
         'no-try-catch',
@@ -2497,7 +3064,13 @@ const assertExpectedFailure = (
   fixtureCase: ReplayCase,
 ): void => {
   ensureFailure(result, fixtureCase.name);
-  assertDiagnostic(result, { ...replaySuite.diagnostic, label: fixtureCase.name });
+  assertDiagnostic(result, {
+    ...replaySuite.diagnostic,
+    ...(fixtureCase.messageData === globalThis.undefined
+      ? {}
+      : { message: ruleMessage(replaySuite.diagnostic.ruleName, fixtureCase.messageData) }),
+    label: fixtureCase.name,
+  });
   assertDiagnosticCount(result, {
     count: fixtureCase.expectedDiagnostics ?? 1,
     label: fixtureCase.name,
@@ -2662,8 +3235,7 @@ const overlapLadderOwnershipCases = (): readonly PresetOwnershipCase[] => [
     label: 'preset duplicate-intent ownership: side-effect wrapper in a named wrapper',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-effect-side-effect-wrapper',
-    source:
-      'import * as Effect from \'effect/Effect\';\nconst run = () => Effect.zipRight(Effect.logInfo("x"), next);\n',
+    source: withEffect("const run = () => Effect.as(program, console.log('x'));\n"),
     sourceFileName: 'side-effect-named-wrapper.ts',
   },
   {
@@ -2706,11 +3278,11 @@ const overlapLadderOwnershipCases = (): readonly PresetOwnershipCase[] => [
     sourceFileName: 'expr-flatmap-flatmap.ts',
   },
   {
-    label: 'preset duplicate-intent ownership: zipRight side-effect wrapper',
+    label: 'preset duplicate-intent ownership: eager value over an Effect-call source',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-effect-side-effect-wrapper',
-    source: withEffect("Effect.zipRight(Effect.logInfo('x'), next);\n"),
-    sourceFileName: 'zipright-side-effect.ts',
+    source: withEffect("Effect.as(Effect.succeed(1), console.log('x'));\n"),
+    sourceFileName: 'as-eager-value-effect-source.ts',
   },
 ];
 
@@ -2747,15 +3319,14 @@ const overlapSideEffectOwnershipCases = (): readonly PresetOwnershipCase[] => [
     label: 'preset duplicate-intent ownership: Effect.as side-effect wrapper',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-effect-side-effect-wrapper',
-    source: withEffect('Effect.as(setState(value), undefined);\n'),
+    source: withEffect('Effect.as(program, setState(value));\n'),
     sourceFileName: 'side-effect-as.ts',
   },
   {
     label: 'preset duplicate-intent ownership: Effect.as Atom.set side-effect wrapper',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-effect-side-effect-wrapper',
-    source:
-      "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.as(Atom.set(atom, value), undefined);\n",
+    source: `${effectImportLine}import { Atom } from 'effect/unstable/reactivity';\nEffect.as(program, Atom.set(atom, value));\n`,
     sourceFileName: 'atom-side-effect-as.ts',
   },
   {
@@ -2821,13 +3392,13 @@ const overlapPipeAliasNestedCases = (): readonly PresetOwnershipCase[] => [
     sourceFileName: 'pipe-alias-map-succeed.ts',
   },
   {
-    label: 'preset duplicate-intent ownership: pipe-alias Effect.zipRight side-effect',
+    label: 'preset duplicate-intent ownership: pipe-alias data-last Effect.as side effect',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-effect-side-effect-wrapper',
     source: withEffectAndPipe(
-      "const run = pipe(Effect.zipRight(Effect.logInfo('x'), next), Effect.map(f));\n",
+      "const run = pipe(program, Effect.as(console.log('x')), Effect.map(f));\n",
     ),
-    sourceFileName: 'pipe-alias-zipright.ts',
+    sourceFileName: 'pipe-alias-as-side-effect.ts',
   },
   {
     label: 'preset duplicate-intent ownership: pipe-alias Effect.all step-sequencing',
@@ -2864,15 +3435,12 @@ const overlapConstFormCases = (): readonly PresetOwnershipCase[] => [
     ),
     sourceFileName: 'const-orelse-deep-first-arg.ts',
   },
-  // Ownership regression: side-effect-wrapper owns this const form; no-effect-ladder must not double-report.
   {
-    label: 'preset duplicate-intent ownership: const side-effect-wrapper zipRight',
+    label: 'preset duplicate-intent ownership: const Effect.as with an eager value',
     nonOwners: ['no-effect-ladder'],
     owner: 'no-effect-side-effect-wrapper',
-    source: withEffect(
-      "const program = Effect.zipRight(Effect.map(Effect.logInfo('x'), f), next);\n",
-    ),
-    sourceFileName: 'const-side-effect-zipright.ts',
+    source: withEffect("const replaced = Effect.as(program, console.log('x'));\n"),
+    sourceFileName: 'const-as-eager-value.ts',
   },
   {
     label: 'preset duplicate-intent ownership: second-arg deep nesting',
@@ -2892,14 +3460,12 @@ const overlapConstFormCases = (): readonly PresetOwnershipCase[] => [
     ),
     sourceFileName: 'bind-deep-arg-const.ts',
   },
-  // Ownership regression: Atom.set is a side-effect; no-effect-side-effect-wrapper owns this, not no-effect-call-in-effect-arg.
   {
-    label: 'preset duplicate-intent ownership: Atom.set side-effect zipRight',
+    label: 'preset duplicate-intent ownership: data-last Effect.as with a v4 Atom.set value',
     nonOwners: ['no-effect-call-in-effect-arg'],
     owner: 'no-effect-side-effect-wrapper',
-    source:
-      "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.zipRight(Atom.set(atom, value), Effect.succeed(next));\n",
-    sourceFileName: 'atom-set-zipright.ts',
+    source: `${effectImportLine}import * as Atom from 'effect/reactivity/Atom';\nprogram.pipe(Effect.as(Atom.set(atom, value)));\n`,
+    sourceFileName: 'atom-set-data-last-as.ts',
   },
   {
     label: 'preset duplicate-intent ownership: string failure beside an escape hatch',
@@ -2964,6 +3530,19 @@ const decidedAllowedEffectShapes = [
   ],
   ['failing with an error value', 'Effect.fail(error);'],
   ['chained Effect pipes', 'work.pipe(Effect.map(f)).pipe(Effect.catch(g));'],
+  ['React component returning null', 'export const View = () => { return null; };'],
+  ['nullable boundary helper', 'function find(): User | null { return null; }'],
+  ['component-local useState', 'const [open] = useState(false);'],
+  [
+    'decoding a hoisted schema inline',
+    "import * as Schema from 'effect/Schema';\nconst User = Schema.Struct({});\nconst parse = (raw) => Schema.decodeUnknownEffect(User)(raw);",
+  ],
+  ['registry instance call inside Effect.sync', 'Effect.sync(() => registry.set(count, 1));'],
+  [
+    'plain fromNullishOr',
+    "import * as Option from 'effect/Option';\nconst maybe = Option.fromNullishOr(value);",
+  ],
+  ['Effect.as over a logging source', "Effect.as(Effect.logInfo('x'), value);"],
 ] as const;
 
 const runDecidedAllowedShapesReplay = (): void => {
@@ -2978,7 +3557,12 @@ const runDecidedAllowedShapesReplay = (): void => {
         source: `import * as Effect from 'effect/Effect';\n${body}\n`,
         sourceFileName: 'allowed-shape.ts',
       });
-      ensureSuccess(result, `decided-allowed Effect shape: ${label}\n${commandOutput(result)}`);
+      const output = commandOutput(result);
+      ensureSuccess(result, `decided-allowed Effect shape: ${label}\n${output}`);
+      // A warning keeps the exit code at 0, so also require that no plugin rule reported.
+      if (output.includes(`${oxlintPackageName}(`)) {
+        fail(`decided-allowed Effect shape reported a diagnostic: ${label}\n${output}`);
+      }
     }
   } finally {
     removeTempDir(tempDir);
@@ -2994,7 +3578,7 @@ const runComposedPresetDuplicateIntentReplay = (): void => {
       pluginSpecifier: distPluginPath,
       rules: effectAndEffectReactPresetRuleConfig(),
       source:
-        "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nJSON.parse(payload);\n",
+        "import * as Effect from 'effect/Effect';\nimport { useAtomValue } from '@effect/atom-react';\nJSON.parse(payload);\n",
       sourceFileName: 'composed-json-parse.ts',
     });
     const composedLabel = 'composed preset duplicate-intent ownership: JSON.parse';
@@ -3009,7 +3593,7 @@ const runComposedPresetDuplicateIntentReplay = (): void => {
       cwd: tempDir,
       pluginSpecifier: distPluginPath,
       rules: effectReactPresetRuleConfig(),
-      source: "import { Atom } from '@effect-atom/atom-react';\nJSON.parse(payload);\n",
+      source: "import { useAtomValue } from '@effect/atom-react';\nJSON.parse(payload);\n",
       sourceFileName: 'effect-react-json-parse.ts',
     });
     ensureSuccess(
@@ -3041,7 +3625,31 @@ const runPresetDuplicateIntentReplay = (): void => {
   }
 };
 
+// A React component whose only Effect-stack import is the v4 Atom binding gets the full
+// import-gated Effect preset, not just the effect-react rules.
+const runAtomBindingGateReplay = (): void => {
+  const tempDir = createTempDir('backpressure-atom-binding-gate-');
+  const label = 'Effect preset gating: React file importing only @effect/atom-react';
+  try {
+    const result = runOxlintOnSource({
+      cwd: tempDir,
+      pluginSpecifier: distPluginPath,
+      rules: effectPresetRuleConfig(),
+      source:
+        "import { useAtomValue } from '@effect/atom-react';\nexport const Status = () => {\n  const status = useAtomValue(statusAtom);\n  const parsed = JSON.parse(status);\n  switch (parsed.kind) {\n    default:\n      return null;\n  }\n};\n",
+      sourceFileName: 'Status.tsx',
+    });
+    ensureFailure(result, label);
+    for (const ruleName of ['no-json-parse', 'no-switch-statement']) {
+      assertDiagnosticCount(result, { count: 1, label, ruleName });
+    }
+  } finally {
+    removeTempDir(tempDir);
+  }
+};
+
 const runAllPresetReplays = (): void => {
+  runAtomBindingGateReplay();
   runPresetDuplicateIntentReplay();
   runPresetNestedDuplicateIntentReplay();
   runPresetOverlapDuplicateIntentReplay();
