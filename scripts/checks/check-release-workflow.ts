@@ -291,6 +291,24 @@ const assertChangesetsActionEnv = (changesetsStep: Record<string, unknown>): voi
     record: changesetsEnv,
     value: 'true',
   });
+  assertParsedFieldValue({
+    key: 'GIT_CONFIG_COUNT',
+    label: 'jobs.release changesets/action step env',
+    record: changesetsEnv,
+    value: '1',
+  });
+  assertParsedFieldValue({
+    key: 'GIT_CONFIG_KEY_0',
+    label: 'jobs.release changesets/action step env',
+    record: changesetsEnv,
+    value: 'core.hooksPath',
+  });
+  assertParsedFieldValue({
+    key: 'GIT_CONFIG_VALUE_0',
+    label: 'jobs.release changesets/action step env',
+    record: changesetsEnv,
+    value: '/dev/null',
+  });
 };
 
 const assertOnlyReleaseJob = (jobs: Record<string, unknown>): void => {
