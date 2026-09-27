@@ -2,7 +2,7 @@
 
 Status: decisions complete and design-reviewed (2026-09-25); implemented. Review: `docs/reviews/effect-rules-v4-alignment-review-2026-09-25.md`, findings F1 to F14 absorbed below. The branch is `lint/oxlint-standards-consolidation`, so these changes would land in the unreleased 0.2.0.
 
-Note, 2026-09-27: the introspection exit plan (`docs/exec-plans/active/introspection-exit-2026-09-27.md`) replaces this record's introspection blocker and its keep-introspection instruction. Acceptance item G2 is closed as accepted by MP; see the build plan's ledger (`effect-rules-v4-implementation-progress-ledger.md`).
+Note, 2026-09-27: the introspection exit plan (`docs/exec-plans/completed/introspection-exit-2026-09-27.md`) replaces this record's introspection blocker and its keep-introspection instruction. Acceptance item G2 is closed as accepted by MP; see the build plan's ledger (`effect-rules-v4-implementation-progress-ledger.md`).
 
 ## Goal
 
@@ -394,4 +394,4 @@ Each of these now has a tech-debt record, written by hand on 2026-09-26 because 
 5. Update the agent house-style instructions with every decision agents must follow that the references do not already teach.
 6. Record the 0.2.0 breaking change in the changeset.
 
-Note, 2026-09-27: resolved by the introspection exit plan (`docs/exec-plans/active/introspection-exit-2026-09-27.md`), which removes introspection from backpressure and verifies a standalone frozen install plus a complete `pnpm check` in a fresh clone with no introspection sibling.
+Note, 2026-09-27: resolved by the introspection exit plan (`docs/exec-plans/completed/introspection-exit-2026-09-27.md`), which removes introspection from backpressure and verifies a standalone frozen install plus a complete `pnpm check` in a fresh clone with no introspection sibling.

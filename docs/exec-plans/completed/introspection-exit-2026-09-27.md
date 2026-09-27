@@ -1,6 +1,8 @@
 # Introspection exit and backpressure release: Plan
 
-Status: planned; no step has started. Decision date: 2026-09-27. Owner: MP.
+Status: completed (2026-09-27). Decision date: 2026-09-27. Owner: MP.
+
+Completion: backpressure published both packages at 0.2.0 from `849f748ab9bfe8d6cd310eed6a5dab1f725d07ee`; both registry artifacts and fresh consumers passed verification. Its `main` has active ruleset 17493549, requiring a PR and the `Check` context. The introspection repository is archived with eight verified backup refs. The June 20 stash was pushed as scrubbed copy `36f574bdb2b0bb7c546264d2424dc6b2a499d1d0`; the original remains local-only because it contained three unrelated employer documents. The taste-distillery wiki branch is backed up at `217b103e46124e0cfc8d36aabed7d307c4dc6ef9`; its pre-existing prose-gate failure in `docs/references/harness-engineering.md` remains a prerequisite before that branch merges. npm's `next` dist-tag remains at 0.1.0 for both backpressure packages.
 
 ## Goal
 
@@ -41,7 +43,7 @@ The removal is a targeted cutover, not a tooling replacement:
 
 "Remove introspection" means removing live execution dependencies and instructions. It does not mean rewriting git history or erasing accurate historical references.
 
-## Current state
+## Starting state (2026-09-27)
 
 ### backpressure: dependency and validation flow
 
@@ -85,7 +87,7 @@ The release architecture (ADR-006, `release.yml`, `release-contract.ts`, `check-
 Other facts that shape the release:
 - **Don't run `pnpm release:prepare` on the feature branch.** `assertNoPendingChangesets()` rejects the two pending changesets by design, so release preparation only makes sense on the Version Packages revision.
 - **Pending changesets:** `.changeset/oxlint-standards-rule-consolidation.md` and `tsconfig-effect-integration.md`, both minor bumps. Both packages are at `0.1.0`, the only version on npm, so `0.2.0` is expected. Read the actual versions from the Version Packages PR.
-- **No classic branch protection:** `gh api .../branches/main/protection` returns 404 with the message `Branch not protected`. Rulesets are a separate API and weren't checked; step 1 checks them. Either way, the plan treats passing named checks as a hard gate before every merge.
+- **Branch protection:** classic protection returns 404. Ruleset 17493549 is active on `main` and requires a PR plus the `Check` context. The plan also requires `Effect integration` to pass before the release-related PR merges.
 - **Where `GITHUB_TOKEN` stands:** a PR opened by `GITHUB_TOKEN` doesn't trigger workflows the normal way. Current GitHub docs also describe approval-required runs for such events. The procedure inspects the actual PR instead: checks on the intended head are the evidence, whatever the trigger mechanics.
 - **Effect-plan acceptance item G2:** MP closed it as accepted on 2026-09-27 (see Decisions). Executor typed coverage is 1,355 of 1,922 files, because executor's own tsconfigs are invalid (TS5096/TS5069, also under TS 6.0.2). Removing introspection doesn't change that.
 - **Consumers with a release-age window:** both packages declare `@effect/tsgo` `0.46.1` as an exact optional peer. A consumer with a seven-day `minimumReleaseAge` needs exact-version `minimumReleaseAgeExclude` entries until each package's timestamp passes the window (tsgo 0.46.1 was published 2026-09-26T13:14Z). The README "Supported versions" section documents this. The newly published backpressure packages fall under the same window in such consumers.
@@ -237,7 +239,7 @@ introspection's remote backup refs, pushed alongside its two original branch nam
 | `substrate-june-29` | `4fba989` | `backup/introspection-exit-2026-09-27/stash-substrate-june-29-4fba989` |
 | `substrate-june-25` | `d99e4f1` | `backup/introspection-exit-2026-09-27/stash-substrate-june-25-d99e4f1` |
 | `substrate-june-21` | `09e8a2e` | `backup/introspection-exit-2026-09-27/stash-substrate-june-21-09e8a2e` |
-| `substrate-june-20` | `58a5dd6` | `backup/introspection-exit-2026-09-27/stash-substrate-june-20-58a5dd6` |
+| `substrate-june-20` | `36f574bdb2b0bb7c546264d2424dc6b2a499d1d0` (scrubbed copy; original `58a5dd67e228e5572982da0598b0899a02a3d5a3` stays local-only) | `backup/introspection-exit-2026-09-27/stash-substrate-june-20-scrubbed-36f574b` |
 | `substrate-effect-june-19` | `807e865` | `backup/introspection-exit-2026-09-27/stash-substrate-effect-june-19-807e865` |
 | `introspection-release-stash` | `1ccee7f` | `backup/introspection-exit-2026-09-27/stash-introspection-release-stash-1ccee7f` |
 
@@ -295,6 +297,65 @@ Append one row per action. Keep raw inventories that could hold secrets out of t
 
 | Step | Repo | Source OID | Destination / ref | Command and working directory | Exit | UTC time | Evidence / PR / run | Authorization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1-2 | Four repos | backpressure `66bfada11529153de02c01f3e2d66a1a743df003`; taste `6a1953ed51bf4f002b410d1d1c43e3be41688bd3`, `b073b621cc1e30b2024291479cdfb64899f04727` | Local taste backup refs for both original tips | Preflight, GNO discovery, source-ref inventory, npm baseline, and non-overwriting taste anchors | 0 | 2026-09-27T04:12-04:28Z | taste card and source-of-truth markdown matched the repo; backpressure ruleset 17493549 active; taste protection APIs returned 403; both backpressure packages were 0.1.0; both local backpressure introspection branches were ancestors of the consolidation tip. | Plan authorization |
+| 3 | backpressure | `66bfada11529153de02c01f3e2d66a1a743df003` | `77ad57f40ecc57c122bdad51fd874fac94af862c` | Remove introspection, fix standalone check-chain assumptions, and verify from a fresh clone without an introspection sibling | 0 | 2026-09-27T04:26-05:19Z | Frozen install, complete `pnpm check` (2,632 tests), both Effect routes, prose, durable refs, and locality mutation probes passed. Two earlier clone checks exposed build ordering and temporary-config plugin resolution defects, which were fixed before the final pass. | Plan authorization |
+| 4 | claude-toolkit | `6e7c52685b9ce00c074401432384a16919400a3e`; `6964aa8c46424fd35db250e9189ea3729d4407f8` | Remote `feature/github-ops-app-lifecycle`; `feature/github-ops-credential-backup` | Atomic explicit-OID push and remote read-back | 0 | 2026-09-27T04:20-04:21Z | Both remote refs matched; the dirty executor-gateway checkout was untouched. | Plan authorization |
+| 4 | claude-toolkit | `0fc68439bd50c3662174b739625c5293579e2849` | Local `feature/github-ops-credential-backup` at `6964aa8c46424fd35db250e9189ea3729d4407f8` | Reset the local branch at MP's request; verify local and remote tips | 0 | 2026-09-27 | The branch no longer contains superseded local-config commits `87ac8c8216a703745e192fe405c2165450606560` and `0fc68439bd50c3662174b739625c5293579e2849`. | Explicit MP request |
+| 5 | introspection | Original June 20 stash `58a5dd67e228e5572982da0598b0899a02a3d5a3` | Scrubbed copy `36f574bdb2b0bb7c546264d2424dc6b2a499d1d0` | Review outgoing trees; remove three unrelated employer documents from the copy's worktree and index trees | 0 | 2026-09-27T04:32-04:36Z | Original stayed local-only and unchanged. Both scrubbed trees differed only by the three deletions; exposure re-scan passed. | MP approved scrubbed backup |
+| 5 | introspection | Two branch tips and six stash tips in backup mapping below | Eight remote refs in backup mapping below | Atomic explicit-OID push, remote read-back, and fresh remote-clone object verification | 0 | 2026-09-27T04:27-04:29Z | Eight of eight OIDs matched; all six stash commits had two reachable parents; the original June 20 stash object was absent from the clone. | Plan authorization |
+| 6-7 | taste-distillery | `ea8d1d8716f691f2c756a20a88a4df36f0805bed`; original tip `6a1953ed51bf4f002b410d1d1c43e3be41688bd3` | Replayed tip `f234d77cd964f2aa63a401069691f768d30947e8`; merge `1cdcf9c6a7148b3c688d9ac9928ff0d2217da64d` | Replay 15 canon commits, omit the import manifest, run `just ci`, push, check PR #6, merge with pinned head | 0 | 2026-09-27T04:12-04:16Z | Fifteen range-diff matches, identical author/order data and tree except the manifest; local and runner `Gate (just ci)` passed; all replay commits are ancestors of `main`. | Plan authorization |
+| 8 | taste-distillery | Original wiki tip `b073b621cc1e30b2024291479cdfb64899f04727` | Replayed wiki tip `217b103e46124e0cfc8d36aabed7d307c4dc6ef9` | Replay six commits, amend tracker and draft, compare-and-swap local branch, push backup ref without PR | 0 | 2026-09-27T04:25-04:35Z | Six range-diff matches; `just fmt`, `just docs`, `just test`, `just vet`, and changed-file Vale passed. Full `just ci` exited 1 on 64 pre-existing prose findings in `docs/references/harness-engineering.md`. The orchestrator kept this as a merge prerequisite while pushing the backup-only branch under plan authorization. | Plan authorization; orchestrator's scoped prose-gate disposition |
+| 9 | backpressure | `77ad57f40ecc57c122bdad51fd874fac94af862c`; reporter fixes `3fa9db38c0f57139df003075ea75bec6223e2b78`, `2731fba9b417bc5f710883e173d2e52bf27a2b91` | PR #6 head `2731fba9b417bc5f710883e173d2e52bf27a2b91`; merge `4ca1485165412466fa9fab24a0a974ab5f371ac0` | Push, require `Check` and `Effect integration`, merge with pinned head | 0 | 2026-09-27T05:47:38Z | Both PR checks passed; `main` CI run 36298226409 passed. Initial Release run 36298226404 failed and led to step 10's release fix. | Plan authorization |
+| 10 | backpressure | Release fix head `684d982e66af36fa886de4cf06fc12d648a3de2a` | PR #10 merge `9f0755e51c12e340e6e2e14bd8d1a129efc5c6dc` | Check and merge release fix | 0 | 2026-09-27T06:00:48Z | `Check` and `Effect integration` passed; `main` Release run 36298844806 succeeded. | Plan authorization |
+| 10 | backpressure | Version Packages head `2d8b001b3d46b764f04ab4d0c8bb2aa653469ede` | PR #11 | Reopen through `gh`; run fresh-clone `pnpm check` and `pnpm release:prepare` at the exact head | 0 | 2026-09-27T06:00-06:23Z | `Check` and `Effect integration` passed; both local commands exited 0. | Plan authorization |
+| 11 | backpressure | `2d8b001b3d46b764f04ab4d0c8bb2aa653469ede` | PR #11 merge `849f748ab9bfe8d6cd310eed6a5dab1f725d07ee` | Merge with pinned head after MP's publish approval | 0 | 2026-09-27T06:23:20Z | Release run 36299945339 succeeded; npm published both 0.2.0 packages. | Explicit MP publish approval |
+| 11 | npm | `849f748ab9bfe8d6cd310eed6a5dab1f725d07ee` | Both 0.2.0 registry tarballs, tags, releases, and provenance | Registry metadata, pack dry-runs, attestation payload and digest checks, annotated-tag resolution | 0 | 2026-09-27T06:30-06:35Z | Both file lists exactly matched package allowlists (9 and 10 files); both SLSA statements named this repo, `.github/workflows/release.yml`, and the release commit, with SHA-512 digests matching the tarballs. Both tags and releases resolved to the release commit. `latest` is 0.2.0; `next` remains 0.1.0. | Read-only verification |
+| 11 | Scratch consumers | `849f748ab9bfe8d6cd310eed6a5dab1f725d07ee` | Fresh plain and default-Effect consumers under `xi-work/consumers/` | Install exact registry versions with a seven-day release-age policy and exact-version exclusions; exercise plugin, exports, patch, and README diagnostics | 0 | 2026-09-27T06:31-06:35Z | Both installs and the Effect patch exited 0. Plain plugin and six exports resolved; both required `effecttsgo` diagnostics appeared. The deliberate lint fixtures each exited 1 as expected, and their assertions exited 0. | Read-only registry consumption |
+| 12 | introspection | Eight remote refs in backup mapping below | Archived public repository; PRs #2 and #4 closed unmerged | Recheck backup refs, close PRs, archive, verify state | 0 | 2026-09-27 | Archive is true; both PRs are closed with no merge; refs remain at the verified OIDs. | Plan authorization |
+
+The taste-distillery canon was a verified replay, not an exact-OID remote backup. The original tips remain under local backup refs. The canon source-to-replay mapping is:
+
+| Source OID | Replay OID |
+| --- | --- |
+| `e6b3d219f80ffcd4106eab885268b6801a1deced` | `621b48fe0f23bd5d471dd816c8c4cd4c9494b10d` |
+| `3ac2c06a21117013851e8c8a2aa4418563889368` | `8f6d234ca7f73123ec744b4794ef9a4ff2530f6f` |
+| `9a1231b8f533ca33b78ac9afaffddf84b9e99744` | `c1366ebd1043ef7af53d867f26f51ec7d71bd675` |
+| `d6b0ba83ef6ab6aef017155c39e601638122caaa` | `bfce2e5313785c4126912b7361ff72e366e81d94` |
+| `276c86b593fd18b8853eb35e7e1261acf3d98d25` | `7c77488e563590382208292a38f82436ed5ac909` |
+| `0437b7b4428484792f72ab5e4791d87bc11ad7b6` | `8399a2ac7c5bc9ea980522b19135cbe7e69f7c26` |
+| `e7585f3db7b4e81585cd271aaab061aeb6791f43` | `bfbdf4695bb50bdf8b080202d78f4c0f69773d43` |
+| `42cecdc2010fb06224666d17cabc2ebe7bb13255` | `df6e1f8c47a7fe885241c82db339f2d6c3a85743` |
+| `560675e2c83e398f5bc1bccaa55d7e83959e67d8` | `c7b6065d083620267b9b59324417c764df84e77e` |
+| `bdc52f3aa5d7f9e81271b71870903ecd95114a44` | `d156413f219e6ebb45a00bfdfd5a497f35c587bf` |
+| `e5ef81f64a49a4c18190b25a56135527a6f66ce6` | `9b1e8294be3d7e099497e523d3e6c06395d55193` |
+| `c1988da84d4da646de0e1287c9fc7e9f8505eb14` | `5f65944de7da24473a769ab31af3c5b2d3445fbe` |
+| `38b2658512278199435b68115d12c00c1dcb278a` | `b6e8f1267de8dfe2a5440b653666cbe86388b7ae` |
+| `2417151d97e3f6fc148a25193d35d62651e520f5` | `5efac35a065d3a309614d630da0e446037f7a272` |
+| `6a1953ed51bf4f002b410d1d1c43e3be41688bd3` | `f234d77cd964f2aa63a401069691f768d30947e8` |
+
+The wiki source-to-replay mapping is:
+
+| Source OID | Replay OID |
+| --- | --- |
+| `51bc420a9ed1dec12aeaf97d1593a2cd150fda38` | `d43373e679067c793c4240abc94f1296f67ddae3` |
+| `8dd15dc1f7bcf2febacd2e87abaa7e802ee14da5` | `050ecf184966f801354a0a8461b767a3ee2815b6` |
+| `327e27fbdf2249d59f657447ab15e492d2d6fb6c` | `8257f25fbd360b9066a260946f44db56ad6c4a07` |
+| `076001a4dfc124b793fa7080e14606b1aa98bc29` | `e9c2beb0bf0ae58fc875466f092ef984f9d3ef27` |
+| `5142e6d7e6cd75ed20269be594c8af7b9c33d386` | `6f732d2d63963a6235482459897de42987355d93` |
+| `b073b621cc1e30b2024291479cdfb64899f04727` | `3b4a071848004311ceb373ef0f26661e70c5fe24` |
+
+The eight introspection backup refs resolve to these full OIDs:
+
+| Remote ref | OID |
+| --- | --- |
+| `reshape/introspection-v1` | `d8eaf541ea3b317236904e3fc3e31cce87e28578` |
+| `reshape/introspection-substrate-effect` | `1939b7ba86dee7169ff05c5c5341ee281e0d756f` |
+| `backup/introspection-exit-2026-09-27/stash-substrate-june-29-4fba989` | `4fba989c7c28eb477ea82f3b99256af628773456` |
+| `backup/introspection-exit-2026-09-27/stash-substrate-june-25-d99e4f1` | `d99e4f1adfb2b9f7a3d1212f3344a02adb3a6592` |
+| `backup/introspection-exit-2026-09-27/stash-substrate-june-21-09e8a2e` | `09e8a2eff069b1c87502b8343b2cd82914fbf483` |
+| `backup/introspection-exit-2026-09-27/stash-substrate-june-20-scrubbed-36f574b` | `36f574bdb2b0bb7c546264d2424dc6b2a499d1d0` |
+| `backup/introspection-exit-2026-09-27/stash-substrate-effect-june-19-807e865` | `807e8650fac3f24eb529cc166594613f1bda3fa8` |
+| `backup/introspection-exit-2026-09-27/stash-introspection-release-stash-1ccee7f` | `1ccee7f8088e3b231262e5db8aa790c1cb5ee6ea` |
 
 ## File-by-file impact
 

@@ -1,6 +1,6 @@
 # Effect rules v4 alignment: build plan
 
-- Status: completed and accepted (2026-09-27). MP accepted G2 with the recorded executor coverage, so WI-08 is done under that acceptance and WI-10 is done with the introspection exit plan's standalone verification. The exit plan (`docs/exec-plans/active/introspection-exit-2026-09-27.md`) replaces the former introspection blocker and the instruction to keep introspection.
+- Status: completed and accepted (2026-09-27). MP accepted G2 with the recorded executor coverage, so WI-08 is done under that acceptance and WI-10 is done with the introspection exit plan's standalone verification. The exit plan (`docs/exec-plans/completed/introspection-exit-2026-09-27.md`) replaces the former introspection blocker and the instruction to keep introspection.
 - Date: 2026-09-25.
 - Target branch: `lint/oxlint-standards-consolidation`.
 - Decision baseline: `effect-rules-v4-alignment-2026-09-25.md`, identified by the scaffold as commit `42c77c6`.
@@ -649,7 +649,7 @@ Rollback is a package/config/toolchain rollback together: restore the prior pack
 
 The introspection sibling failure remains explicitly external. It blocks a clean final `pnpm check`; its unpublished file dependency also blocks clean remote installation. Do not widen this rule project into an introspection repair or release-workflow redesign. After that separately owned issue is resolved, rerun the full check and normal clean-checkout release preparation before declaring release readiness.
 
-Note, 2026-09-27: the introspection exit plan (`docs/exec-plans/active/introspection-exit-2026-09-27.md`) replaces the blocker and the no-widening instruction above. Introspection is removed from backpressure entirely, and the clean-checkout verification this section required is recorded in the ledger's WI-10 note.
+Note, 2026-09-27: the introspection exit plan (`docs/exec-plans/completed/introspection-exit-2026-09-27.md`) replaces the blocker and the no-widening instruction above. Introspection is removed from backpressure entirely, and the clean-checkout verification this section required is recorded in the ledger's WI-10 note.
 
 ## 6. Implementation order
 
