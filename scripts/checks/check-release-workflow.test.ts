@@ -68,6 +68,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${githubSecret('GITHUB_TOKEN')}
           NPM_CONFIG_PROVENANCE: 'true'
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.hooksPath
+          GIT_CONFIG_VALUE_0: /dev/null
 `;
 
 const runContract = (overrides: ContractOverrides = {}): void => {
@@ -222,6 +225,18 @@ const registerPermissionStructureContractTests = (): void => {
 };
 
 const registerStepStructureContractTests = (): void => {
+  it('requires Changesets to bypass developer Git hooks for its generated commit', () => {
+    for (const [configured, missing] of [
+      ["          GIT_CONFIG_COUNT: '1'", "          GIT_CONFIG_COUNT: '0'"],
+      ['          GIT_CONFIG_KEY_0: core.hooksPath', '          GIT_CONFIG_KEY_0: user.name'],
+      ['          GIT_CONFIG_VALUE_0: /dev/null', '          GIT_CONFIG_VALUE_0: .vite-hooks'],
+    ] as const) {
+      expect(() => runContract({ workflow: validWorkflow.replace(configured, missing) })).toThrow(
+        'jobs.release changesets/action step env must set',
+      );
+    }
+  });
+
   it('does not let an active key in the wrong step satisfy setup-node config', () => {
     const workflowWithWrongStepRegistry = validWorkflow
       .replace(
