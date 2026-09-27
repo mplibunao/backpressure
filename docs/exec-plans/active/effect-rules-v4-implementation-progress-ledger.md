@@ -26,7 +26,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-04 | Narrow composition and error contracts | L | DONE (pushed) | `9c12bcc` |
 | WI-05 | Retarget v4 APIs and finish the remaining narrowings and messages | L | DONE (pushed) | `eaff7e4` |
 | WI-06 | Activate the full Effect config and both package surfaces | L | DONE (pushed); MP confirmed the prefer-effect-fn restore | `f2524d8` |
-| WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
+| WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | CANCELLED: WI-15 removed the rule; stash dropped | |
 | WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | DONE (pushed) | `c2f6a4d` |
 | WI-14 | Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure | M | DONE (pushed) | `63e5a65` |
 | WI-15 | Drop prefer-effect-fn in favor of effect-fn-opportunity | S | DONE (pushed) | `7eb1a34` |
@@ -989,7 +989,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 - **After the evidence write:** `pnpm prose` passed with no alerts in 60 files (`prose-after-docs.log`); `pnpm durable:refs` and `vp fmt --check` passed (`durable-refs-after-docs.log`, `fmt-after-docs.log`), and `command git diff --check` exited 0. `pnpm introspection:check` still exited 1 with the same schema error (`introspection-check-after-docs.log`).
 - **Open items:** full acceptance remains blocked by the external introspection schema failure and executor's incomplete typed coverage, which needs an MP decision on the G2 contract or a later cleanly lintable snapshot. WI-12 remains parked in the untouched stash. WI-13 waits for an `@effect/tsgo` release containing #768. Renovate app activation waits on MP. Nothing was pushed.
 
-### WI-12: Extend prefer-effect-fn to tsgo shape parity (PARKED)
+### WI-12: Extend prefer-effect-fn to tsgo shape parity (CANCELLED)
 
 - **Goal:** report the two wrapper shapes that `effecttsgo/effect-fn-opportunity` reports with the overlay's `effectFn` settings and the restored rule misses: an arrow as a named object property, and `Effect.gen(...).pipe(...)` with operators other than a final `Effect.withSpan(...)`.
 - **State:** the first pass matched tsgo on the 14-shape probe corpus, and the full check chain passed after a typecheck fix. The orchestrator had recorded VERIFY iteration 1 as passed before reading the gate output; iteration 2 records that correction and the typecheck failure. REVIEW iteration 1 found four valid defects: async and generator outer functions reported, object getters reported, parameter references resolved by name, and no recognition of imported `pipe(...)`. The agent was cancelled mid-fix.
