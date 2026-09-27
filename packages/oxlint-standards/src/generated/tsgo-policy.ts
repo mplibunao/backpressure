@@ -458,7 +458,7 @@ export const tsgoPolicyRows: readonly TsgoPolicyRow[] = [
     diagnosticName: 'effectFnOpportunity',
     rationaleClass: 'agent-failure-mode',
     reason:
-      'Gen-first policy: reusable generator functions use Effect.fn; ships at error beside the overlapping custom prefer-effect-fn.',
+      'Gen-first policy: reusable generator functions use Effect.fn; replaces the custom prefer-effect-fn at its error floor.',
     ruleName: 'effecttsgo/effect-fn-opportunity',
     severity: 'error',
   },

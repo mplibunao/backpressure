@@ -29,6 +29,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
 | WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | DONE (pushed) | `c2f6a4d` |
 | WI-14 | Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure | M | DONE (pushed) | `63e5a65` |
+| WI-15 | Drop prefer-effect-fn in favor of effect-fn-opportunity | S | DONE (uncommitted) | |
 | WI-11 | Rule list with its generated page and local viewer | M | DONE (pushed) | `b848cb5` |
 | WI-07 | Install all six durable gates | L | DONE (pushed) | `671fcb9` |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) because five executor tsconfigs are invalid under TypeScript 6 and 7 alike, so MP did not accept it | `dfff7d9` |
@@ -1108,4 +1109,29 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 - **Refactor cycle 1:** deleted `directCallOfInlineFunction` from `utils/effect-context.ts` and its four tests, since the step-callback check no longer calls it and nothing else did; `isInlineFunction` stays. Afterward `pnpm typecheck`, lint, `vp fmt --check`, `pnpm test` (2,673 tests), `pnpm build`, and `SKIP_BUILD=true pnpm fixture:replay` (44 suites, 470 cases) all exited 0.
 - **Refactor cycle 2:** `pipeArgumentList` in `utils/effect-composition.ts` dropped its `Function.pipe` namespace branch, which the static `.pipe` member check already covers, along with the now-unused `functionNamespaceNames` fact and `getStaticMemberCall` import. Afterward `pnpm typecheck`, lint, `vp fmt --check`, `pnpm test` (2,673 tests), `pnpm build`, and `SKIP_BUILD=true pnpm fixture:replay` (44 suites, 470 cases) exited 0, and the plugin cross-check gave the same sites: t3code 487 ladders and 623 discards, executor 18 and 186.
 - **Commits:** none. The orchestrator commits.
+- **Action items for MP:** none.
+
+### WI-15: Drop prefer-effect-fn in favor of effect-fn-opportunity (DONE, pushed)
+
+- **Authority:** MP approved removing `prefer-effect-fn` on 2026-09-27, after WI-13's evidence that `effecttsgo/effect-fn-opportunity` reports all three wrapper shapes on the oxlint route under a consumer `tsconfig.json` extending `effect.json`. The scope is BP-TD-014's done-when: drop the rule with a `replacedBy` edge to that tsgo rule and restore its `error` replacement floor, as a hard cutover with no alias or shim.
+- **Code:** this reverses WI-06's restore in the shape WI-03 used for the other drops.
+  - The manifest row is a `droppedRule` again, keeping its `error` severity, `correctness` class, `recon` ownership, and `effect-callee` gating, with `replacedBy: ['effecttsgo/effect-fn-opportunity']` and WI-03's drop note.
+  - The decided drop register in `check-rule-inventory.ts` gains the edge. `explicitDrops` is unchanged because the rule is not linteffect-origin.
+  - The catalog body and `isNamedEffectGenWrapper`, the one helper only it used, are deleted. The catalog's other rules still use every import that helper used.
+  - The message entry, the RuleTester suite, and the replay suite are deleted.
+  - The reference corpus drops the rule's two deviations on `es-cli-nested-helpers`, whose adapted variant now has none.
+  - `effect-policy.test.ts` expects eleven floor edges, adding `prefer-effect-fn -> effecttsgo/effect-fn-opportunity: error`.
+  - The `effect-fn-opportunity` policy reason now says it replaces the custom rule at its error floor, and `pnpm gen:effect-policy` regenerated only that reason text. The tsconfig overlays did not change.
+- **Smoke:** under the shipped setup, `smoke-effect-packed-consumer.ts` now requires each wrapper file to report exactly one `effecttsgo(effect-fn-opportunity)` and no `@mplibunao/oxlint-standards(...)` code. The inline no-extends control is unchanged. The tsc-route smoke does not name the rule and is unchanged; the shared harness comment on the wrapper sources now names the shapes directly.
+- **Docs:** the rule-pack architecture design and the package README count 43 custom rules (22 ported, 21 reimplemented), with 35 in `effectPreset`, and 30 dropped rules, 11 with a replacement. The README's route explanation no longer mentions double diagnostics, and its upgrade table lists the removal. The rule shipped in the published 0.1.0, so the pending minor changeset now lists 27 removed rules with eleven replacements. The build plan's drop register lists the rule again, with eleven floors in §3.3, G4, and the WI-06 done-when, and its G6 row states the single-owner assertion. The alignment record's dated note records the sequence. `pnpm gen:rules-page` removed the rule's row and updated the reason text. BP-TD-014 moved to `done/` with a resolution, edited by hand because `introspection` still stops on `config.schema_violation`.
+- **Mutation checks:** each mutation was restored from a copy, and `shasum -a 256 -c` matched both files afterward.
+  - Grading `effect-fn-opportunity` `warn` in the generated policy failed 4 tests in `effect-policy.test.ts` and `rule-manifest.test.ts`, with `prefer-effect-fn -> effecttsgo/effect-fn-opportunity: shipped warn is below the error floor`.
+  - Deleting the manifest edge failed 2 tests in `effect-policy.test.ts`. `check-rule-inventory.ts` exited 1 with `Dropped rows' replacedBy must match the decided drop register: prefer-effect-fn.`
+- **Checks:**
+  - The check chain without `introspection check` exited 0. It ran 2,623 tests in 34 files; the removal deleted 51 cases, the rule's 15 RuleTester cases and its 36 reference-corpus cases. The replay passed 43 suites with 461 cases and 37 corpus variants, one suite and nine cases fewer. The inventory reports 41 semantic-replay rows and `delegated: 116`. Lint reported 0 warnings and 0 errors, and Vale found no alerts in 61 files.
+  - `pnpm check:effect-integration`: exit 0 on both routes. The oxlint route printed `effecttsgo(effect-fn-opportunity)` alone for `declaration.ts`, `parameter.ts`, and `spanned.ts` under the shipped setup.
+- **Orchestrator review:** iteration 1 found no defect to fix.
+- **Refactor cycle 1:** the smoke's single-element `wrapperFileCodes` array became the string `wrapperCode`. The check chain without `introspection check` and `pnpm check:effect-integration` both exited 0 afterward, and each wrapper file printed `effecttsgo(effect-fn-opportunity)` alone.
+- **Open items:** none. WI-12's parked stash entry extended the removed rule, so it was dropped after this item was pushed.
+- **Commits:** recorded in the status table.
 - **Action items for MP:** none.

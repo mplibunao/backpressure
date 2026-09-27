@@ -154,7 +154,7 @@ How the patched oxlint finds your TypeScript settings:
 
 - It takes each file's TypeScript project from the nearest `tsconfig.json`, the way an editor does. The `--tsconfig` flag does not change that choice.
 - When it cannot load that tsconfig, oxlint reports `typescript(tsconfig-error)` and that project's files get no `effecttsgo` diagnostics. Two causes are options that TypeScript 7 rejects and a missing `types` package: `server.json` needs `bun-types` installed. Fix the tsconfig until the error goes away.
-- It reads the Effect plugin options from that `tsconfig.json` and the files it extends, so the overlay's options apply with the setup above. With them, `effecttsgo/effect-fn-opportunity` reports plain `(...) => Effect.gen(...)` wrappers as well as wrappers piped into `Effect.withSpan`. This package's `prefer-effect-fn` also reports the plain wrappers, so each of those gets both diagnostics.
+- It reads the Effect plugin options from that `tsconfig.json` and the files it extends, so the overlay's options apply with the setup above. With them, `effecttsgo/effect-fn-opportunity` reports plain `(...) => Effect.gen(...)` wrappers as well as wrappers piped into `Effect.withSpan`.
 
 To check the setup, add this file temporarily and run `vp lint`:
 
@@ -256,7 +256,7 @@ This release is breaking for Effect consumers.
 - `@effect/tsgo` 0.46.1 is a new optional peer dependency. Consumers that do not use `effectPreset` do not need it, and the `oxlint` peer range stays `^1.58.0`.
 - `lspOwnedChecks` is removed; `tsgoOwnedChecks` lists the delegated `effecttsgo/*` rule IDs. Rule metadata drops `effectVersionSensitivity`. The language-service values `lsp`, `LSP-delegated`, and `LSP` become the domain `tsgo`, the disposition `tsgo-delegated`, and the source ownership `@effect/tsgo`.
 - New exports: `effectTsgoConfig`, `effectBoundaryRules`, `tsgoOwnedChecks`, and the types `EffectPresetConfig`, `EffectTsgoConfig`, and `TsgoRuleId`.
-- These 26 rules are removed from the plugin. Delete any setting that names one of them, including `off` settings. Where an `@effect/tsgo` check replaces a rule, the preset ships that check at `error`:
+- These 27 rules are removed from the plugin. Delete any setting that names one of them, including `off` settings. Where an `@effect/tsgo` check replaces a rule, the preset ships that check at `error`:
 
 | Removed rule | What covers its shape now |
 | --- | --- |
@@ -269,6 +269,7 @@ This release is breaking for Effect consumers.
 | `no-nested-effect-gen` | `effecttsgo/nested-effect-gen-yield` |
 | `no-runtime-runfork` | `effecttsgo/run-effect-inside-effect` |
 | `no-wrapgraphql-catchall` | `effecttsgo/outdated-api` |
+| `prefer-effect-fn` | `effecttsgo/effect-fn-opportunity` |
 | `prefer-yield-tagged-error` | `effecttsgo/unnecessary-fail-yieldable-error` |
 | `no-call-tower` | `no-effect-call-in-effect-arg`, which owns the shallow nested-call shape |
 | `no-nested-effect-call` | `no-effect-ladder`, which owns the deep nested-call shape |
@@ -285,10 +286,10 @@ v0 targets Effect v4 identifiers and conventions: gen-first logic, named `Effect
 
 The catalog currently records:
 
-- 44 custom rules: 22 ported from linteffect v0.0.6 and 22 reimplemented from executor, recon, t3code, effect-smol, and linteffect ideas. `effectPreset` holds 36 of them, `effectReactPreset` 3, `generalPreset` 4, and `boundariesPreset` 1.
+- 43 custom rules: 22 ported from linteffect v0.0.6 and 21 reimplemented from executor, recon, t3code, effect-smol, and linteffect ideas. `effectPreset` holds 35 of them, `effectReactPreset` 3, `generalPreset` 4, and `boundariesPreset` 1.
 - 116 `@effect/tsgo` checks at their pinned 0.46.1 settings, with 44 at `error` and 67 at `warn`. The other 5 are `off`, including `prefer-schema-over-json`.
 - 50 linteffect source rules represented for inventory, of which 27 are dropped.
-- 29 dropped rules in total, 10 of them with an `@effect/tsgo` replacement.
+- 30 dropped rules in total, 11 of them with an `@effect/tsgo` replacement.
 - 135 built-in oxlint rule settings across the config fragments, including `no-nested-ternary` in `generalPreset`.
 
 See `docs/references/rules.md` for the consumer-facing catalog and `src/rule-manifest.ts` for the machine-checkable source of truth.

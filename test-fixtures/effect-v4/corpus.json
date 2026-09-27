@@ -497,10 +497,6 @@
             "no-barrel-import": {
               "count": 6,
               "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
-            },
-            "prefer-effect-fn": {
-              "count": 1,
-              "decision": "prefer-effect-fn restored as an overlap with effecttsgo/effect-fn-opportunity (MP confirmed 2026-09-26); LLMS.md says to avoid functions that only wrap and return Effect.gen."
             }
           }
         },
@@ -509,12 +505,7 @@
           "file": "snippets/es-cli-nested-helpers.adapted.ts",
           "lintFilename": "src/TaskRepo.ts",
           "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
-          "deviations": {
-            "prefer-effect-fn": {
-              "count": 1,
-              "decision": "prefer-effect-fn restored as an overlap with effecttsgo/effect-fn-opportunity (MP confirmed 2026-09-26); LLMS.md says to avoid functions that only wrap and return Effect.gen."
-            }
-          }
+          "deviations": {}
         }
       ]
     },

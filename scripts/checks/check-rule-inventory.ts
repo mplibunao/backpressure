@@ -87,6 +87,7 @@ const decidedDropRegister = new Map<string, readonly string[]>([
   ['no-string-sentinel-return', []],
   ['no-ternary', []],
   ['no-wrapgraphql-catchall', ['effecttsgo/outdated-api']],
+  ['prefer-effect-fn', ['effecttsgo/effect-fn-opportunity']],
   ['prefer-yield-tagged-error', ['effecttsgo/unnecessary-fail-yieldable-error']],
   ['warn-effect-sync-wrapper', []],
 ]);

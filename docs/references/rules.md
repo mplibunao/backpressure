@@ -16,7 +16,7 @@ Severity reads `normal / tests` when test files differ, where tests means files 
 
 The tsgo descriptions come from `@effect/tsgo` 0.46.1 (MIT, Copyright (c) 2026 Effect).
 
-## Package rules (44)
+## Package rules (43)
 
 Rules this package implements. What it catches is the manifest note; the fix is the rule message.
 
@@ -62,7 +62,6 @@ Rules this package implements. What it catches is the manifest note; the fix is 
 | `@mplibunao/oxlint-standards/no-ts-nocheck` | `generalPreset`, `baseConfig`, `baseConfig + vitestConfig + nodeRuntimeConfig` | error | A ts-nocheck directive anywhere in a file. **Fix:** fix the types, or use a narrow ts-expect-error comment with a reason. | Ref: executor. |
 | `@mplibunao/oxlint-standards/no-unknown-boolean-coercion-helper` | `effectPreset` | error | A typeof value === 'boolean' check in a file that also has a Match.orElse(() => null) fallback. **Fix:** decode the optional boolean at the Schema boundary and read the typed value. | Ref: linteffect. |
 | `@mplibunao/oxlint-standards/no-unknown-error-message` | `effectPreset` | error | Reading .message, calling String(), or destructuring message on a value caught by a catch clause or by an Effect.try or Effect.tryPromise catch handler, unless a guard on the same binding proves its shape first. **Fix:** keep it as a typed error's cause, or decode or narrow it into a validated binding. A cast does not make it safe. | Ref: house style. |
-| `@mplibunao/oxlint-standards/prefer-effect-fn` | `effectPreset` | error | A named function whose only job is to return Effect.gen; it overlaps effecttsgo/effect-fn-opportunity on purpose and, unlike it, reports without a TypeScript project (ADR-007). **Fix:** define it as Effect.fn("name")(function* (...) { ... }), or Effect.fnUntraced for hot paths. | Ref: ADR-001. |
 | `@mplibunao/oxlint-standards/prefer-effect-predicate` | `effectPreset` | error | A one-parameter function that only returns a nullish comparison of its parameter, whether declared, assigned to a variable, or passed to .filter, in a file that imports Effect. **Fix:** use Predicate.isNotNull, isNotUndefined, isNotNullish, isNull, isUndefined, or isNullish. | Ref: executor. |
 | `@mplibunao/oxlint-standards/prefer-schema-inferred-types` | `effectPreset` | error | An interface or object type alias named like a schema in the same file, such as type User beside UserSchema, instead of a type derived from that schema. **Fix:** derive the type from the schema, such as type User = typeof UserSchema.Type. | Ref: executor. |
 | `@mplibunao/oxlint-standards/prevent-dynamic-imports` | `generalPreset`, `baseConfig`, `baseConfig + vitestConfig + nodeRuntimeConfig` | error | Any dynamic import() expression. **Fix:** use a static import; turn the rule off where code splitting is measured and intended. | Ref: linteffect, PA-4. |

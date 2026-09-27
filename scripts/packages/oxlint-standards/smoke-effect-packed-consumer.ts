@@ -205,38 +205,23 @@ const writeInlineOptionsControl = (consumer: EffectConsumer): void => {
 };
 
 // Under the shipped setup (a tsconfig.json extending the base config and effect.json), the patched
-// engine reads the overlay's effectFn through `extends`, so effect-fn-opportunity reports every
-// wrapper shape. prefer-effect-fn stays active beside it on the two plain wrappers; ADR-007 allows
-// that overlap, and BP-TD-014 owns whether to drop the custom rule.
-const shippedWrapperCodes: Readonly<Record<string, readonly string[]>> = {
-  'src/wrappers/declaration.ts': [
-    customCode('prefer-effect-fn'),
-    tsgoCode('effect-fn-opportunity'),
-  ],
-  'src/wrappers/parameter.ts': [customCode('prefer-effect-fn'), tsgoCode('effect-fn-opportunity')],
-  'src/wrappers/spanned.ts': [tsgoCode('effect-fn-opportunity')],
-};
-const wrapperRuleCodes = new Set([
-  customCode('prefer-effect-fn'),
-  tsgoCode('effect-fn-opportunity'),
-]);
+// engine reads the overlay's effectFn through `extends`, so effect-fn-opportunity alone reports
+// every wrapper shape. No custom rule reports these wrappers, so the tsgo rule is their only owner.
+const wrapperCode = tsgoCode('effect-fn-opportunity');
+const isWrapperOwnerCode = (code: string): boolean =>
+  code === wrapperCode || code.startsWith(`${oxlintPackageName}(`);
 
-const assertShippedWrapperSplit = async (consumer: EffectConsumer): Promise<void> => {
+const assertShippedWrapperCoverage = async (consumer: EffectConsumer): Promise<void> => {
   const result = await lint(consumer, ['--format', 'json', 'src/wrappers']);
   const diagnostics = lintDiagnostics(result, 'wrapper forms under the shipped setup');
-  for (const [file, expected] of Object.entries(shippedWrapperCodes)) {
-    const actual = codesIn(diagnostics, file).filter((code) => wrapperRuleCodes.has(code));
-    if (actual.length === 0) {
+  for (const file of Object.keys(wrapperSources)) {
+    const actual = codesIn(diagnostics, file).filter(isWrapperOwnerCode);
+    if (actual.join() !== wrapperCode) {
       fail(
-        `${file} reported neither prefer-effect-fn nor effect-fn-opportunity under the shipped setup.`,
+        `${file} reported [${actual.join(', ')}], expected [${wrapperCode}]. A missing effect-fn-opportunity means the patched oxlint engine no longer reads the overlay's effectFn through \`extends\`; a custom code means a package rule now reports a wrapper the tsgo rule owns.`,
       );
     }
-    if (actual.toSorted().join() !== [...expected].toSorted().join()) {
-      fail(
-        `${file} reported [${actual.join(', ')}], expected [${expected.join(', ')}]. A missing effect-fn-opportunity means the patched oxlint engine no longer reads the overlay's effectFn through \`extends\`; a missing prefer-effect-fn means the custom rule stopped reporting a plain wrapper.`,
-      );
-    }
-    printLine(`shipped setup, ${file}: ${actual.toSorted().join(', ')}`);
+    printLine(`shipped setup, ${file}: ${actual.join(', ')}`);
   }
 };
 
@@ -248,7 +233,7 @@ const assertWrapperCoverage = async (consumer: EffectConsumer): Promise<void> =>
       `The inline-options control did not report effect-fn-opportunity on ${controlMissing.join(', ')}.`,
     );
   }
-  await assertShippedWrapperSplit(consumer);
+  await assertShippedWrapperCoverage(consumer);
 };
 
 const withRouteConsumer = <T>(

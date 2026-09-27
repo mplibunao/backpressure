@@ -881,26 +881,6 @@ const isNullishBinaryExpression = (predicateExpression: NodeLike, paramName: str
   );
 };
 
-// A named function (a declaration, or an arrow or function expression initializing a `const`)
-// whose body is only `Effect.gen(...)`, returned directly or as its single statement.
-const isNamedEffectGenWrapper = (
-  context: Context,
-  node: NodeLike,
-  effectNames: ReadonlySet<string>,
-): boolean => {
-  const parent = getNodeField(node, 'parent');
-  const isNamed =
-    node.type === 'FunctionDeclaration'
-      ? isIdentifierName(getNodeField(node, 'id'))
-      : isNodeLike(parent) &&
-        parent.type === 'VariableDeclarator' &&
-        getNodeField(parent, 'init') === node &&
-        isIdentifierName(getNodeField(parent, 'id'));
-  return (
-    isNamed && boundNamespaceCallMember(context, functionReturnNode(node), effectNames) === 'gen'
-  );
-};
-
 const isNullishPredicate = (node: NodeLike): boolean => {
   if (!isFunctionLike(node)) {
     return false;
@@ -2133,30 +2113,6 @@ const catalogRules: Record<string, Rule> = {
     meta: {
       docs: { description: message('no-redundant-error-factory'), recommended: 'error' },
       type: 'problem',
-    },
-  },
-  // Overlaps effecttsgo/effect-fn-opportunity on purpose (ADR-007): this AST check reports the plain
-  // wrappers without a TypeScript project, where the type-aware rule cannot run.
-  'prefer-effect-fn': {
-    create(context) {
-      let effectNames = new Set<string>();
-      const checkFunction = (node: NodeLike): void => {
-        if (isNamedEffectGenWrapper(context, node, effectNames)) {
-          context.report({ message: message('prefer-effect-fn'), node });
-        }
-      };
-      return {
-        Program(node: ESTree.Program) {
-          effectNames = collectImportNames(node, ['effect/Effect', 'effect'], 'Effect');
-        },
-        ArrowFunctionExpression: checkFunction,
-        FunctionDeclaration: checkFunction,
-        FunctionExpression: checkFunction,
-      };
-    },
-    meta: {
-      docs: { description: message('prefer-effect-fn'), recommended: 'error' },
-      type: 'suggestion',
     },
   },
   'prefer-effect-predicate': {

@@ -72,7 +72,7 @@ const wrapperBody = `  Effect.gen(function* () {
   })`;
 // effect-fn-opportunity reports a wrapper only when an enabled effectFn fix variant applies to it.
 // Upstream's default, ['span'], covers only the Effect.withSpan form; the overlay's inferred and
-// suggested spans cover the other two, which are the shapes prefer-effect-fn also catches.
+// suggested spans cover the other two: the plain function declaration and arrow wrappers.
 export const wrapperSourcesIn = (dir: string): Readonly<Record<string, string>> => ({
   [`${dir}/declaration.ts`]: `import * as Effect from 'effect/Effect'\n\nexport function addOne(n: number) {\n  return${wrapperBody.slice(1)}\n}\n`,
   [`${dir}/parameter.ts`]: `import * as Effect from 'effect/Effect'\n\nexport const addOne = (n: number) =>\n${wrapperBody}\n`,

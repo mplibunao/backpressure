@@ -166,10 +166,6 @@ const explicitRuleMessages = new Map<string, string>([
     "Rule: no-unknown-error-message. Why: a value caught by catch or an Effect.try or tryPromise handler is unknown; reading message or calling String() assumes an unchecked shape. Fix: keep it as a typed error's cause, or decode or narrow it into a validated binding. A cast does not make it safe. Ref: house style.",
   ],
   [
-    'prefer-effect-fn',
-    'Rule: prefer-effect-fn. Why: a named function that only returns Effect.gen rebuilds a generator wrapper that Effect.fn already provides, without its span or stack frame. Fix: define it as Effect.fn("name")(function* (...) { ... }), or Effect.fnUntraced for hot paths. Ref: ADR-001.',
-  ],
-  [
     'prefer-effect-predicate',
     'Rule: prefer-effect-predicate. Why: a hand-written nullish predicate duplicates the Effect Predicate helpers. Fix: use Predicate.isNotNull, isNotUndefined, isNotNullish, isNull, isUndefined, or isNullish. Ref: executor.',
   ],

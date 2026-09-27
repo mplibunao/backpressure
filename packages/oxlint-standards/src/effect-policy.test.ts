@@ -25,6 +25,7 @@ const decidedFloorEdges = [
   'no-nested-effect-gen -> effecttsgo/nested-effect-gen-yield: error',
   'no-runtime-runfork -> effecttsgo/run-effect-inside-effect: error',
   'no-wrapgraphql-catchall -> effecttsgo/outdated-api: error',
+  'prefer-effect-fn -> effecttsgo/effect-fn-opportunity: error',
   'prefer-yield-tagged-error -> effecttsgo/unnecessary-fail-yieldable-error: error',
 ];
 
@@ -51,11 +52,11 @@ const edgeFor = (reporter: string, owner: string): OwnershipEdge => ({
 });
 
 describe('assertReplacementFloors()', () => {
-  it('proves all ten decided edges against the shipped Effect preset', () => {
+  it('proves all eleven decided edges against the shipped Effect preset', () => {
     expect(assertReplacementFloors(ruleManifest, effectPreset).toSorted()).toStrictEqual(
       decidedFloorEdges,
     );
-    expect(assertReplacementFloors(ruleManifest, effectTsgoConfig)).toHaveLength(10);
+    expect(assertReplacementFloors(ruleManifest, effectTsgoConfig)).toHaveLength(11);
   });
 
   it('fails when a replacement is graded below the dropped rule', () => {
@@ -77,7 +78,7 @@ describe('assertReplacementFloors()', () => {
     const denied = withRules(effectPreset, (rules) => {
       rules['effecttsgo/outdated-api'] = 'deny';
     });
-    expect(assertReplacementFloors(ruleManifest, denied)).toHaveLength(10);
+    expect(assertReplacementFloors(ruleManifest, denied)).toHaveLength(11);
   });
 
   it('fails when a replacement is missing from the shipped fragment', () => {
