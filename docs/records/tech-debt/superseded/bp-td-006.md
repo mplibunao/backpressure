@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 6
 title: Optional hygiene gates
 status: superseded
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-06-10T00:00:00Z
-updated_at: 2026-06-10T00:00:00Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure

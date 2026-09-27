@@ -1,9 +1,9 @@
 node_modules/
 dist/
 coverage/
+.oxlint-drift-*/
+.oxlint-effective-*/
 .pnpm-store/
-.introspection/.locks/
-.introspection/generated/
 .stryker-tmp/
 reports/mutation/
 .tsbuildinfo/

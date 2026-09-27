@@ -655,7 +655,7 @@ After the final edits, run `pnpm prose` and `pnpm durable:refs`. Then move this 
 
 ## References
 
-- Effect v4 progress ledger: `docs/exec-plans/active/effect-rules-v4-implementation-progress-ledger.md`.
+- Effect v4 progress ledger: `docs/exec-plans/completed/effect-rules-v4-implementation-progress-ledger.md`.
 - Changesets and publishing: `docs/decisions/006-changesets-versioning-and-publish-boundary.md`.
 - Prose gate: `docs/references/prose-gate.md`.
 - taste-distillery router: `/Users/mp/Projects/personal/taste-distillery/CLAUDE.md`; canon `TD-CARD-037` (`cards/ci-and-release/branch-protection-baseline.md`).

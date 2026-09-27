@@ -1,10 +1,12 @@
 // Where the Effect integration gates run. `pnpm check` runs many times per task, so it keeps only the
 // offline policy check; the network-installing integration runs from its own command, from
 // `release:prepare`, and from a dedicated pull-request workflow.
+import { isAbsolute, join, relative, resolve } from 'node:path';
+
 import { parseDocument } from 'yaml';
 
 import { effectIntegrationScriptName, effectPolicyCheckCommand } from './release-contract.ts';
-import { fail, isObjectRecord } from './script-runtime.ts';
+import { fail, isObjectRecord, isStringRecord } from './script-runtime.ts';
 
 export const expectedEffectIntegrationScript =
   'pnpm smoke:effect-oxlint-packed-consumer && pnpm smoke:effect-tsc-packed-consumer';
@@ -19,8 +21,8 @@ const commandSteps = (script: string): readonly string[] =>
 // ordering and exclusion assertions below, so each step is required by name.
 export const requiredCheckCommands = [
   'pnpm durable:refs',
-  effectPolicyCheckCommand,
   'pnpm build',
+  effectPolicyCheckCommand,
   'pnpm lint',
   'pnpm versions:check',
   'pnpm typecheck',
@@ -34,7 +36,6 @@ export const requiredCheckCommands = [
   'SKIP_BUILD=true pnpm smoke:oxlint-packed-consumer',
   'pnpm smoke:tsconfig-packed-consumer',
   'pnpm -r --if-present pack:dry-run:no-build',
-  'pnpm introspection:check',
   'pnpm prose',
 ] as const;
 
@@ -48,8 +49,11 @@ const assertRequiredSteps = (steps: readonly string[]): void => {
 export const assertEffectGateScripts = (scripts: Readonly<Record<string, string>>): void => {
   const steps = commandSteps(scripts['check'] ?? fail('package.json must define a check script.'));
   assertRequiredSteps(steps);
-  if (steps.indexOf(effectPolicyCheckCommand) > steps.indexOf('pnpm build')) {
-    fail(`package.json check must run ${effectPolicyCheckCommand} before pnpm build.`);
+  // The policy check formats its output through `vp fmt`, which loads vite.config.ts, and that
+  // config imports the built workspace package. Until the first build succeeds, a clean checkout
+  // has no dist entry to resolve, so the build must come first.
+  if (steps.indexOf('pnpm build') > steps.indexOf(effectPolicyCheckCommand)) {
+    fail(`package.json check must run pnpm build before ${effectPolicyCheckCommand}.`);
   }
   if (steps.some((step) => step.includes(effectIntegrationScriptName))) {
     fail(
@@ -146,4 +150,91 @@ export const assertEffectIntegrationWorkflowContract = (workflow: string): void 
   assertConcurrency(parsed);
   assertReadOnlyPermissions(parsed);
   assertSteps(workflowSteps(parsed));
+};
+
+// A root dependency that resolves outside the repository (a `file:` sibling such as
+// `file:../tooling`) installs next to the checkout but breaks every clean checkout: the frozen
+// install fails before any check runs, because the resolved directory does not exist there.
+// Workspace packages lock as `link:packages/...` inside the repository and stay allowed.
+const pathSpecifierProtocol = /^(file|link|portal):/;
+const dependencyFields = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
+
+const escapesRepository = (root: string, specifier: string, baseDir: string): boolean => {
+  const fromRoot = relative(root, resolve(baseDir, specifier.replace(pathSpecifierProtocol, '')));
+  return fromRoot.split(/[\\/]/, 1)[0] === '..' || isAbsolute(fromRoot);
+};
+
+const escapingImporterSpecifiers = (
+  importer: Record<string, unknown>,
+  baseDir: string,
+  root: string,
+): readonly string[] =>
+  dependencyFields.flatMap((field) => {
+    const map = importer[field];
+    return (isObjectRecord(map) ? Object.entries(map) : []).flatMap(([name, entry]) => {
+      if (!isObjectRecord(entry) || typeof entry['specifier'] !== 'string') {
+        return [];
+      }
+      const specifier = entry['specifier'];
+      return pathSpecifierProtocol.test(specifier) && escapesRepository(root, specifier, baseDir)
+        ? [`${name} ${specifier}`]
+        : [];
+    });
+  });
+
+// Pure dependency-locality gate over a parsed root manifest and pnpm lockfile. Lockfile shape is
+// asserted before traversal: a missing root importer, an empty root dependency set, or non-mapping
+// importers/packages fails loudly instead of yielding an empty, vacuously passing result.
+export const findEscapingLocalDependencies = (
+  root: string,
+  manifest: Record<string, unknown>,
+  lockfile: Record<string, unknown>,
+): readonly string[] => {
+  const importers = isObjectRecord(lockfile['importers'])
+    ? lockfile['importers']
+    : fail('pnpm-lock.yaml importers must be a mapping.');
+  const packages = isObjectRecord(lockfile['packages'])
+    ? lockfile['packages']
+    : fail('pnpm-lock.yaml packages must be a mapping.');
+  const rootImporter = isObjectRecord(importers['.'])
+    ? importers['.']
+    : fail('pnpm-lock.yaml must list the root importer ".".');
+  const declaresDependencies = dependencyFields.some((field) => {
+    const map = rootImporter[field];
+    return isObjectRecord(map) && Object.keys(map).length > 0;
+  });
+  if (!declaresDependencies) {
+    fail('pnpm-lock.yaml root importer must declare dependencies.');
+  }
+
+  const manifestEscapes = dependencyFields.flatMap((field) => {
+    const map = manifest[field];
+    return (isStringRecord(map) ? Object.entries(map) : []).flatMap(([name, specifier]) =>
+      pathSpecifierProtocol.test(specifier) && escapesRepository(root, specifier, root)
+        ? [`${name} ${specifier}`]
+        : [],
+    );
+  });
+
+  const importerEscapes = Object.entries(importers).flatMap(([importerDir, importer]) => {
+    if (!isObjectRecord(importer)) {
+      return [];
+    }
+    const baseDir = importerDir === '.' ? root : join(root, importerDir);
+    return escapingImporterSpecifiers(importer, baseDir, root).map(
+      (escape) => `${escape} (importer ${importerDir})`,
+    );
+  });
+
+  const directoryEscapes = Object.entries(packages).flatMap(([packageKey, entry]) => {
+    if (!isObjectRecord(entry) || !isObjectRecord(entry['resolution'])) {
+      return [];
+    }
+    const directory: unknown = entry['resolution']['directory'];
+    return typeof directory === 'string' && escapesRepository(root, directory, root)
+      ? [`${packageKey} -> ${directory}`]
+      : [];
+  });
+
+  return manifestEscapes.concat(importerEscapes, directoryEscapes);
 };

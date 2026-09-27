@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 10
 title: "`no-effect-as` named barrel import policy"
 status: done
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-06-10T00:00:00Z
-updated_at: 2026-09-26T03:09:08Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure
@@ -28,7 +27,7 @@ resolution:
       label: "refactor(oxlint-standards): drop 27 Effect rules replaced by tsgo or v4"
       note: Deleted the standalone no-effect-as rule, its message module, and its RuleTester file; the manifest row is now dropped.
     - kind: plan
-      ref: docs/exec-plans/active/effect-rules-v4-alignment-2026-09-25.md
+      ref: docs/exec-plans/completed/effect-rules-v4-alignment-2026-09-25.md
       label: Decided entry for no-effect-as (option B, pattern 7)
 ---
 `no-effect-as` named barrel import policy.

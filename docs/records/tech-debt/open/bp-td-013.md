@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 13
 title: Re-enable jsdoc/check-param-names for stale @param drift once oxlint ships it
 status: open
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-06-16T13:29:14Z
-updated_at: 2026-06-16T13:29:14Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure

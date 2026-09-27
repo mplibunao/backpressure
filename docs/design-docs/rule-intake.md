@@ -22,7 +22,7 @@ The delegated rules come from the pinned `@effect/tsgo` release, not from candid
 
 ## Known candidates
 
-The introspection migration moved two optional hygiene candidates out of the legacy tracker and into this intake owner doc: `no-js-extension-imports` and `no-opaque-instance-fields`. Both candidates should be evaluated through the triage sequence above, using the effect-smol `@effect/oxc` implementations as reference material rather than as automatic acceptance.
+Two optional hygiene candidates are on record: `no-js-extension-imports` and `no-opaque-instance-fields`. Both are evaluated through the triage sequence above, using the effect-smol `@effect/oxc` implementations as reference material rather than as automatic acceptance.
 
 ## Coherence
 

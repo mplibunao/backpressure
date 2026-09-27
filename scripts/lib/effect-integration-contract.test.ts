@@ -2,11 +2,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
+import { parseDocument } from 'yaml';
 
 import {
   assertEffectGateScripts,
   assertEffectIntegrationWorkflowContract,
   expectedEffectIntegrationScript,
+  findEscapingLocalDependencies,
   requiredCheckCommands,
 } from './effect-integration-contract.ts';
 import { repoRoot } from './script-runtime.ts';
@@ -54,18 +56,14 @@ describe('assertEffectGateScripts()', () => {
     ).toThrow('package.json check is missing required steps: pnpm durable:refs, pnpm lint');
   });
 
-  it('requires the offline policy check before the build', () => {
-    const reordered = [
-      'pnpm build',
-      ...requiredCheckCommands.filter((step) => step !== 'pnpm build'),
-    ];
-    const moved = reordered.filter((step) => step !== 'pnpm effect-policy:check');
+  it('requires the build before the offline policy check', () => {
+    const moved = requiredCheckCommands.filter((step) => step !== 'pnpm effect-policy:check');
     expect(() =>
       assertEffectGateScripts({
         ...scripts,
-        check: [...moved, 'pnpm effect-policy:check'].join(' && '),
+        check: ['pnpm effect-policy:check', ...moved].join(' && '),
       }),
-    ).toThrow('must run pnpm effect-policy:check before pnpm build');
+    ).toThrow('must run pnpm build before pnpm effect-policy:check');
   });
 
   it('keeps the network-installing integration out of pnpm check', () => {
@@ -141,5 +139,87 @@ describe('assertEffectIntegrationWorkflowContract()', () => {
         mutate('pnpm install --frozen-lockfile', 'pnpm install'),
       ),
     ).toThrow('pnpm install --frozen-lockfile');
+  });
+});
+
+describe('findEscapingLocalDependencies()', () => {
+  const root = '/checkout/backpressure';
+
+  const lockfileWith = (
+    importers: Record<string, unknown>,
+    packages: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({ importers, packages });
+
+  const localRootImporter = Object.freeze({
+    devDependencies: Object.freeze({ oxlint: Object.freeze({ specifier: 'catalog:' }) }),
+  });
+
+  it.each(['file:../x', 'link:../x', 'portal:../x'])(
+    'reports a manifest %s dependency that escapes the repository',
+    (specifier) => {
+      const manifest = { devDependencies: { sibling: specifier } };
+      expect(
+        findEscapingLocalDependencies(root, manifest, lockfileWith({ '.': localRootImporter })),
+      ).toEqual([`sibling ${specifier}`]);
+    },
+  );
+
+  it('reports an importer specifier that escapes the repository', () => {
+    const lockfile = lockfileWith({
+      '.': { dependencies: { sibling: { specifier: 'file:../x' } } },
+    });
+    expect(findEscapingLocalDependencies(root, {}, lockfile)).toEqual([
+      'sibling file:../x (importer .)',
+    ]);
+  });
+
+  it('reports a package resolution directory outside the repository', () => {
+    const lockfile = lockfileWith(
+      { '.': localRootImporter },
+      { 'sibling@1.0.0': { resolution: { directory: '../x' } } },
+    );
+    expect(findEscapingLocalDependencies(root, {}, lockfile)).toEqual(['sibling@1.0.0 -> ../x']);
+  });
+
+  it('accepts workspace links, in-repo links, and importer-relative paths that stay inside', () => {
+    const manifest = { dependencies: { tooling: 'workspace:*', local: 'link:packages/foo' } };
+    const lockfile = lockfileWith({
+      '.': localRootImporter,
+      'packages/viewer': { dependencies: { shared: { specifier: 'file:../other' } } },
+    });
+    expect(findEscapingLocalDependencies(root, manifest, lockfile)).toEqual([]);
+  });
+
+  it('fails when the lockfile loses its root importer', () => {
+    expect(() => findEscapingLocalDependencies(root, {}, lockfileWith({}))).toThrow(
+      'root importer',
+    );
+  });
+
+  it('fails when importers or packages is not a mapping', () => {
+    expect(() => findEscapingLocalDependencies(root, {}, { packages: {} })).toThrow(
+      'importers must be a mapping',
+    );
+    expect(() =>
+      findEscapingLocalDependencies(root, {}, { importers: { '.': localRootImporter } }),
+    ).toThrow('packages must be a mapping');
+  });
+
+  it('fails when the root importer declares no dependencies', () => {
+    expect(() =>
+      findEscapingLocalDependencies(root, {}, lockfileWith({ '.': { dependencies: {} } })),
+    ).toThrow('root importer must declare dependencies');
+  });
+
+  it('keeps the committed manifest and lockfile inside the repository', () => {
+    const document = parseDocument(readRepoFile('pnpm-lock.yaml'));
+    expect(document.errors.map((error) => error.message)).toEqual([]);
+    expect(
+      findEscapingLocalDependencies(
+        repoRoot,
+        JSON.parse(readRepoFile('package.json')),
+        document.toJS(),
+      ),
+    ).toEqual([]);
   });
 });

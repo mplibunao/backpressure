@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 15
 title: Research whether Effect.forkDetach should be flagged
 status: open
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-09-26T12:13:08Z
-updated_at: 2026-09-26T12:13:08Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure

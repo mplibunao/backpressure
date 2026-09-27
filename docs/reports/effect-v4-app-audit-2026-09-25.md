@@ -1,6 +1,6 @@
 # Effect v4 app audit: t3code and executor
 
-This report is the after-change evidence for the Effect v4 rule rework. It repeats the recorded 2026-09-25 app run on the same two snapshots and adds the delegated `@effect/tsgo` rules. It also records the reviewed decision on `effecttsgo/prefer-schema-over-json`. The criteria live in [the plan](../exec-plans/active/effect-rules-v4-implementation-2026-09-25.md) (§3.2 and G2); the before-counts come from [the alignment record](../exec-plans/active/effect-rules-v4-alignment-2026-09-25.md#app-evidence-t3code-and-executor).
+This report is the after-change evidence for the Effect v4 rule rework. It repeats the recorded 2026-09-25 app run on the same two snapshots and adds the delegated `@effect/tsgo` rules. It also records the reviewed decision on `effecttsgo/prefer-schema-over-json`. The criteria live in [the plan](../exec-plans/completed/effect-rules-v4-implementation-2026-09-25.md) (§3.2 and G2); the before-counts come from [the alignment record](../exec-plans/completed/effect-rules-v4-alignment-2026-09-25.md#app-evidence-t3code-and-executor).
 
 Outcome:
 

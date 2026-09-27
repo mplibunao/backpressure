@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 17
 title: Triage the rules and supported versions of the next @effect/tsgo pin
 status: done
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-09-26T12:13:08Z
-updated_at: 2026-09-26T23:12:29Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure
@@ -24,7 +23,7 @@ resolution:
   rationale: The pin moved to `@effect/tsgo` 0.46.1, the first release containing Effect-TS/tsgo#768. Its snapshot replaced the 0.45.0 one. The release adds three style rules and removes or re-categorizes none, and each new rule takes the style default of `warn`. Both package READMEs state the new supported matrix, and `pnpm check:effect-integration` passes on both routes with oxlint 1.81.0 as the unsupported control. Later bumps stay gated by the policy's expected category counts and ADR-007's re-grade follow-up.
   evidence_refs:
     - kind: plan
-      ref: docs/exec-plans/active/effect-rules-v4-implementation-progress-ledger.md
+      ref: docs/exec-plans/completed/effect-rules-v4-implementation-progress-ledger.md
       label: Effect rules v4 progress ledger, entry for the @effect/tsgo 0.46.1 bump
       note: Grades, overlap checks, release-age controls, and the integration commands with their exit codes.
 ---

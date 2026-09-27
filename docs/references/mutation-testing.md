@@ -123,6 +123,6 @@ Static/equivalent data files (message strings, manifest metadata, plugin identit
 
 **Now (v0):** full sweep over rule logic (`rule-catalog.ts`, extracted rule files) and AST helpers (`utils/*.ts`) gates the first publish. Run as an agent workflow via the orchestrator/worker skills.
 
-**Later:** expand as new packages and rule domains are added. Tracked in introspection tech-debt records (`docs/records/tech-debt/`).
+**Later:** expand as new packages and rule domains are added. Tracked as hand-managed records under `docs/records/` (see `docs/records/README.md`).
 
 **Not now:** CI gating. Mutation testing is an agent-run quality gate, never wired into CI.

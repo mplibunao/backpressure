@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 14
 title: Drop prefer-effect-fn again when tsgo's oxlint route keeps Effect options through extends
 status: done
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-09-26T04:52:16Z
-updated_at: 2026-09-27T00:21:50Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure
@@ -24,7 +23,7 @@ resolution:
   rationale: With `@effect/tsgo` 0.46.1 pinned, `effecttsgo/effect-fn-opportunity` reports all three wrapper shapes under a consumer `tsconfig.json` that extends `effect.json` on the default route, and MP approved the removal on 2026-09-27. `prefer-effect-fn` is dropped with a `replacedBy` edge to `effecttsgo/effect-fn-opportunity`, and `assertReplacementFloors` proves that rule ships at the dropped rule's `error` floor. The oxlint-route smoke asserts that `effect-fn-opportunity` alone reports each wrapper under the shipped setup.
   evidence_refs:
     - kind: plan
-      ref: docs/exec-plans/active/effect-rules-v4-implementation-progress-ledger.md
+      ref: docs/exec-plans/completed/effect-rules-v4-implementation-progress-ledger.md
       label: Effect rules v4 progress ledger, entry for dropping prefer-effect-fn
       note: The removal's scope, the floor mutation check, and the check and integration commands with their exit codes.
 ---

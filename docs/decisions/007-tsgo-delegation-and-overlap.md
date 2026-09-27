@@ -5,7 +5,7 @@
 
 ## Context
 
-ADR 001 delegated type-aware Effect semantics to `@effect/language-service` and allowed AST overlap only when the AST rule gives useful config-free backpressure. ADR 004 reused that language-service wording for type-aware checks. The Effect v4 alignment (`docs/exec-plans/active/effect-rules-v4-alignment-2026-09-25.md`) found that language-service diagnostics do not reach agents, and that `@effect/tsgo` can report those checks through patched oxlint next to this package's rules.
+ADR 001 delegated type-aware Effect semantics to `@effect/language-service` and allowed AST overlap only when the AST rule gives useful config-free backpressure. ADR 004 reused that language-service wording for type-aware checks. The Effect v4 alignment (`docs/exec-plans/completed/effect-rules-v4-alignment-2026-09-25.md`) found that language-service diagnostics do not reach agents, and that `@effect/tsgo` can report those checks through patched oxlint next to this package's rules.
 
 ADR 003 said v0 does not expand beyond `@mplibunao/oxlint-standards` and `@mplibunao/tsconfig`. The alignment also needs a private unpublished local viewer so people can read the composed rule list.
 

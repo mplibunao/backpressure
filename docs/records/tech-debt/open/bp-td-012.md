@@ -6,11 +6,10 @@ record_type: tech-debt
 number: 12
 title: Enforce JSDoc presence on public API via a custom oxlint plugin rule
 status: open
-type: introspection-record
 category: tech-debt
 visibility: local-only
 created_at: 2026-06-16T06:05:04Z
-updated_at: 2026-06-16T06:05:04Z
+updated_at: 2026-09-27T04:16:52Z
 tags:
   - record/tech-debt
   - repo/backpressure

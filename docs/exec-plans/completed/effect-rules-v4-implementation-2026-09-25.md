@@ -1,6 +1,6 @@
 # Effect rules v4 alignment: build plan
 
-- Status: in-scope verification complete / full acceptance blocked. The external introspection `config.schema_violation` still stops `pnpm check`, and executor's typed app audit covers 1,355 of 1,922 files (an open MP question). The plan remains active.
+- Status: completed and accepted (2026-09-27). MP accepted G2 with the recorded executor coverage, so WI-08 is done under that acceptance and WI-10 is done with the introspection exit plan's standalone verification. The exit plan (`docs/exec-plans/active/introspection-exit-2026-09-27.md`) replaces the former introspection blocker and the instruction to keep introspection.
 - Date: 2026-09-25.
 - Target branch: `lint/oxlint-standards-consolidation`.
 - Decision baseline: `effect-rules-v4-alignment-2026-09-25.md`, identified by the scaffold as commit `42c77c6`.
@@ -513,8 +513,8 @@ The following is the planned touched-file set. “New” means create it; it doe
 
 | File | Change and reason | Order/dependency |
 | --- | --- | --- |
-| `docs/exec-plans/active/effect-rules-v4-implementation-2026-09-25.md` | Replace the scaffold's unresolved questions with this design and maintain execution status. | First; preserve unrelated untracked files. |
-| `docs/exec-plans/active/effect-rules-v4-implementation-progress-ledger.md` (new) | Work-item status, commands, evidence paths, revision/commit, and blocker classification. | First; update at each item. |
+| `docs/exec-plans/completed/effect-rules-v4-implementation-2026-09-25.md` | Replace the scaffold's unresolved questions with this design and maintain execution status. | First; preserve unrelated untracked files. |
+| `docs/exec-plans/completed/effect-rules-v4-implementation-progress-ledger.md` (new) | Work-item status, commands, evidence paths, revision/commit, and blocker classification. | First; update at each item. |
 | `docs/decisions/007-tsgo-delegation-and-overlap.md` (new) | Record delegation, overlap, required patch, severity ownership, and compatibility boundary. | Before behavioral cutover. |
 | `docs/decisions/001-effect-preset-posture.md` | Dated partial-supersession note; retain unrelated decisions. | With ADR-007. |
 | `docs/decisions/004-rule-curation-and-severity-posture.md` | Update delegation ownership via supersession note, retaining graded curation. | With ADR-007. |
@@ -528,7 +528,7 @@ The following is the planned touched-file set. “New” means create it; it doe
 | `docs/references/prose-gate.md`, `.vale.ini` | Exempt the generated `rules.md`, which carries third-party text, with a per-file `.vale.ini` section `[docs/references/rules.md]` and an empty `BasedOnStyles`. | With the generator. |
 | `docs/decisions/003-monorepo-scope-and-naming.md` | Dated supersession note: private, unpublished tool packages are allowed. | WI-01, with ADR-007. |
 | `docs/references/effect-house-style.md` (new) | Required house deviations and exact consumer workflow. | Before completion; linked by router/readmes. |
-| `docs/exec-plans/active/effect-rules-v4-alignment-2026-09-25.md` | Append build/after-run evidence links and deferred-record IDs; update status when justified. Do not rewrite settled choices or historical observations. | Final evidence phase. |
+| `docs/exec-plans/completed/effect-rules-v4-alignment-2026-09-25.md` | Append build/after-run evidence links and deferred-record IDs; update status when justified. Do not rewrite settled choices or historical observations. | Final evidence phase. |
 | `docs/records/tech-debt/open/bp-td-010.md` → `done/bp-td-010.md` | Close resolved rule-removal follow-up with evidence. | After actual removal. |
 | `docs/records/tech-debt/open/bp-td-<allocated>.md` (three new records) | Fork-detach research, custom/tsgo pipe coverage follow-up, next pin triage; numeric IDs allocated from actual inventory. | Final evidence; record health validation may remain blocked. |
 | `docs/reports/effect-v4-app-audit-2026-09-25.md` (new) | Compact before/after tables, selected-file coverage, reviewed JSON decision, pipe-opportunity comparison, raw evidence references. | After G2 execution; no invented counts. |
@@ -649,6 +649,8 @@ Rollback is a package/config/toolchain rollback together: restore the prior pack
 
 The introspection sibling failure remains explicitly external. It blocks a clean final `pnpm check`; its unpublished file dependency also blocks clean remote installation. Do not widen this rule project into an introspection repair or release-workflow redesign. After that separately owned issue is resolved, rerun the full check and normal clean-checkout release preparation before declaring release readiness.
 
+Note, 2026-09-27: the introspection exit plan (`docs/exec-plans/active/introspection-exit-2026-09-27.md`) replaces the blocker and the no-widening instruction above. Introspection is removed from backpressure entirely, and the clean-checkout verification this section required is recorded in the ledger's WI-10 note.
+
 ## 6. Implementation order
 
 Sizes describe review and build scope, not elapsed-time estimates. Keep a ledger row for each item with status, revision, commands, outputs/evidence paths, and commit. WI-03 through WI-07 form one **atomic landing group**: intermediate commits may compile and support focused tests, but no subset that removes checks before their replacements/config/gates is merged or published. Within that group, each visitor change lands with its unit/replay/manifest expectations, and public exports land with both packages' allowlists and consumer tests.
@@ -743,6 +745,8 @@ Sizes describe review and build scope, not elapsed-time estimates. Keep a ledger
 
 **Dependencies:** WI-07, WI-11, and available referenced app checkouts/dependencies. **Size:** Medium. Missing external evidence blocks this item, not the independent unit tests.
 
+Done (2026-09-27): MP accepted G2 with the recorded coverage; see the ledger's WI-08 note.
+
 ### WI-09: Complete consumer guidance, records, and changesets
 
 **Goal:** Finish the required house style and accurate current-state docs, plus deferred records and release migration instructions.
@@ -760,6 +764,8 @@ Sizes describe review and build scope, not elapsed-time estimates. Keep a ledger
 **Done when:** Every in-scope code, package, route, policy, prose, and app-evidence check has an actual recorded result at the final revision. No new failure is attributed to introspection without evidence. Attempt the unmodified `pnpm check` and record its exact stopping point. Release readiness is declared only after the separately owned sibling/install blocker is fixed and a clean full check plus normal release preparation passes. Until then, keep the plan active with a precise “in-scope verification complete / full acceptance blocked” status, not a fabricated green result.
 
 **Key files:** Ledger, plan/alignment status and evidence links. **Dependencies:** WI-09. **Size:** Small.
+
+Done (2026-09-27): step 3 of the introspection exit plan supplies the standalone verification. The first two fresh clones with no introspection sibling surfaced the two fresh-install defects fixed in the removal commit; the third passed `pnpm install --frozen-lockfile`, the complete `pnpm check`, `pnpm check:effect-integration`, and `git diff --exit-code`; see the ledger's WI-10 note.
 
 ### Four task-specific verification methods
 
@@ -785,7 +791,7 @@ These are factual validations with fixed decision boundaries, not unanswered des
 
 ## References and provenance conventions
 
-- Decision owner: `docs/exec-plans/active/effect-rules-v4-alignment-2026-09-25.md`, especially its four binding sections.
+- Decision owner: `docs/exec-plans/completed/effect-rules-v4-alignment-2026-09-25.md`, especially its four binding sections.
 - Original scaffold: the supplied `effect-rules-v4-implementation-2026-09-25.md` background/seam findings.
 - Absorbed review: `docs/reviews/effect-rules-v4-alignment-review-2026-09-25.md`, F1 to F14.
 - Build-plan critique: `docs/reviews/effect-rules-v4-implementation-review-2026-09-25.md`, F1 to F20 and Q1 to Q4, applied here. It records why this plan departs from the original planning answer (§3.12 came later, from MP), including the G3a/G3b split and the single offline policy-check entrypoint. It also covers the `release:prepare` entries, the G2 typed engine and canary, and the harness pnpm settings.

@@ -1,7 +1,6 @@
 import type { OxlintConfig } from 'oxlint';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,7 +56,11 @@ describe('drift guards — engine-backed suppression contracts', () => {
   let tempDir = '';
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'oxlint-drift-'));
+    // The composed configs name this workspace package as a JS plugin, and oxlint resolves
+    // jsPlugins from the config file's directory (plus NODE_PATH), never from the process cwd.
+    // A temp dir outside the repository has no node_modules ancestor, so the fixture must live
+    // inside the repo tree — the same placement `materializeEffectiveRules` uses.
+    tempDir = mkdtempSync(join(repoRoot, '.oxlint-drift-'));
   });
 
   afterEach(() => {

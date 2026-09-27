@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { createTempDir, isObjectRecord, removeTempDir, repoRoot } from './script-runtime.ts';
+import { isObjectRecord, removeTempDir, repoRoot } from './script-runtime.ts';
 
 // Preview limit for error messages when oxlint output cannot be parsed.
 const outputPreviewLength = 400;
@@ -188,10 +188,10 @@ export const materializeEffectiveRules = (
   fileName = 'subject.ts',
   context?: PrintConfigContext,
 ): Record<string, unknown> => {
-  const tempDir =
-    context === globalThis.undefined
-      ? createTempDir('oxlint-effective-')
-      : mkdtempSync(join(context.cwd, '.oxlint-effective-'));
+  // oxlint resolves jsPlugins from the config file's directory and NODE_PATH, never from the
+  // process cwd, so the temp config must sit inside the repository (or consumer directory).
+  // A config under os.tmpdir() only resolves on machines with a stale hidden hoist.
+  const tempDir = mkdtempSync(join(context?.cwd ?? repoRoot, '.oxlint-effective-'));
   try {
     const configPath = join(tempDir, '.oxlintrc.json');
     const filePath = join(tempDir, fileName);

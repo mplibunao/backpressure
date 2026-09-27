@@ -1,6 +1,6 @@
 # Review: Effect rules and v4 guidance alignment plan
 
-Reviewed: `docs/exec-plans/active/effect-rules-v4-alignment-2026-09-25.md` against ADR-001, ADR-004, `preset-architecture.md`, `rule-intake.md`, `rule-pack-architecture.md`, the rule catalog and manifest, `check-rule-inventory.ts`, `@effect/tsgo` at tag `@effect/tsgo@0.45.0` (rule docs and `oxlint-presets/*.json`), executor's `.oxlintrc.jsonc`, and the t3code and effect `tsconfig.base.json` plugin blocks. Taste-distillery canon was read through GNO (TD-CARD-008, -024, -026, -032, -033).
+Reviewed: `docs/exec-plans/completed/effect-rules-v4-alignment-2026-09-25.md` against ADR-001, ADR-004, `preset-architecture.md`, `rule-intake.md`, `rule-pack-architecture.md`, the rule catalog and manifest, `check-rule-inventory.ts`, `@effect/tsgo` at tag `@effect/tsgo@0.45.0` (rule docs and `oxlint-presets/*.json`), executor's `.oxlintrc.jsonc`, and the t3code and effect `tsconfig.base.json` plugin blocks. Taste-distillery canon was read through GNO (TD-CARD-008, -024, -026, -032, -033).
 
 Shorthand: `RC` = `packages/oxlint-standards/src/rule-catalog.ts`, `RM` = `packages/oxlint-standards/src/rule-manifest.ts`, `TSGO` = `/Users/mp/references/effect-ts/tsgo` at the 0.45.0 tag.
 

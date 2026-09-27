@@ -10,6 +10,10 @@ import { defineConfig } from 'vite-plus';
 const toolIgnorePatterns = [
   '**/*.md',
   '.claude/**',
+  // Transient oxlint fixture dirs written inside the repo so jsPlugins resolve from the config's
+  // directory (drift-guards tests and materializeEffectiveRules); tests remove them in cleanup.
+  '.oxlint-drift-*/**',
+  '.oxlint-effective-*/**',
   '.pnpm-store/**',
   'coverage/**',
   'dist/**',
