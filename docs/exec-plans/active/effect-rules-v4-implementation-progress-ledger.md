@@ -29,7 +29,7 @@ Commit SHAs are in the backpressure repo. The orchestrator commits; agents do no
 | WI-12 | Extend prefer-effect-fn to tsgo shape parity | S | PARKED by MP decision; work stashed, not committed | |
 | WI-13 | Bump @effect/tsgo to the first release containing the extends fix | M | DONE (pushed) | `c2f6a4d` |
 | WI-14 | Rebuild no-pipe-ladder as closure nesting and add no-discarded-failure | M | DONE (pushed) | `63e5a65` |
-| WI-15 | Drop prefer-effect-fn in favor of effect-fn-opportunity | S | DONE (uncommitted) | |
+| WI-15 | Drop prefer-effect-fn in favor of effect-fn-opportunity | S | DONE (pushed) | `7eb1a34` |
 | WI-11 | Rule list with its generated page and local viewer | M | DONE (pushed) | `b848cb5` |
 | WI-07 | Install all six durable gates | L | DONE (pushed) | `671fcb9` |
 | WI-08 | Measure the two apps and finalize conditional delegation | M | JSON decision and measurements DONE (pushed); full typed coverage BLOCKED: executor typed coverage is partial (1,355 of 1,922 files) because five executor tsconfigs are invalid under TypeScript 6 and 7 alike, so MP did not accept it | `dfff7d9` |
