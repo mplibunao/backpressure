@@ -233,9 +233,13 @@ const runComposedConfigFixture = (consumerDir: string) => {
   const fixturePath = join(consumerDir, 'composed-config-fixture.ts');
   writeFileSync(fixturePath, composedConfigFixture);
 
-  return runCommand('pnpm', ['exec', 'oxlint', '--config', '.oxlintrc.json', fixturePath], {
-    cwd: consumerDir,
-  });
+  return runCommand(
+    'pnpm',
+    ['exec', 'oxlint', '--format', 'default', '--config', '.oxlintrc.json', fixturePath],
+    {
+      cwd: consumerDir,
+    },
+  );
 };
 
 const runComposedConfigOxlint = (consumerDir: string) => {
@@ -269,7 +273,15 @@ const runUnpatchedEffectPreset = (consumerDir: string) => {
   writeFileSync(join(consumerDir, 'effect-fixture.ts'), 'export const value = 1;\n');
   const result = runCommand(
     'pnpm',
-    ['exec', 'oxlint', '--config', '.oxlintrc.effect.json', 'effect-fixture.ts'],
+    [
+      'exec',
+      'oxlint',
+      '--format',
+      'default',
+      '--config',
+      '.oxlintrc.effect.json',
+      'effect-fixture.ts',
+    ],
     { cwd: consumerDir },
   );
   ensureFailure(result, `unpatched full Effect preset\n${commandOutput(result)}`);

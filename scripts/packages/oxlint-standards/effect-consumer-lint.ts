@@ -83,6 +83,12 @@ export const lintWith = async (
 ): Promise<BoundedResult> => {
   const tsconfigArgs =
     target.tsconfig === globalThis.undefined ? [] : ['--tsconfig', target.tsconfig];
+  // Some callers supply JSON in paths, while text runs need a stable reporter in CI.
+  const formatArgs = [...extraArgs, ...paths].some(
+    (arg) => arg === '--format' || arg.startsWith('--format='),
+  )
+    ? []
+    : ['--format', 'default'];
   return ensureCompleted(
     await consumer.exec('pnpm', [
       'exec',
@@ -90,6 +96,7 @@ export const lintWith = async (
       '--config',
       target.config,
       ...tsconfigArgs,
+      ...formatArgs,
       ...extraArgs,
       ...paths,
     ]),

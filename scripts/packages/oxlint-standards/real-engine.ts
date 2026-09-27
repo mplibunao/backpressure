@@ -103,7 +103,15 @@ export const runOxlintOnSource = ({
   mkdirSync(dirname(sourcePath), { recursive: true });
   writeFileSync(sourcePath, source);
 
-  return runCommand(command, [...commandPrefixArgs, '--config', configPath, sourcePath], { cwd });
+  // CI otherwise selects GitHub annotations, which the text diagnostic assertions cannot parse.
+  const formatArgs = commandPrefixArgs.includes('--format') ? [] : ['--format', 'default'];
+  return runCommand(
+    command,
+    [...commandPrefixArgs, ...formatArgs, '--config', configPath, sourcePath],
+    {
+      cwd,
+    },
+  );
 };
 
 export const diagnosticCount = (result: CommandResult, ruleName: string): number => {
