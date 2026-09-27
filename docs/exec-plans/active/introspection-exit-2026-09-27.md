@@ -255,6 +255,17 @@ Resolve full OIDs first; `stash@{n}` is only an inventory label. Pushing a stash
 
 Record these decisions in this plan's journal; don't create tech-debt records for them.
 
+### Authorization
+
+MP authorized every outward action in this plan on 2026-09-27, except one: merging the Version Packages PR in step 11, which publishes to npm and can't be undone. MP approves that merge explicitly. Everything else runs on its own once the step's checks pass. That covers the backup pushes, PR creation, the taste-distillery and backpressure merges, closing introspection's PRs #2 and #4, the archive and the closeout.
+
+Any step stops and reports to MP, instead of proceeding, when:
+- a check fails, is missing or was skipped;
+- a source or destination OID differs from what was verified;
+- the introspection exposure review finds a secret or private content;
+- a replay hits a conflict or an unexpected change;
+- a Version Packages reopen through `gh` doesn't start CI.
+
 ### Dependency graph
 
 ```text
@@ -276,13 +287,13 @@ Record these decisions in this plan's journal; don't create tech-debt records fo
 
 - **The archive's hard prerequisites** are steps 5 and 9. Publishing isn't technically required for the archive, but the numbered order finishes it first.
 - **One writer per repository and ref.** Independent lanes may run in parallel. Never overlap installs, cherry-pick sequences or commits in the same worktree.
-- **Before every outward action,** re-read the source and destination state. A changed head voids its earlier approval and verification.
+- **Before every outward action,** re-read the source and destination state. A changed head voids its earlier verification.
 
 ### Execution journal
 
 Append one row per action. Keep raw inventories that could hold secrets out of this file.
 
-| Step | Repo | Source OID | Destination / ref | Command and working directory | Exit | UTC time | Evidence / PR / run | MP approval |
+| Step | Repo | Source OID | Destination / ref | Command and working directory | Exit | UTC time | Evidence / PR / run | Authorization |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## File-by-file impact
@@ -331,12 +342,12 @@ No file edits; only refs, PR states and the archive. Don't touch toolkit's Codex
 
 ## Risks
 
-- **Public exposure:** introspection is public. Review the outgoing branches and stash snapshots (working tree and index) for secrets or private content before approving the push. If something turns up, stop; don't silently rewrite objects.
+- **Public exposure:** introspection is public. Review the outgoing branches and stash snapshots (working tree and index) for secrets or private content before pushing. If something turns up, stop and report to MP; don't silently rewrite objects.
 - **History still mentions introspection:** old commits and the backed-up branches still contain it. The cutover is proven on the consolidation head and on `main`, not by zero historical matches.
 - **Rolling back the metadata:** a rollback restores the whole removal commit, not just the CLI. After the archive, prefer a forward fix that keeps the standalone install working.
 - **Rolling back the replay:** keep the original refs, and abort a failed cherry-pick only in its task worktree. Never force-push `main`, squash the canon, or resolve a conflict by taking one side wholesale.
 - **Rolling back the release:** publishing is irreversible here. Never unpublish, overwrite a version or move a published tag. If a job fails after some artifacts exist, reconcile package by package before any retry.
-- **Stale evidence:** any change to what was checked voids the related checks and approvals. That covers the PR head and source branch, and also the registry state and release candidate. Missing or skipped checks aren't passes.
+- **Stale evidence:** any change to what was checked voids the related checks. That covers the PR head and source branch, and also the registry state and release candidate. Missing or skipped checks aren't passes.
 
 ## Implementation order
 
@@ -384,13 +395,13 @@ Path aliases: `BP` = backpressure, `TD` = taste-distillery, `TK` = claude-toolki
 3. Record the wiki range with `git -C "$TD" rev-list --reverse --topo-order "$TD_CANON_SOURCE..$TD_WIKI_SOURCE"`. It must be exactly six commits, all with one parent; a merge commit needs a revised replay spec.
 4. Prove `adopt/introspection-v1` and `reshape/introspection-v1` are ancestors of backpressure's pushed consolidation tip (`git merge-base --is-ancestor`).
 5. Record each introspection stash's full OID, message, order, parents and tree. Don't drop or pop any of them.
-6. Present the backup-coverage table to MP, and record what gets backed up, what stays local-only, and what needs extra approved storage.
+6. Record the backup-coverage table in the journal: what gets backed up and what stays local-only, per the Decisions table.
 
 **Success:** every reconstruction has an unchanged source ref, and the stash identities no longer depend on `stash@{n}`.
 
 **On failure:** a name collision at another OID stops the step. A new name needs a recorded adjustment.
 
-**Go-ahead:** extra backup refs for excluded material need their own approval.
+**Go-ahead:** local refs only.
 
 ### Step 3: Remove introspection and verify backpressure locally
 
@@ -449,7 +460,7 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
 
 **On failure:** after an ambiguous result, read the remote refs before retrying. Never overwrite a conflicting destination.
 
-**Go-ahead:** MP approves the exact mappings.
+**Go-ahead:** authorized; proceeds once the preconditions hold.
 
 ### Step 5: Back up introspection branches and stashes
 
@@ -467,7 +478,7 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
 
 **On failure:** keep the source refs and block the archive. If `--atomic` is unsupported, push the approved mappings one at a time and record any partial success.
 
-**Go-ahead:** MP approves the eight mappings and their public visibility. This does not authorize the archive.
+**Go-ahead:** authorized once the exposure review is clean. A finding stops the step for MP.
 
 ### Step 6: Rebuild the taste canon and run its gate
 
@@ -499,17 +510,17 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
 - The heads match the reviewed state.
 
 **Procedure:**
-1. With approval, push the landing branch and verify its remote OID.
-2. With approval, open the PR to `main`.
+1. Push the landing branch and verify its remote OID.
+2. Open the PR to `main`.
 3. Run `gh pr checks "$TD_PR" --watch --fail-fast` and `gh pr view "$TD_PR" --json headRefOid,baseRefName,mergeable,statusCheckRollup`. Require `Gate (just ci)` to exist and pass by name. `--required` alone isn't enough, because no checks may be configured as required.
-4. With approval, run `gh pr merge "$TD_PR" --merge --match-head-commit "$TD_PR_HEAD"`. Keep the branch, and never squash or use the admin bypass.
+4. Once `Gate (just ci)` passes on the unchanged head, run `gh pr merge "$TD_PR" --merge --match-head-commit "$TD_PR_HEAD"`. Keep the branch, and never squash or use the admin bypass.
 5. Fetch, confirm the 15 replayed commits are ancestors of `main` and the manifest is absent, and check the `main` push run.
 
 **Success:** the checked canon is on remote `main`, commit by commit.
 
 **On failure:** any change to the head or base blocks the merge until it's re-verified, and so does a failed or missing check. A 403 never justifies a direct push to `main`. Fix a landed defect through a new checked PR.
 
-**Go-ahead:** separate approvals for the push, the PR and the merge. Record any accepted protection gap before the merge.
+**Go-ahead:** authorized; the merge waits only on the named check. Record the protection situation before the merge.
 
 ### Step 8: Restack and back up the wiki branch
 
@@ -519,34 +530,34 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
 1. Create a clean worktree at the landed `main`, and cherry-pick the six wiki commits in order.
 2. Compare the old and new ranges and authors; the patches must be equivalent. Confirm the manifest is still absent.
 3. Read `TD-DEBT-015` and the whole wiki draft. Make the documentation change as a separate commit, then run `just ci`.
-4. Advance the local branch with a compare-and-swap. It is checked out in the main worktree, so first confirm that worktree is clean and its `HEAD` equals `$TD_WIKI_SOURCE`; otherwise stop. With approval, run:
+4. Advance the local branch with a compare-and-swap. It is checked out in the main worktree, so first confirm that worktree is clean and its `HEAD` equals `$TD_WIKI_SOURCE`; otherwise stop. Then run:
    - `git -C "$TD" switch --detach`
    - `git -C "$TD" update-ref refs/heads/docs/llm-wiki-reshape-plan "$TD_WIKI_NEW" "$TD_WIKI_SOURCE"`
    - `git -C "$TD" switch docs/llm-wiki-reshape-plan`
 
    If the branch changed in the meantime, `update-ref` refuses and the step stops.
-5. With approval, push the new OID to `refs/heads/docs/llm-wiki-reshape-plan` and verify it. No PR.
+5. Push the new OID to `refs/heads/docs/llm-wiki-reshape-plan` and verify it. No PR.
 
 **Success:** the remote wiki branch holds the six changes on the landed canon, then the new-CLI and dual-prerequisite commit.
 
 **On failure:** abort only the task worktree's sequence. Never force-update an unexpected remote wiki branch.
 
-**Go-ahead:** backup-push approval only. Merging the wiki, building its tool and infrastructure work are all out of scope.
+**Go-ahead:** authorized for the backup push only. Merging the wiki, building its tool and infrastructure work are all out of scope.
 
 ### Step 9: Open, verify and merge the backpressure PR
 
 **Preconditions:** step 3 passes, G2's acceptance is recorded in the Effect ledger, and protection and heads have been rechecked.
 
 **Procedure:**
-1. With approval, push the verified OID to `lint/oxlint-standards-consolidation` without force, and verify it.
-2. With approval, open the PR to `main`. Its body covers:
+1. Push the verified OID to `lint/oxlint-standards-consolidation` without force, and verify it.
+2. Open the PR to `main`. Its body covers:
    - the broader consolidation and breaking Effect upgrade;
    - the introspection cutover;
    - the standalone-install and full-check evidence;
    - both integration routes;
    - MP's acceptance of the executor coverage item (G2) and its evidence.
 3. Require `Check` and `Effect integration` to pass on the latest head, by name and with run links.
-4. Confirm both pending changesets are present with the intended bumps. MP's merge approval acknowledges that merging starts the release workflow's versioning.
+4. Confirm both pending changesets are present with the intended bumps. Merging starts the release workflow's versioning, not publishing.
 5. Merge with a merge commit and the head pinned: `gh pr merge "$BP_PR" --merge --match-head-commit "$BP_PR_HEAD"`. `main` uses merge commits (PRs #1, #3, #4), and step 6's "`main` has the removal commit" check depends on it. Never squash or use the admin bypass.
 6. Fetch `main`, and confirm it has the removal commit, no sibling dependency and no `.introspection/`. Check the `main` `Check` run.
 
@@ -554,7 +565,7 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
 
 **On failure:** no bypass for a failed or missing job. If `main` moved incompatibly, reconcile and retest without force-pushing. A failure after the merge blocks the release and the archive until it's diagnosed.
 
-**Go-ahead:** separate approvals for the push, the PR and the merge. This merge authorizes the versioning automation, not publishing.
+**Go-ahead:** authorized; the merge waits only on the two named checks.
 
 ### Step 10: Verify the Version Packages PR
 
@@ -567,16 +578,16 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
    - both changesets consumed;
    - a consistent lockfile;
    - no unexpected product, credential or workflow changes.
-2. MP closes and reopens it, and approves any approval-required run for the reviewed head. Don't add a PAT or App token, and don't rewrite the release automation.
+2. Close and reopen it with `gh pr close` and `gh pr reopen`. `gh` acts as MP's account, so the reopen is a user event that starts CI. If no run starts, or GitHub shows an approval-required banner, stop and ask MP to act in the UI. Don't add a PAT or App token, and don't rewrite the release automation.
 3. Require `Check` and `Effect integration` on the current head. A bot update voids earlier evidence.
 4. In a fresh standalone checkout of that exact head, run `pnpm install --frozen-lockfile`, `pnpm check` and `pnpm release:prepare`, which should pass now that the changesets are consumed. Don't run `pnpm release` locally.
 5. Verify each package's npm trusted-publisher binding. It must name owner `mplibunao` and repository `backpressure`, with workflow `release.yml` and no environment. Confirm npm meets the existing `11.5.1` minimum.
 
 **Success:** the candidate versions and head are recorded. Local preparation and both runner jobs pass, and the bindings match.
 
-**On failure:** leave the PR unmerged. Never remove release-state checks or add registry tokens. A binding fix needs approval.
+**On failure:** leave the PR unmerged. Never remove release-state checks or add registry tokens. A binding fix needs MP.
 
-**Go-ahead:** MP controls the close and reopen and any run approvals. Publishing waits for step 11.
+**Go-ahead:** authorized. Publishing waits for step 11.
 
 ### Step 11: Publish and verify
 
@@ -594,29 +605,29 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
    - **Default Effect route:** the README "Supported versions" pins (`packages/oxlint-standards/README.md:103-107`): `vite-plus@0.3.2`, `oxlint@1.82.0`, `oxlint-tsgolint@7.0.2001`, `@effect/tsgo@0.46.1` and `effect@4.0.0-rc.115`, plus the release-age exclusions if the consumer sets a window. The README verification file reports `effecttsgo(strict-effect-provide)` and `effecttsgo(effect-fn-opportunity)` (`README.md:193`).
 
    The patched-TypeScript route ran in `release:prepare` against the packed tarballs of the same release commit (`package.json:38`). Step 4 ties those tarballs to the registry ones. Don't touch real consumer repos.
-6. For consumers with a release-age window, keep their policy and add exact-version exclusions only with approval. That includes the new backpressure versions. Check each package's publish timestamp instead of assuming a cutoff time.
+6. For real consumer repos with a release-age window, keep their policy; adding exact-version exclusions there is MP's call, per repo. That includes the new backpressure versions. Check each package's publish timestamp instead of assuming a cutoff time.
 
 **Success:** both versions exist, the dist-tags, tags, releases and provenance match, and the registry installs work.
 
-**On failure:** classify any partial publish per package and artifact. A green rerun doesn't repair missing tags or GitHub releases, because `changeset publish` skips versions that are already published and so creates no tags for them. A tag-only or release-only repair needs its own approval and must point at the published commit and changelog. A retry of the canonical workflow needs approval after checking what exists. Never republish a version or move a tag.
+**On failure:** classify any partial publish per package and artifact. A green rerun doesn't repair missing tags or GitHub releases, because `changeset publish` skips versions that are already published and so creates no tags for them. A tag-only or release-only repair needs MP and must point at the published commit and changelog. A retry of the canonical workflow needs MP after checking what exists. Never republish a version or move a tag.
 
 ### Step 12: Close introspection's PRs and archive
 
 **Preconditions:**
 - Steps 5 and 9 are done, and all eight backup refs still match.
-- MP has decided on the uncovered local state and approved closing the PRs.
+- The uncovered local state is settled (Decisions table).
 
 **Procedure:**
 1. Recheck the open PRs, running workflows, repo state and npm metadata.
-2. With approval, close both PRs without deleting their branches: `gh pr close 2 --repo mplibunao/introspection` and `gh pr close 4 --repo mplibunao/introspection`. Verify each is closed with `mergedAt` null.
+2. Close both PRs without deleting their branches: `gh pr close 2 --repo mplibunao/introspection` and `gh pr close 4 --repo mplibunao/introspection`. Verify each is closed with `mergedAt` null.
 3. Re-read the eight backup refs, and confirm npm still has no `0.1.0` and no deprecation on `0.0.1`.
-4. With the final approval, run `gh repo archive mplibunao/introspection`, then `gh api repos/mplibunao/introspection --jq '{archived,private,default_branch}'`. Require `archived: true`, unchanged visibility and default branch, and the refs preserved.
+4. Run `gh repo archive mplibunao/introspection`, then `gh api repos/mplibunao/introspection --jq '{archived,private,default_branch}'`. Require `archived: true`, unchanged visibility and default branch, and the refs preserved.
 
 **Success:** the repo is archived, the backups remain, PR #2 was never merged, and npm is unchanged.
 
-**On failure:** before the archive, stop and repair the missing evidence. After an ambiguous archive response, read the state before retrying. Unarchive only with approval for a needed repair.
+**On failure:** before the archive, stop and repair the missing evidence. After an ambiguous archive response, read the state before retrying. Unarchive only for a needed repair, and tell MP.
 
-**Go-ahead:** closing the PRs and archiving are separate approvals.
+**Go-ahead:** authorized once every precondition holds.
 
 ### Step 13: Reconcile and close
 
@@ -636,11 +647,11 @@ Read each ref back with `git ls-remote`. Don't set an upstream on the local cred
 
 Call the rebuilt taste commits verified replays, not exact backups; the originals stay under local refs.
 
-After the final edits, run `pnpm prose` and `pnpm durable:refs`. Then move this plan to `docs/exec-plans/completed/`, update the inbound links, and land the closeout through an approved documentation PR. Merging it pushes `main`, so check the changesets state first.
+After the final edits, run `pnpm prose` and `pnpm durable:refs`. Then move this plan to `docs/exec-plans/completed/`, update the inbound links, and land the closeout through a checked documentation PR. Merging it pushes `main`, so check the changesets state first.
 
 **On failure:** leave the plan active at the exact incomplete step. Never delete backup refs, source stashes, source branches, worktrees with uncommitted work, or local app-state directories as part of closing.
 
-**Go-ahead:** the closeout push, PR and merge follow the same approvals as earlier.
+**Go-ahead:** authorized; the merge waits on `Check`.
 
 ## References
 
