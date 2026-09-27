@@ -314,7 +314,7 @@ Append one row per action. Keep raw inventories that could hold secrets out of t
 | `docs/records/tech-debt/**` (16 files, listed below) | Drop `type: introspection-record` and bump `updated_at`; bodies unchanged. |
 | `docs/design-docs/rule-intake.md` | Rewrite "Known candidates" as current-state prose. |
 | Effect v4 alignment plan, build plan, progress ledger | Add a dated replacement note and record G2 as accepted by MP on 2026-09-27 with its evidence. Leave history untouched. The only unfinished Effect items are WI-08 (G2 coverage) and WI-10 (final acceptance, blocked by introspection and G2). Mark WI-08 done under MP's acceptance. Mark WI-10 done with step 3's standalone evidence, the frozen install plus the complete `pnpm check` and both integration routes. Then move the three documents to `docs/exec-plans/completed/` in the same PR and update inbound links. |
-| This plan | Runbook, approvals, mappings, exceptions, journal. |
+| This plan | Runbook, authorization, mappings, exceptions, journal. |
 
 The 16 records:
 - open: `bp-td-007`, `008`, `009`, `011`, `012`, `013`, `015`, `016`;
