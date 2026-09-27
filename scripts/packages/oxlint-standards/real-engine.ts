@@ -9,6 +9,7 @@ import {
   commandOutput,
   fail,
   runCommand,
+  withDefaultReporter,
 } from '../../lib/script-runtime.ts';
 
 export type { CommandResult };
@@ -103,14 +104,10 @@ export const runOxlintOnSource = ({
   mkdirSync(dirname(sourcePath), { recursive: true });
   writeFileSync(sourcePath, source);
 
-  // CI otherwise selects GitHub annotations, which the text diagnostic assertions cannot parse.
-  const formatArgs = commandPrefixArgs.includes('--format') ? [] : ['--format', 'default'];
   return runCommand(
     command,
-    [...commandPrefixArgs, ...formatArgs, '--config', configPath, sourcePath],
-    {
-      cwd,
-    },
+    withDefaultReporter(['--config', configPath, sourcePath], commandPrefixArgs),
+    { cwd },
   );
 };
 

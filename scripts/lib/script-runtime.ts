@@ -75,6 +75,17 @@ export const runCommand = (
   };
 };
 
+// GitHub Actions auto-selects annotations that text diagnostic parsers cannot read.
+export const withDefaultReporter = (
+  args: readonly string[],
+  prefix: readonly string[] = [],
+): string[] => {
+  const commandArgs = [...prefix, ...args];
+  return commandArgs.some((arg) => arg === '--format' || arg.startsWith('--format='))
+    ? commandArgs
+    : [...prefix, '--format', 'default', ...args];
+};
+
 export const commandOutput = (result: CommandResult): string => `${result.stdout}${result.stderr}`;
 
 export const ensureSuccess = (result: CommandResult, label: string): void => {

@@ -5,7 +5,7 @@ import {
   boundedSummary,
   ensureCompleted,
 } from '../../lib/effect-consumer-harness.ts';
-import { fail, isObjectRecord } from '../../lib/script-runtime.ts';
+import { fail, isObjectRecord, withDefaultReporter } from '../../lib/script-runtime.ts';
 import { oxlintPackageName } from './package.ts';
 
 export const customCode = (ruleName: string): string => `${oxlintPackageName}(${ruleName})`;
@@ -83,12 +83,6 @@ export const lintWith = async (
 ): Promise<BoundedResult> => {
   const tsconfigArgs =
     target.tsconfig === globalThis.undefined ? [] : ['--tsconfig', target.tsconfig];
-  // Some callers supply JSON in paths, while text runs need a stable reporter in CI.
-  const formatArgs = [...extraArgs, ...paths].some(
-    (arg) => arg === '--format' || arg.startsWith('--format='),
-  )
-    ? []
-    : ['--format', 'default'];
   return ensureCompleted(
     await consumer.exec('pnpm', [
       'exec',
@@ -96,9 +90,7 @@ export const lintWith = async (
       '--config',
       target.config,
       ...tsconfigArgs,
-      ...formatArgs,
-      ...extraArgs,
-      ...paths,
+      ...withDefaultReporter([...extraArgs, ...paths]),
     ]),
     `oxlint ${paths.join(' ')}`,
   );
