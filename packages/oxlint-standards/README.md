@@ -111,6 +111,20 @@ Pick one route. Using both reports every Effect diagnostic twice.
 
 This repository's integration tests run `vite-plus` 0.3.2 with oxlint 1.82.0. `@effect/tsgo` 0.46.1 also supports the `vite-plus` `1.0.0-rc` releases (oxlint `1.85.0` with oxlint-tsgolint `7.0.2002` or `7.0.2003`), which this package has not tested yet. It does not support `vite-plus` 0.3.1 (oxlint 1.81.0): the patch fails, and linting then fails with `Unknown plugin: 'effecttsgo'`. Upgrade `@effect/tsgo` and `vite-plus` together.
 
+Both routes install `@effect/tsgo` at the exact pinned version. If your pnpm workspace sets `minimumReleaseAge` and that release is younger than the window, the install fails with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`. Add exact-version `minimumReleaseAgeExclude` entries for `@effect/tsgo` and its seven platform packages, so the window stays in force for everything else:
+
+```yaml
+minimumReleaseAgeExclude:
+  - '@effect/tsgo@0.46.1'
+  - '@effect/tsgo-darwin-arm64@0.46.1'
+  - '@effect/tsgo-darwin-x64@0.46.1'
+  - '@effect/tsgo-linux-arm@0.46.1'
+  - '@effect/tsgo-linux-arm64@0.46.1'
+  - '@effect/tsgo-linux-x64@0.46.1'
+  - '@effect/tsgo-win32-arm64@0.46.1'
+  - '@effect/tsgo-win32-x64@0.46.1'
+```
+
 ### Default route: patched oxlint
 
 1. Install `@effect/tsgo`, `vite-plus`, `oxlint`, `oxlint-tsgolint`, and `@mplibunao/tsconfig` at supported versions, plus `bun-types` if your tsconfig extends `server.json`.
