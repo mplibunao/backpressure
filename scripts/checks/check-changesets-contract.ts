@@ -21,9 +21,9 @@ interface ChangesetsConfig {
   readonly access?: string;
   readonly baseBranch?: string;
   readonly commit?: boolean;
-  readonly fixed?: ReadonlyArray<unknown>;
-  readonly ignore?: ReadonlyArray<unknown>;
-  readonly linked?: ReadonlyArray<unknown>;
+  readonly fixed?: readonly unknown[];
+  readonly ignore?: readonly unknown[];
+  readonly linked?: readonly unknown[];
   readonly updateInternalDependencies?: string;
 }
 

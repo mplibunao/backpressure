@@ -1,22 +1,17 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion --
-   Mock helpers intentionally provide only the properties exercised by the code under test. */
 import type { Context, ESTree } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { IdentifierLike } from './ast.js';
 import {
-  collectEffectNamespaceImports,
   collectImportNames,
+  collectNamedImportNames,
   collectNamespaceImports,
   getImportSource,
   hasEffectStackImport,
-  hasEffectTypeOrRuntimeImport,
   hasImportFrom,
   importSpecifierName,
-  isEffectNamespaceImportReference,
   isNamespaceImportReference,
+  isUnshadowedGlobal,
 } from './imports.js';
 
 vi.setConfig({ testTimeout: 1000 });
@@ -71,7 +66,7 @@ const importDecl = (
     range: RANGE,
   }) as unknown as ESTree.ImportDeclaration;
 
-const prog = (...statements: Array<ESTree.ImportDeclaration>): ESTree.Program =>
+const prog = (...statements: ESTree.ImportDeclaration[]): ESTree.Program =>
   ({
     type: 'Program',
     body: statements,
@@ -80,10 +75,10 @@ const prog = (...statements: Array<ESTree.ImportDeclaration>): ESTree.Program =>
   }) as unknown as ESTree.Program;
 
 // Builds a program with arbitrary statement types — needed for non-import statement tests
-const mixedProg = (body: Array<unknown>): ESTree.Program =>
+const mixedProg = (body: unknown[]): ESTree.Program =>
   ({ type: 'Program', body, sourceType: 'module', range: RANGE }) as unknown as ESTree.Program;
 
-const importCtx = (...names: Array<string>): Context => {
+const importCtx = (...names: string[]): Context => {
   const vars = new Map(names.map((varName) => [varName, { defs: [{ type: 'ImportBinding' }] }]));
   return { sourceCode: { getScope: () => ({ set: vars, upper: null }) } } as unknown as Context;
 };
@@ -107,8 +102,6 @@ const parentScopeCtx: Context = {
     }),
   },
 } as unknown as Context;
-
-/* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
 
 // ── getImportSource ───────────────────────────────────────────────────────────
 
@@ -299,29 +292,6 @@ describe('collectNamespaceImports()', () => {
   });
 });
 
-// ── collectEffectNamespaceImports ─────────────────────────────────────────────
-
-describe('collectEffectNamespaceImports()', () => {
-  it('collects Effect-aliased namespace import from effect barrel', () => {
-    expect(
-      collectEffectNamespaceImports(prog(importDecl('effect', [nsSpecifier('Effect')]))),
-    ).toStrictEqual(new Set(['Effect']));
-  });
-
-  it('excludes Option-aliased namespace import from effect barrel', () => {
-    // Filter 'Effect' is set — alias 'Option' does not match, so excluded
-    expect(
-      collectEffectNamespaceImports(prog(importDecl('effect', [nsSpecifier('Option')]))),
-    ).toStrictEqual(new Set());
-  });
-
-  it('collects any alias from effect/Effect submodule (filter does not apply to non-barrel)', () => {
-    expect(
-      collectEffectNamespaceImports(prog(importDecl('effect/Effect', [nsSpecifier('E')]))),
-    ).toStrictEqual(new Set(['E']));
-  });
-});
-
 // ── isRuntimeImportDeclaration boundary (some vs every) ──────────────────────
 
 // Private function exercised through collectNamespaceImports and hasImportFrom.
@@ -375,39 +345,6 @@ describe('hasImportFrom()', () => {
   });
 });
 
-// ── hasEffectTypeOrRuntimeImport ──────────────────────────────────────────────
-
-describe('hasEffectTypeOrRuntimeImport()', () => {
-  it('returns true for a runtime import from effect', () => {
-    expect(hasEffectTypeOrRuntimeImport(prog(importDecl('effect', [nsSpecifier('Effect')])))).toBe(
-      true,
-    );
-  });
-
-  it('returns true for a type-only import from the effect stack', () => {
-    // Type imports are included — the key distinction from hasEffectStackImport
-    expect(
-      hasEffectTypeOrRuntimeImport(prog(importDecl('effect', [nsSpecifier('Effect')], 'type'))),
-    ).toBe(true);
-  });
-
-  it('returns true for an effect submodule import', () => {
-    expect(
-      hasEffectTypeOrRuntimeImport(prog(importDecl('effect/Effect', [nsSpecifier('Effect')]))),
-    ).toBe(true);
-  });
-
-  it('returns false for a non-effect import', () => {
-    expect(hasEffectTypeOrRuntimeImport(prog(importDecl('rxjs', [nsSpecifier('Rx')])))).toBe(false);
-  });
-
-  it('returns false for a program containing only non-import statements', () => {
-    expect(
-      hasEffectTypeOrRuntimeImport(mixedProg([{ type: 'ExpressionStatement', range: RANGE }])),
-    ).toBe(false);
-  });
-});
-
 // ── hasEffectStackImport ──────────────────────────────────────────────────────
 
 describe('hasEffectStackImport()', () => {
@@ -416,8 +353,7 @@ describe('hasEffectStackImport()', () => {
   });
 
   it('returns false for a type-only import — runtime check excludes it', () => {
-    // Same input returns true for hasEffectTypeOrRuntimeImport — isRuntimeImportDeclaration
-    // Is the differentiating condition here
+    // IsRuntimeImportDeclaration rejects `import type`, so a type-only import alone does not activate rules.
     expect(hasEffectStackImport(prog(importDecl('effect', [nsSpecifier('Effect')], 'type')))).toBe(
       false,
     );
@@ -425,6 +361,30 @@ describe('hasEffectStackImport()', () => {
 
   it('returns false for a non-effect import', () => {
     expect(hasEffectStackImport(prog(importDecl('rxjs', [nsSpecifier('Rx')])))).toBe(false);
+  });
+
+  it.each(['@effect/atom-react', '@effect/atom-solid', '@effect/atom-vue'])(
+    'returns true for a runtime import of the Atom binding %s',
+    (source) => {
+      expect(hasEffectStackImport(prog(importDecl(source, [nsSpecifier('AtomBinding')])))).toBe(
+        true,
+      );
+    },
+  );
+
+  it('returns false for a type-only Atom binding import or another @effect package', () => {
+    expect(
+      hasEffectStackImport(prog(importDecl('@effect/atom-react', [nsSpecifier('A')], 'type'))),
+    ).toBe(false);
+    expect(hasEffectStackImport(prog(importDecl('@effect/vitest', [nsSpecifier('V')])))).toBe(
+      false,
+    );
+  });
+
+  it('returns false for the v3 @effect-atom/atom-react package', () => {
+    expect(
+      hasEffectStackImport(prog(importDecl('@effect-atom/atom-react', [nsSpecifier('A')]))),
+    ).toBe(false);
   });
 });
 
@@ -475,18 +435,46 @@ describe('isNamespaceImportReference()', () => {
   });
 });
 
-// ── isEffectNamespaceImportReference ─────────────────────────────────────────
+// ── collectNamedImportNames ───────────────────────────────────────────────────
 
-describe('isEffectNamespaceImportReference()', () => {
-  it('returns true for a bound import reference', () => {
-    expect(
-      isEffectNamespaceImportReference(importCtx('Effect'), ident('Effect'), new Set(['Effect'])),
-    ).toBe(true);
+describe('collectNamedImportNames()', () => {
+  it('collects named value imports and their aliases from the listed modules', () => {
+    const program = prog(
+      importDecl('effect/Function', [namedSpecifier('pipe', 'flow')]),
+      importDecl('effect', [namedSpecifier('pipe')]),
+    );
+    expect(collectNamedImportNames(program, ['effect/Function', 'effect'], 'pipe')).toStrictEqual(
+      new Set(['flow', 'pipe']),
+    );
   });
 
-  it('returns false when name is not in the namespace set', () => {
-    expect(
-      isEffectNamespaceImportReference(importCtx('Foo'), ident('Foo'), new Set(['Effect'])),
-    ).toBe(false);
+  it('excludes namespace imports, which bind a module rather than the function', () => {
+    const program = prog(importDecl('effect/Function', [nsSpecifier('pipe')]));
+    expect(collectNamedImportNames(program, ['effect/Function'], 'pipe')).toStrictEqual(new Set());
+  });
+
+  it('excludes type-only specifiers, type-only declarations, and other modules', () => {
+    const program = prog(
+      importDecl('effect/Function', [namedSpecifier('pipe', 'typePipe', 'type')]),
+      importDecl('effect/Function', [namedSpecifier('pipe', 'declPipe')], 'type'),
+      importDecl('other', [namedSpecifier('pipe', 'otherPipe')]),
+    );
+    expect(collectNamedImportNames(program, ['effect/Function'], 'pipe')).toStrictEqual(new Set());
+  });
+});
+
+// ── isUnshadowedGlobal ────────────────────────────────────────────────────────
+
+describe('isUnshadowedGlobal()', () => {
+  it('is true when no declaration resolves the name', () => {
+    expect(isUnshadowedGlobal(bareCtx, ident('String'))).toBe(true);
+  });
+
+  it('is true for an implicit global variable without definitions', () => {
+    expect(isUnshadowedGlobal(ctxWithDefs([]), ident('Effect'))).toBe(true);
+  });
+
+  it('is false when a local declaration shadows the global', () => {
+    expect(isUnshadowedGlobal(ctxWithDefs([{ type: 'Variable' }]), ident('Effect'))).toBe(false);
   });
 });

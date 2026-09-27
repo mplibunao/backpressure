@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Backpressure rules</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f7f5;
+        --panel: #ffffff;
+        --text: #1d1f21;
+        --muted: #5f6368;
+        --border: #dcdcd7;
+        --accent: #2f5d8a;
+        --error-bg: #fde8e7;
+        --error-text: #a0231b;
+        --warn-bg: #fdf1d6;
+        --warn-text: #7a4b00;
+        --off-bg: #ecece9;
+        --off-text: #5f6368;
+        --code-bg: #f1f1ee;
+        --mark-bg: #ffe28a;
+        --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16181b;
+          --panel: #1e2125;
+          --text: #e6e6e3;
+          --muted: #a0a4a8;
+          --border: #34383d;
+          --accent: #8ab4e0;
+          --error-bg: #4a1f1c;
+          --error-text: #ffb4ab;
+          --warn-bg: #45350f;
+          --warn-text: #f5d18a;
+          --off-bg: #2c2f33;
+          --off-text: #a0a4a8;
+          --code-bg: #25282c;
+          --mark-bg: #6b5410;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      .page-header,
+      .filters,
+      main {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      .page-header {
+        padding-top: 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.6rem;
+      }
+      .summary {
+        margin: 4px 0 16px;
+        color: var(--muted);
+      }
+      .filters {
+        display: grid;
+        grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(150px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .field {
+        /* A select sizes to its longest option; min-width 0 lets the grid track constrain it. */
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        min-width: 0;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 400;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 9px;
+      }
+      table.rules {
+        width: 100%;
+        /* Fixed layout keeps an opened example's wide code block from squeezing the other columns. */
+        table-layout: fixed;
+        border-collapse: collapse;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .rules > thead th {
+        text-align: left;
+        font-size: 0.8rem;
+        color: var(--muted);
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+        position: sticky;
+        top: 0;
+      }
+      .rules > tbody > tr > td {
+        vertical-align: top;
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .col-rule {
+        width: 26%;
+      }
+      .col-activations {
+        width: 30%;
+      }
+      .rule-name {
+        font-family: var(--mono);
+        font-size: 0.88rem;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 6px;
+      }
+      .badge {
+        font-size: 0.72rem;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .badge-source {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .activation-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 4.2rem 4.2rem;
+        gap: 4px 8px;
+        align-items: center;
+        font-size: 0.85rem;
+      }
+      .activation-head {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .target {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        overflow-wrap: break-word;
+      }
+      .severity {
+        display: inline-block;
+        text-align: center;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 4px;
+        padding: 1px 0;
+      }
+      .severity-error {
+        background: var(--error-bg);
+        color: var(--error-text);
+      }
+      .severity-warn {
+        background: var(--warn-bg);
+        color: var(--warn-text);
+      }
+      .severity-off {
+        background: var(--off-bg);
+        color: var(--off-text);
+      }
+      .description p {
+        margin: 0 0 6px;
+      }
+      .label {
+        font-weight: 600;
+      }
+      .docs-link {
+        color: var(--accent);
+      }
+      details.example {
+        margin-top: 6px;
+      }
+      details.example summary {
+        cursor: pointer;
+        color: var(--accent);
+        font-size: 0.85rem;
+      }
+      .example pre {
+        margin: 6px 0;
+        padding: 10px 12px;
+        background: var(--code-bg);
+        border-radius: 6px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+      .example mark {
+        background: var(--mark-bg);
+        color: inherit;
+        border-radius: 2px;
+      }
+      .example-diagnostic {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin: 0 0 4px;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 24px 0;
+      }
+      @media (max-width: 760px) {
+        .filters {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+        .field-search {
+          grid-column: 1 / -1;
+        }
+        .rules > thead {
+          display: none;
+        }
+        table.rules,
+        .rules > tbody,
+        .rules > tbody > tr,
+        .rules > tbody > tr > td {
+          display: block;
+          width: 100%;
+        }
+        table.rules {
+          border: none;
+          background: none;
+        }
+        .rules > tbody > tr {
+          background: var(--panel);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          margin-bottom: 12px;
+        }
+        .rules > tbody > tr > td {
+          border-bottom: none;
+          padding: 10px 12px 0;
+        }
+        .rules > tbody > tr > td:last-child {
+          padding-bottom: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Backpressure rules</h1>
+      <p id="summary" class="summary">Loading rules…</p>
+    </header>
+    <form id="filters" class="filters" role="search">
+      <label class="field field-search"
+        >Search
+        <input id="search" type="search" placeholder="Rule name or description" autocomplete="off"
+      /></label>
+      <label class="field"
+        >Source
+        <select id="source">
+          <option value="">All sources</option>
+        </select></label
+      >
+      <label class="field"
+        >Preset or config
+        <select id="preset">
+          <option value="">All presets</option>
+        </select></label
+      >
+      <label class="field"
+        >Severity
+        <select id="severity">
+          <option value="">Any severity</option>
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="off">off</option>
+        </select></label
+      >
+    </form>
+    <main>
+      <table class="rules">
+        <thead>
+          <tr>
+            <th scope="col" class="col-rule">Rule</th>
+            <th scope="col" class="col-activations">Presets and configs (normal / tests)</th>
+            <th scope="col">What it catches</th>
+          </tr>
+        </thead>
+        <tbody id="rule-rows"></tbody>
+      </table>
+      <p id="empty" class="empty" hidden>No rules match these filters.</p>
+    </main>
+    <script type="module" src="./src/page.ts"></script>
+  </body>
+</html>

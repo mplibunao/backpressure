@@ -57,7 +57,7 @@ const packageJsonWithPnpmVersion = (version: string): string =>
     packageManager: `pnpm@${version}`,
   });
 
-const step = (lines: ReadonlyArray<string>): string => lines.join('\n');
+const step = (lines: readonly string[]): string => lines.join('\n');
 
 const miseStep = (): string =>
   step([
@@ -109,7 +109,7 @@ const setupNodeStepWithoutWith = (): string => '      - uses: actions/setup-node
 const setupNodeStepWithoutNodeVersion = (): string =>
   step(['      - uses: actions/setup-node@v6', '        with:', '          cache: pnpm']);
 
-const workflowWithSteps = (steps: ReadonlyArray<string>): string => `jobs:
+const workflowWithSteps = (steps: readonly string[]): string => `jobs:
   check:
     steps:
 ${steps.join('\n')}
@@ -123,7 +123,7 @@ const contractInput = ({
   packageJson = packageJsonFor(bunEngine),
   releaseWorkflow = validWorkflow(),
 }: VersionPinFixture = {}) => ({
-  mise: `[tools]\nbun = "${bunVersion}"\nnode = "${nodeVersion}"\nvale = "3.9.6"\n`,
+  mise: `[tools]\nbun = "${bunVersion}"\nnode = "${nodeVersion}"\nvale = "3.14.1"\n`,
   packageJson,
   pnpmWorkspace: 'catalog:\n  oxlint: 1.0.0\n  typescript: 5.9.2\n',
   workflows: [
@@ -315,7 +315,7 @@ describe('version pin setup-node action validation', () => {
 });
 
 describe('version pin pnpm action validation', () => {
-  it.each([multiDigitMinorPnpmVersion, multiDigitPatchPnpmVersion])(
+  it.for([multiDigitMinorPnpmVersion, multiDigitPatchPnpmVersion])(
     'accepts exact pnpm semver with multi-digit boundaries %s',
     (version) => {
       const workflow = workflowWithSteps([miseStep(), pnpmStep(version), setupNodeStep()]);
@@ -368,7 +368,7 @@ describe('version pin pnpm action validation', () => {
     );
   });
 
-  it.each([
+  it.for([
     { expectedVersion: '11.4', workflowVersion: '"11.4"' },
     { expectedVersion: 'v11.4.0', workflowVersion: 'v11.4.0' },
     { expectedVersion: '11.4.0-beta.1', workflowVersion: '11.4.0-beta.1' },

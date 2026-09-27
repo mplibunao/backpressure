@@ -12,6 +12,9 @@
     "base.json",
     "server.json",
     "browser.json",
+    "effect.json",
+    "effect-tsc.json",
+    "README.md",
     "CHANGELOG.md",
     "LICENSE",
     "NOTICE.md"
@@ -20,6 +23,8 @@
     "./base.json": "./base.json",
     "./server.json": "./server.json",
     "./browser.json": "./browser.json",
+    "./effect.json": "./effect.json",
+    "./effect-tsc.json": "./effect-tsc.json",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -28,5 +33,13 @@
   "scripts": {
     "pack:dry-run": "bun ../../scripts/packages/tsconfig/check-package-allowlist.ts",
     "pack:dry-run:no-build": "bun ../../scripts/packages/tsconfig/check-package-allowlist.ts"
+  },
+  "peerDependencies": {
+    "@effect/tsgo": "0.46.1"
+  },
+  "peerDependenciesMeta": {
+    "@effect/tsgo": {
+      "optional": true
+    }
   }
 }

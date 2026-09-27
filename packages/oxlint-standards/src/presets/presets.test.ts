@@ -1,9 +1,9 @@
 import { RuleTester } from 'oxlint/plugins-dev';
 import { describe, expect, it, vi } from 'vitest';
 
-import { catalogRules } from '../rule-catalog.js';
-import { presetEntriesForDomains } from '../rule-manifest.js';
-import { ruleMessage } from '../rule-messages.js';
+import { catalogRules } from '#oxlint-standards/rule-catalog.js';
+import { presetEntriesForDomains, ruleManifest } from '#oxlint-standards/rule-manifest.js';
+import { ruleMessage } from '#oxlint-standards/rule-messages.js';
 import { boundariesPreset } from './boundaries.js';
 import { effectPreset } from './effect.js';
 import { effectReactPreset } from './effect-react.js';
@@ -18,7 +18,7 @@ RuleTester.it = it;
 // The typeof guard is required because Record<string, Rule> returns Rule | undefined under noUncheckedIndexedAccess.
 const requireCatalogRule = (name: keyof typeof catalogRules) => {
   const rule = catalogRules[name];
-  if (typeof rule === 'undefined') {
+  if (rule === globalThis.undefined) {
     throw new Error(`Catalog rule missing: ${name}`);
   }
   return rule;
@@ -31,7 +31,7 @@ const ruleTester = new RuleTester({
 const optionInternalTagSource =
   "import * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);";
 
-const enabledRuleNames = (rules: Record<string, unknown>): Array<string> =>
+const enabledRuleNames = (rules: Record<string, unknown>): string[] =>
   Object.entries(rules)
     .filter(([, value]) => value !== 'off')
     .map(([name]) => name);
@@ -67,9 +67,25 @@ describe('presets', () => {
   });
 
   it('keeps Effect React rules in effect-react only', () => {
-    expect(effectReactPreset.rules).toHaveProperty(pluginRuleName('no-family-collection-read'));
-    expect(effectReactPreset.rules).toHaveProperty(pluginRuleName('no-naked-object-state-update'));
-    expect(effectPreset.rules).not.toHaveProperty(pluginRuleName('no-family-collection-read'));
+    expect(Object.keys(effectReactPreset.rules).toSorted()).toStrictEqual(
+      ['no-atom-registry-effect-sync', 'no-react-state', 'no-render-side-effects'].map(
+        pluginRuleName,
+      ),
+    );
+    expect(effectPreset.rules).not.toHaveProperty(pluginRuleName('no-atom-registry-effect-sync'));
+  });
+
+  it('omits every dropped manifest row from every preset', () => {
+    const droppedRuleNames = ruleManifest
+      .filter((entry) => entry.disposition === 'dropped')
+      .map((entry) => pluginRuleName(entry.name));
+    const presetRuleNames = new Set(
+      [effectPreset, effectReactPreset, generalPreset, boundariesPreset].flatMap((preset) =>
+        Object.keys(preset.rules),
+      ),
+    );
+
+    expect(droppedRuleNames.filter((name) => presetRuleNames.has(name))).toStrictEqual([]);
   });
 
   it('keeps boundary rules opt-in', () => {

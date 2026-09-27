@@ -19,3 +19,7 @@ Preset and config files are the unit of opt-in. New stack-specific opinions beco
 - Effect carve-outs stay inside the `effect` preset. `general` remains stack-neutral.
 - Future domains such as drizzle, bun, sql, next, and stack-neutral React can grow as presets before they become packages.
 
+## Supersession (2026-09-25)
+
+[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the "v0 does not expand beyond those packages" line. Published v0 packages remain `@mplibunao/oxlint-standards` and `@mplibunao/tsconfig`. Private, unpublished tool packages such as the planned `packages/rules-viewer` are allowed.
+

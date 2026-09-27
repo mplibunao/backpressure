@@ -26,3 +26,7 @@ A first pass set every rule to `error`. In practice that read as noise and left 
 - Positive: the package scales across stacks without reimplementing the ecosystem; the `error` signal stays worth acting on; the curation posture matches ADR 001's delegation stance.
 - Negative: a `warn` rule can be skipped by some agents (Claude today more than Codex); a graded catalog needs a per-rule judgement on every addition; ported rules carry attribution and maintenance cost.
 - Follow-up: `docs/design-docs/rule-intake.md` holds the step-by-step triage; `docs/references/translation-contract.md` defers its severity policy to this ADR; the package README documents the consumer-facing severity note; an optional strict preset variant is revisited only if consumers ask.
+
+## Supersession (2026-09-25)
+
+[ADR-007](007-tsgo-delegation-and-overlap.md) supersedes the language-service-specific wording above. Curation and graded severity stay in force. Type-aware or already-covered Effect checks are delegated to `@effect/tsgo` rather than `@effect/language-service`. The cutover was implemented on 2026-09-26.

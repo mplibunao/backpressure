@@ -1,0 +1,920 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "effect": {
+      "repository": "https://github.com/Effect-TS/effect",
+      "revision": "3788b63bd6292220722c26e423850f9d218fd97b",
+      "version": "effect 4.0.0-rc.117"
+    },
+    "effect-solutions": {
+      "repository": "https://github.com/kitlangton/effect-solutions",
+      "revision": "09f82e6c5c928e7232cd32daf04d7c6a830b63f7",
+      "version": "effect 4.0.0-beta.59"
+    }
+  },
+  "cases": [
+    {
+      "id": "llms-gen-error-return",
+      "title": "Gen-first guidance and error returns",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "LLMS.md",
+          "lines": [
+            [
+              26,
+              48
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "return yield* of a tagged error ends the generator",
+        "additional Effect.catch and Effect.withSpan tails on the gen pipe"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/llms-gen-error-return.raw.ts",
+          "sha256": "8583600e9f03f3390499f7bc175ba282dbed54a307db33489bc46213f8b237d9",
+          "lintFilename": "src/llms-gen.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/llms-gen-error-return.adapted.ts",
+          "lintFilename": "src/llms-gen.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "llms-fn-untraced",
+      "title": "Named and untraced reusable functions",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "LLMS.md",
+          "lines": [
+            [
+              63,
+              101
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Effect.fn and Effect.fnUntraced reusable generator functions",
+        "Effect.fn.Return annotations",
+        "return yield* of a tagged error"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/llms-fn-untraced.raw.ts",
+          "sha256": "69f21107498757dbfa2fa5360d88375188d8de89eef374113274f3a85bc191fe",
+          "lintFilename": "src/llms-fn.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/llms-fn-untraced.adapted.ts",
+          "lintFilename": "src/llms-fn.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "llms-service-interface",
+      "title": "Explicit service interface",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "LLMS.md",
+          "lines": [
+            [
+              134,
+              171
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "an explicit Effect.Effect service member",
+        "a service ID string",
+        "Database.of with an Effect.fn method"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/llms-service-interface.raw.ts",
+          "sha256": "76550801313e7389822589ed535e67f67cd466f37eb6db86353f19e75f76481f",
+          "lintFilename": "src/db/Database.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 4,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/llms-service-interface.adapted.ts",
+          "lintFilename": "src/db/Database.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "es-basics-nested-fn",
+      "title": "Nested reusable method and succeed(variable)",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "tests/03-basics.test.ts",
+          "lines": [
+            [
+              1,
+              4
+            ],
+            [
+              80,
+              90
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "a nested named Effect.fn",
+        "Effect.succeed(value) with a variable",
+        "returning a computed value"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-basics-nested-fn.raw.ts",
+          "sha256": "98925173dab29bf0bc9fbf8e74e6d02159c028433a27783bd88631b4bd0b358b",
+          "lintFilename": "tests/03-basics.test.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line. The source file's own import lines come first so runtime-import gates see the real bindings.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 3,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-basics-nested-fn.adapted.ts",
+          "lintFilename": "tests/03-basics.test.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "es-basics-as-timeout",
+      "title": "Effect.as and string-failure edge",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "tests/03-basics.test.ts",
+          "lines": [
+            [
+              1,
+              4
+            ],
+            [
+              198,
+              214
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Effect.as('done') replaces the success value"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-basics-as-timeout.raw.ts",
+          "sha256": "ef1737d5fbc8323778d90af7f27b00bab5988550b84f83d637268f4180fb60c7",
+          "lintFilename": "tests/03-basics.test.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line. The source file's own import lines come first so runtime-import gates see the real bindings.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 3,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            },
+            "no-string-error-channel": {
+              "count": 1,
+              "decision": "Alignment Decided: a new rule flags Effect.fail with a string literal (structured failures house style)."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-basics-as-timeout.adapted.ts",
+          "lintFilename": "tests/03-basics.test.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {
+            "no-string-error-channel": {
+              "count": 1,
+              "decision": "Alignment Decided: a new rule flags Effect.fail with a string literal (structured failures house style)."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "es-data-modeling-json",
+      "title": "Hoisted schema, inline decode and encode",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/05-data-modeling.md",
+          "lines": [
+            [
+              156,
+              187
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "decoding and encoding with the hoisted MoveFromJson",
+        "a string payload constant",
+        "a generator return"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-data-modeling-json.raw.ts",
+          "sha256": "a49caa071b34bb656c45aa7021fb2fe3661c1d8c2cc92879a04e9eade0c7b8b8",
+          "lintFilename": "src/data-modeling.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-data-modeling-json.adapted.ts",
+          "lintFilename": "src/data-modeling.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "es-services-typed-handler",
+      "title": "Service methods, typed handler, nested reason",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/04-services-and-layers.md",
+          "lines": [
+            [
+              53,
+              135
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "explicit service method types",
+        "a catch handler that returns early",
+        "typed error values passed to Effect.fail"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-services-typed-handler.raw.ts",
+          "sha256": "c061615c90688cd65a3b716bc2c8440810dfb25dd588beebba2e6fb8070aab21",
+          "lintFilename": "src/services/Users.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 3,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            },
+            "no-manual-tag-check": {
+              "count": 1,
+              "decision": "Alignment Decided: no-manual-tag-check is narrowed to comparisons; a _tag comparison still reports."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-services-typed-handler.adapted.ts",
+          "lintFilename": "src/services/Users.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {
+            "no-manual-tag-check": {
+              "count": 1,
+              "decision": "Alignment Decided: no-manual-tag-check is narrowed to comparisons; a _tag comparison still reports."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "es-error-catchtag",
+      "title": "Typed catchTag message and success strings",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/06-error-handling.md",
+          "lines": [
+            [
+              115,
+              145
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "a typed catchTag handler reading error.message",
+        "Effect.succeed-style string success values"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-error-catchtag.raw.ts",
+          "sha256": "3b0802a660cc037556c1c2383d45521067a274f24fc6ecc909c36e15e068119e",
+          "lintFilename": "src/error-handling.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-error-catchtag.adapted.ts",
+          "lintFilename": "src/error-handling.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "es-error-catchtags",
+      "title": "Typed catchTags handlers",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/06-error-handling.md",
+          "lines": [
+            [
+              153,
+              181
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Effect.catchTags handlers returning Effect.succeed('Recovered...')"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-error-catchtags.raw.ts",
+          "sha256": "70ab836c4d324612f08eddc826184a9e27a1c06b72f3ffcc1724fca929e519e2",
+          "lintFilename": "src/error-handling.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-error-catchtags.adapted.ts",
+          "lintFilename": "src/error-handling.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "es-error-app-entry-ordie",
+      "title": "Unrecoverable app-entry defect",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/06-error-handling.md",
+          "lines": [
+            [
+              193,
+              202
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "an app-entry orDie with a justified inline disable"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-error-app-entry-ordie.raw.ts",
+          "sha256": "e35163464dbaf0e93ffa8934a8c0badf7db54178200d16cb4577d1c458fb8d3c",
+          "lintFilename": "src/main.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 1,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            },
+            "no-effect-escape-hatch": {
+              "count": 1,
+              "decision": "Alignment Decided: no-effect-escape-hatch stays at error; an app-entry orDie needs a justified inline disable."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-error-app-entry-ordie.adapted.ts",
+          "lintFilename": "src/main.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; one justified inline disable added above the orDie line.",
+          "deviations": {},
+          "engine": "oxlint"
+        }
+      ]
+    },
+    {
+      "id": "es-cli-nested-helpers",
+      "title": "Nested layer and helper generators",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/13-cli.md",
+          "lines": [
+            [
+              210,
+              309
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "nested helper generators such as load",
+        "an explicit service interface",
+        "Effect.fn public methods"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-cli-nested-helpers.raw.ts",
+          "sha256": "f49e4cbe512fbc94e29c120478c8710ea9fdcc182e3fe5b4a43fa30ce4ebdf99",
+          "lintFilename": "src/TaskRepo.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 6,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-cli-nested-helpers.adapted.ts",
+          "lintFilename": "src/TaskRepo.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "es-basics-schedule-pipe",
+      "title": "Schedule pipe inside retry",
+      "source": "effect-solutions",
+      "excerpts": [
+        {
+          "path": "packages/website/docs/03-basics.md",
+          "lines": [
+            [
+              87,
+              97
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "a nested Schedule pipe inside Effect.retry does not trigger no-pipe-ladder"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/es-basics-schedule-pipe.raw.ts",
+          "sha256": "49a81d03492119f4acefea944e44cdcf081eb82a0bd5242f6de56779c0eb124a",
+          "lintFilename": "src/instrumentation.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/es-basics-schedule-pipe.adapted.ts",
+          "lintFilename": "src/instrumentation.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "ef-rcref-sync-resource",
+      "title": "Legitimate sync and resource management",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/test/RcRef.test.ts",
+          "lines": [
+            [
+              1,
+              12
+            ],
+            [
+              66,
+              95
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Effect.sync mutation",
+        "Effect.acquireRelease acquire and release constructors"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/ef-rcref-sync-resource.raw.ts",
+          "sha256": "0141406d1a98e7e33ae5ecf88b634fff4858be434040ef03425db66386b489de",
+          "lintFilename": "packages/effect/test/RcRef.test.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line. The source file's own import lines come first so runtime-import gates see the real bindings.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "ef-metric-fork-nested-gen",
+      "title": "Forked nested generator",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/test/Metric.test.ts",
+          "lines": [
+            [
+              1,
+              8
+            ],
+            [
+              346,
+              369
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "a nested Effect.gen passed to Effect.forkChild"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/ef-metric-fork-nested-gen.raw.ts",
+          "sha256": "321959b6cd623bffe5848c6955d57e06b0ce9c244f137375dca7818b0ce2ab3b",
+          "lintFilename": "packages/effect/test/Metric.test.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line. The source file's own import lines come first so runtime-import gates see the real bindings.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 6,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/ef-metric-fork-nested-gen.adapted.ts",
+          "lintFilename": "packages/effect/test/Metric.test.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "ef-cause-map-string-fail",
+      "title": "Nested data-first map and string failure",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/test/Cause.test.ts",
+          "lines": [
+            [
+              1,
+              11
+            ],
+            [
+              638,
+              647
+            ],
+            [
+              649,
+              658
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "match and matchCause handlers over a success and a failure source",
+        "map over a success source"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/ef-cause-map-string-fail.raw.ts",
+          "sha256": "e177d068598118cf143767497dfae97a17a10b39735587b64cd77499ed09e2c1",
+          "lintFilename": "packages/effect/test/Cause.test.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line. The source file's own import lines come first so runtime-import gates see the real bindings.",
+          "deviations": {
+            "no-string-error-channel": {
+              "count": 1,
+              "decision": "Alignment Decided: a new rule flags Effect.fail with a string literal (structured failures house style)."
+            },
+            "no-effect-call-in-effect-arg": {
+              "count": 1,
+              "decision": "Alignment Decided: no-effect-call-in-effect-arg flags a data-first transforming combinator whose first argument is an Effect call."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/ef-cause-map-string-fail.adapted.ts",
+          "lintFilename": "packages/effect/test/Cause.test.ts",
+          "harnessChanges": "House-style positive control keeping the test intent: the string failure becomes a Data tagged error, the data-first map becomes data-last, and the excerpt sits in a describe block. It does not claim the raw shapes comply.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "ef-effect-as-const",
+      "title": "Effect.as with constant string results",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/test/Effect.test.ts",
+          "lines": [
+            [
+              1,
+              29
+            ],
+            [
+              3605,
+              3622
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Effect.as('success' as const)"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/ef-effect-as-const.raw.ts",
+          "sha256": "299187a2859777b0c9a8260446d7501dc660eb76a37e1e49ff97aa4a4a40ca9b",
+          "lintFilename": "packages/effect/test/Effect.test.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line. The source file's own import lines come first so runtime-import gates see the real bindings.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 20,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            },
+            "no-string-error-channel": {
+              "count": 1,
+              "decision": "Alignment Decided: a new rule flags Effect.fail with a string literal (structured failures house style)."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/ef-effect-as-const.adapted.ts",
+          "lintFilename": "packages/effect/test/Effect.test.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {
+            "no-string-error-channel": {
+              "count": 1,
+              "decision": "Alignment Decided: a new rule flags Effect.fail with a string literal (structured failures house style)."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ef-reason-errors",
+      "title": "Nested reason errors and catchReason",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "ai-docs/src/01_effect/04_errors/20_reason-errors.ts",
+          "lines": [
+            [
+              9,
+              64
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Effect.catchReason, Effect.catchReasons, and Effect.unwrapReason",
+        "reading reason._tag inside a template string"
+      ],
+      "variants": [
+        {
+          "kind": "raw",
+          "file": "snippets/ef-reason-errors.raw.ts",
+          "sha256": "c7d9567e4336190b4605972a489d485c26f36bc5b81a9ea59f35e060ab5c3f05",
+          "lintFilename": "ai-docs/src/01_effect/04_errors/20_reason-errors.ts",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "deviations": {
+            "no-barrel-import": {
+              "count": 2,
+              "decision": "Alignment Decided: no-barrel-import stays (ADR-001); reference value barrel imports translate to namespace subpaths."
+            }
+          }
+        },
+        {
+          "kind": "adapted",
+          "file": "snippets/ef-reason-errors.adapted.ts",
+          "lintFilename": "ai-docs/src/01_effect/04_errors/20_reason-errors.ts",
+          "harnessChanges": "Value barrel imports from \"effect\" rewritten as namespace subpath imports; nothing else changed.",
+          "deviations": {}
+        }
+      ]
+    },
+    {
+      "id": "ef-compiler-registry",
+      "title": "Parser-cache identity",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/src/internal/schema/compilerRegistry.ts",
+          "lines": [
+            [
+              25,
+              40
+            ],
+            [
+              170,
+              192
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "provenance for the no-inline-schema-compile message and the schema hoisting cases"
+      ],
+      "variants": [
+        {
+          "kind": "provenance-only",
+          "file": "snippets/ef-compiler-registry.raw.ts",
+          "sha256": "7cd7d0e1cc80c5ec3d5cd7ce8c90eeb7ea9e02c748ec943549c25fc19e49b7e3",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "reason": "Library internals, retained as provenance; not linted as application code."
+        }
+      ]
+    },
+    {
+      "id": "ef-atom-registry",
+      "title": "Atom versus registry return contracts",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/src/reactivity/Atom.ts",
+          "lines": [
+            [
+              2428,
+              2513
+            ]
+          ]
+        },
+        {
+          "path": "packages/effect/src/reactivity/AtomRegistry.ts",
+          "lines": [
+            [
+              69,
+              88
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "the five Atom module functions yielded from Effect code",
+        "AtomRegistry instance methods called synchronously inside Effect.sync"
+      ],
+      "variants": [
+        {
+          "kind": "provenance-only",
+          "file": "snippets/ef-atom-registry.raw.ts",
+          "sha256": "662937efd3481776b85e2f7422d8031f5b6a0bac61cabb89d8e4e0fc022b78b4",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "reason": "Library signatures that establish the contract; the derived controls exercise it."
+        },
+        {
+          "kind": "derived-control",
+          "file": "snippets/ef-atom-registry.control.ts",
+          "lintFilename": "src/counter.ts",
+          "harnessChanges": "Application code written against the excerpted signatures.",
+          "deviations": {}
+        },
+        {
+          "kind": "misuse",
+          "file": "snippets/ef-atom-registry.misuse.ts",
+          "lintFilename": "src/counter.ts",
+          "harnessChanges": "Application code that wraps an Atom Effect in Effect.sync.",
+          "deviations": {
+            "no-atom-registry-effect-sync": {
+              "count": 1,
+              "decision": "Derived misuse control: Atom.set returns an Effect, so wrapping it in Effect.sync must report."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ef-option-nullish",
+      "title": "Option null and undefined distinction",
+      "source": "effect",
+      "excerpts": [
+        {
+          "path": "packages/effect/src/Option.ts",
+          "lines": [
+            [
+              773,
+              840
+            ]
+          ]
+        }
+      ],
+      "intendedValid": [
+        "Option.fromNullishOr for nullish absence",
+        "Option.fromUndefinedOr keeping null as a present value"
+      ],
+      "variants": [
+        {
+          "kind": "provenance-only",
+          "file": "snippets/ef-option-nullish.raw.ts",
+          "sha256": "f756a682b42947c0f19b8f9775a7add3e2ad3dff4cb18c72adf599f3a98b1931",
+          "harnessChanges": "Verbatim source lines; separate ranges are joined with one blank line.",
+          "reason": "Library definitions that establish the distinction; the derived controls exercise it."
+        },
+        {
+          "kind": "derived-control",
+          "file": "snippets/ef-option-nullish.control.ts",
+          "lintFilename": "src/lookup.ts",
+          "harnessChanges": "Application code written against the excerpted constructors.",
+          "deviations": {}
+        },
+        {
+          "kind": "misuse",
+          "file": "snippets/ef-option-nullish.misuse.ts",
+          "lintFilename": "src/lookup.ts",
+          "harnessChanges": "Application code that coalesces before an Option constructor.",
+          "deviations": {
+            "no-fromnullable-nullish-coalesce": {
+              "count": 2,
+              "decision": "Derived misuse control: ?? null and ?? undefined around Option constructors must report."
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

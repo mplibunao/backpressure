@@ -15,3 +15,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The copyright notice above and this permission notice must be included in all copies or substantial portions of the software.
 
 The software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+
+## Retained `@effect/tsgo` metadata
+
+`scripts/references/tsgo/0.46.1/metadata.json` retains rule metadata from `@effect/tsgo` 0.46.1: rule names, categories, descriptions, and example snippets. The generated `docs/references/rules.md` reproduces those descriptions and examples. `@effect/tsgo` is MIT licensed, Copyright (c) 2026 Effect, and its license text is kept beside the snapshot in `scripts/references/tsgo/0.46.1/LICENSE`. No `@effect/tsgo` rule logic is copied, and the published packages carry only its rule names and option keys.

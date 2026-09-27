@@ -37,24 +37,9 @@ The exact ordered command sequence is executable policy, not prose policy. `scri
 
 ## Package artifact contracts
 
-`pnpm oxlint:package:allowlist` runs `scripts/packages/oxlint-standards/check-package-allowlist.ts`, the authoritative package allowlist assertion for `@mplibunao/oxlint-standards`.
+`pnpm oxlint:package:allowlist` runs `scripts/packages/oxlint-standards/check-package-allowlist.ts`, and `pnpm tsconfig:package:allowlist` runs `scripts/packages/tsconfig/check-package-allowlist.ts`. They are the authoritative allowlist assertions for `@mplibunao/oxlint-standards` and `@mplibunao/tsconfig`. The exact file sets, entrypoints, and exports each package may ship live in `packages/oxlint-standards/package.json` and `packages/tsconfig/package.json`, and the expected tarball contents in each package's `artifact-assertions.ts` beside those scripts.
 
-The oxlint package script checks all of the following:
-
-- `packages/oxlint-standards/package.json` keeps the publish `files` allowlist to `dist`, `README.md`, `CHANGELOG.md`, `LICENSE`, and `NOTICE.md`.
-- `npm pack --dry-run --json` includes only root package metadata/docs and compiled `dist` files.
-- required runtime and type entrypoints are present, including `dist/index.js`, `dist/index.d.ts`, `dist/plugin.js`, and `dist/rule-manifest.js`.
-- private inputs such as source, tests, fixtures, and tsconfig files do not leak into the tarball.
-- no Rika dependency is declared in the publish package.
-
-`pnpm tsconfig:package:allowlist` runs `scripts/packages/tsconfig/check-package-allowlist.ts`, the authoritative package allowlist assertion for `@mplibunao/tsconfig`.
-
-The tsconfig package script checks all of the following:
-
-- `packages/tsconfig/package.json` keeps the publish `files` allowlist to `base.json`, `server.json`, `browser.json`, `CHANGELOG.md`, `LICENSE`, and `NOTICE.md`.
-- `npm pack --dry-run --json` includes only the three config JSON files, package metadata, changelog, license, and notice.
-- the package exports only `./base.json`, `./server.json`, `./browser.json`, and `./package.json`.
-- `publishConfig.access` remains `public`.
+Both scripts run `npm pack --dry-run --json` and fail on any file outside the expected set. That keeps source, tests, fixtures, and tsconfig inputs out of the tarballs, and each script also requires the declared entrypoints and exports. The oxlint package check rejects a Rika dependency, and the tsconfig package check keeps `publishConfig.access` public.
 
 `pnpm smoke:oxlint-packed-consumer` remains the runtime proof for `@mplibunao/oxlint-standards`: it builds the package, packs a tarball, installs that tarball in throwaway consumers, imports the public entrypoint, typechecks the public types without `@oxlint/plugins` as a consumer dependency, and runs real oxlint through `jsPlugins`.
 
@@ -96,7 +81,7 @@ When verifying a package that was just published from MP's machine, beware user-
 
 ## Rule catalog and mutation gates
 
-`scripts/checks/check-rule-inventory.ts` remains the catalog-completeness assertion. The rule inventory covers the 50 `biome-effect-linting-rules` v0.0.6 rules and every intentional exception. The exceptions are the dropped anti-house-style rules, the built-in replacement for `no-ternary`, v0.0.6 refinements, `effect-no-multiple-provide`, recon additions, structural executor reimplementations, and `@effect/language-service` delegated semantic checks. Rika remains reference material only, not a dependency.
+`scripts/checks/check-rule-inventory.ts` remains the catalog-completeness assertion. The rule inventory covers the 50 `biome-effect-linting-rules` v0.0.6 rules and every intentional exception. The exceptions are the dropped rules with their `@effect/tsgo` replacement edges, the built-in replacement for `no-ternary`, v0.0.6 refinements, recon additions, structural executor reimplementations, and the delegated `@effect/tsgo` rows, whose count must equal the pinned release's. Rika remains reference material only, not a dependency.
 
 The v0 mutation sweep passed on 2026-05-31 with a behavioral mutation score of **81.81%** (`3981` killed + `13` timeout / `4882` total). The durable evidence is `docs/reports/mutation/2026-05-31-v0-sweep.md`.
 

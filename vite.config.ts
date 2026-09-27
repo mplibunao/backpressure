@@ -1,8 +1,19 @@
+import {
+  baseConfig,
+  composeLintConfigs,
+  nodeRuntimeConfig,
+  vitestConfig,
+} from '@mplibunao/oxlint-standards';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
 const toolIgnorePatterns = [
   '**/*.md',
   '.claude/**',
+  // Transient oxlint fixture dirs written inside the repo so jsPlugins resolve from the config's
+  // directory (drift-guards tests and materializeEffectiveRules); tests remove them in cleanup.
+  '.oxlint-drift-*/**',
+  '.oxlint-effective-*/**',
   '.pnpm-store/**',
   'coverage/**',
   'dist/**',
@@ -20,55 +31,36 @@ export default defineConfig({
     singleQuote: true,
     sortPackageJson: true,
   },
-  lint: {
-    categories: {
-      correctness: 'error',
-      nursery: 'off',
-      pedantic: 'off',
-      restriction: 'error',
-      style: 'error',
-      suspicious: 'error',
+  lint: composeLintConfigs(
+    baseConfig,
+    vitestConfig,
+    nodeRuntimeConfig,
+    {
+      ignorePatterns: toolIgnorePatterns,
     },
-    ignorePatterns: toolIgnorePatterns,
-    options: {
-      reportUnusedDisableDirectives: 'error',
-      typeAware: true,
-      typeCheck: true,
+    {
+      rules: {
+        // backpressure is a published library/tooling monorepo with no natural @/ source root.
+        // Alias rewriting would add build/runtime resolver complexity for package and script code.
+        'import/no-relative-parent-imports': 'off',
+      },
     },
-    plugins: ['typescript', 'import', 'vitest'],
-    rules: {
-      '@typescript-eslint/array-type': ['error', { default: 'generic' }],
-      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-import-type-side-effects': 'error',
-      '@typescript-eslint/explicit-function-return-type': 'off',
-      complexity: ['error', 20],
-      'import/consistent-type-specifier-style': 'off',
-      'import/exports-last': 'off',
-      'import/group-exports': 'off',
-      'import/max-dependencies': ['error', { max: 15 }],
-      'import/no-default-export': 'off',
-      'import/no-named-export': 'off',
-      'import/no-nodejs-modules': 'off',
-      'import/no-relative-parent-imports': 'off',
-      'import/prefer-default-export': 'off',
-      'jest/require-hook': 'off',
-      'max-depth': ['error', 4],
-      'max-lines': ['error', 500],
-      'max-lines-per-function': ['error', 75],
-      'max-params': ['error', 4],
-      'max-statements': 'off',
-      'no-console': 'error',
-      'no-else-return': 'error',
-      'no-magic-numbers': ['error', { ignore: [0, 1, 4, 15, 20, 75, 500] }],
-      'no-continue': 'off',
-      'no-nested-ternary': 'error',
-      'no-param-reassign': 'error',
-      'no-ternary': 'off',
-      'no-unneeded-ternary': 'error',
-      'sort-imports': 'off',
-      'sort-keys': 'off',
-      'vitest/no-importing-vitest-globals': 'off',
+    {
+      overrides: [
+        {
+          files: ['packages/oxlint-standards/src/**'],
+          rules: {
+            'import/no-relative-parent-imports': 'error',
+          },
+        },
+      ],
+    },
+  ),
+  resolve: {
+    alias: {
+      '#oxlint-standards': fileURLToPath(
+        new URL('./packages/oxlint-standards/src', import.meta.url),
+      ),
     },
   },
   staged: {

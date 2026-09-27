@@ -1,9 +1,19 @@
 import type { Context, ESTree, Scope, Variable } from '@oxlint/plugins';
 
-import { getStringLiteralValue, isIdentifierName, type IdentifierLike } from './ast.js';
 import {
-  effectNamespaceModuleSpecifiers,
+  getNodeField,
+  getStaticMemberCall,
+  getStringLiteralValue,
+  hasSpreadArgument,
+  isIdentifierName,
+  isNodeLike,
+  type IdentifierLike,
+} from './ast.js';
+import {
+  atomEffectArgumentCounts,
   isEffectStackModuleSource,
+  reactivityBarrelSpecifiers,
+  type ReactivityModuleName,
 } from './effect-identifiers.js';
 
 const isRuntimeImportDeclaration = (declaration: ESTree.ImportDeclaration): boolean => {
@@ -33,14 +43,11 @@ const addNamespaceSpecifiers = (
     if (specifier.type === 'ImportNamespaceSpecifier' && isIdentifierName(specifier.local)) {
       // For the 'effect' barrel, only include a namespace alias when it matches barrelFilterName.
       // Prevents Option/Match/etc. barrel aliases from being added to Effect namespace sets.
-      if (
-        barrelFilterName !== null &&
-        source === 'effect' &&
-        specifier.local.name !== barrelFilterName
-      ) {
-        continue;
+      const isEffectBarrel = source === 'effect';
+      const matchesRequestedAlias = specifier.local.name === barrelFilterName;
+      if (!isEffectBarrel || barrelFilterName === null || matchesRequestedAlias) {
+        namespaceNames.add(specifier.local.name);
       }
-      namespaceNames.add(specifier.local.name);
     }
   }
 };
@@ -51,7 +58,7 @@ const findVariable = (scope: Scope | null, name: string): Variable | null => {
   while (currentScope !== null) {
     const variable = currentScope.set.get(name);
 
-    if (typeof variable !== 'undefined') {
+    if (variable !== globalThis.undefined) {
       return variable;
     }
 
@@ -59,6 +66,18 @@ const findVariable = (scope: Scope | null, name: string): Variable | null => {
   }
 
   return null;
+};
+
+// Resolves an identifier through the lexical scope chain, so a local declaration shadows an import
+// or global of the same name.
+export const resolveVariable = (context: Context, identifier: IdentifierLike): Variable | null =>
+  findVariable(context.sourceCode.getScope(identifier), identifier.name);
+
+// Globals such as `String` and `Error` have no declaration in the file; any definition means a
+// local binding shadows the global.
+export const isUnshadowedGlobal = (context: Context, identifier: IdentifierLike): boolean => {
+  const variable = resolveVariable(context, identifier);
+  return variable === null || variable.defs.length === 0;
 };
 
 const hasImportBindingDefinition = (variable: Variable): boolean =>
@@ -76,82 +95,123 @@ export const importSpecifierName = (specifier: ESTree.ImportSpecifier): string |
   return getStringLiteralValue(imported);
 };
 
+// Processes one import specifier and adds the matching local name to the set.
+// For namespace imports from the 'effect' barrel, only the alias that matches importedName
+// is accepted, keeping Option/Match/etc. aliases out of Effect name sets.
+const collectSpecifierName = (
+  names: Set<string>,
+  specifier: ESTree.ImportDeclaration['specifiers'][number],
+  source: string,
+  importedName: string | null,
+): void => {
+  if (specifier.type === 'ImportNamespaceSpecifier' && isIdentifierName(specifier.local)) {
+    const isEffectBarrel = source === 'effect';
+    if (!isEffectBarrel || importedName === null || specifier.local.name === importedName) {
+      names.add(specifier.local.name);
+    }
+  }
+  if (
+    specifier.type === 'ImportSpecifier' &&
+    specifier.importKind !== 'type' &&
+    importedName !== null &&
+    isIdentifierName(specifier.local) &&
+    importSpecifierName(specifier) === importedName
+  ) {
+    names.add(specifier.local.name);
+  }
+};
+
 export const collectImportNames = (
   program: ESTree.Program,
-  moduleSpecifiers: ReadonlyArray<string>,
+  moduleSpecifiers: readonly string[],
   importedName: string | null = null,
 ): Set<string> => {
   const names = new Set<string>();
-
   for (const statement of program.body) {
-    if (statement.type !== 'ImportDeclaration' || statement.importKind === 'type') {
-      continue;
-    }
-
-    const source = getImportSource(statement);
-    if (source === null || !moduleSpecifiers.includes(source)) {
-      continue;
-    }
-
-    for (const specifier of statement.specifiers) {
-      if (specifier.type === 'ImportNamespaceSpecifier' && isIdentifierName(specifier.local)) {
-        // For the 'effect' barrel, a namespace import only belongs to the requested module
-        // When its alias matches that module name; this keeps Option aliases out of Effect sets.
-        const isEffectBarrel = source === 'effect';
-        if (!isEffectBarrel || importedName === null || specifier.local.name === importedName) {
-          names.add(specifier.local.name);
+    if (statement.type === 'ImportDeclaration' && statement.importKind !== 'type') {
+      const source = getImportSource(statement);
+      if (source !== null && moduleSpecifiers.includes(source)) {
+        for (const specifier of statement.specifiers) {
+          collectSpecifierName(names, specifier, source, importedName);
         }
-      }
-
-      if (
-        specifier.type === 'ImportSpecifier' &&
-        specifier.importKind !== 'type' &&
-        importedName !== null &&
-        isIdentifierName(specifier.local) &&
-        importSpecifierName(specifier) === importedName
-      ) {
-        names.add(specifier.local.name);
       }
     }
   }
+  return names;
+};
 
+// Local names of value `import { importedName } from ...` specifiers only. A namespace import of the
+// same module binds a module object, not the function itself.
+export const collectNamedImportNames = (
+  program: ESTree.Program,
+  moduleSpecifiers: readonly string[],
+  importedName: string,
+): Set<string> => {
+  const names = new Set<string>();
+  for (const statement of program.body) {
+    const source = statement.type === 'ImportDeclaration' ? getImportSource(statement) : null;
+    if (
+      statement.type === 'ImportDeclaration' &&
+      statement.importKind !== 'type' &&
+      source !== null &&
+      moduleSpecifiers.includes(source)
+    ) {
+      for (const specifier of statement.specifiers) {
+        if (
+          specifier.type === 'ImportSpecifier' &&
+          specifier.importKind !== 'type' &&
+          isIdentifierName(specifier.local) &&
+          importSpecifierName(specifier) === importedName
+        ) {
+          names.add(specifier.local.name);
+        }
+      }
+    }
+  }
   return names;
 };
 
 export const collectNamespaceImports = (
   program: ESTree.Program,
-  moduleSpecifiers: ReadonlyArray<string>,
+  moduleSpecifiers: readonly string[],
   barrelFilterName: string | null = null,
 ): Set<string> => {
   const namespaceNames = new Set<string>();
 
   for (const statement of program.body) {
-    if (statement.type !== 'ImportDeclaration') {
-      continue;
-    }
+    if (statement.type === 'ImportDeclaration') {
+      const source = getImportSource(statement);
 
-    const source = getImportSource(statement);
-
-    if (
-      source !== null &&
-      moduleSpecifiers.includes(source) &&
-      isRuntimeImportDeclaration(statement)
-    ) {
-      addNamespaceSpecifiers(namespaceNames, statement, source, barrelFilterName);
+      if (
+        source !== null &&
+        moduleSpecifiers.includes(source) &&
+        isRuntimeImportDeclaration(statement)
+      ) {
+        addNamespaceSpecifiers(namespaceNames, statement, source, barrelFilterName);
+      }
     }
   }
 
   return namespaceNames;
 };
 
-export const collectEffectNamespaceImports = (program: ESTree.Program): Set<string> =>
-  // Only include barrel 'effect' namespace imports whose local alias is 'Effect'.
-  // This prevents Option/Match/etc. barrel aliases being added to the Effect namespace set.
-  collectNamespaceImports(program, effectNamespaceModuleSpecifiers, 'Effect');
+// Local names bound to a v4 reactivity module: a namespace import of its subpath, or the named
+// namespace export of a reactivity barrel. Any other namespace import of a barrel is the barrel.
+export const collectReactivityModuleNames = (
+  program: ESTree.Program,
+  moduleName: ReactivityModuleName,
+): Set<string> =>
+  new Set([
+    ...collectNamespaceImports(
+      program,
+      reactivityBarrelSpecifiers.map((barrel) => `${barrel}/${moduleName}`),
+    ),
+    ...collectNamedImportNames(program, reactivityBarrelSpecifiers, moduleName),
+  ]);
 
 export const hasImportFrom = (
   program: ESTree.Program,
-  moduleSpecifiers: ReadonlyArray<string>,
+  moduleSpecifiers: readonly string[],
 ): boolean =>
   program.body.some((statement) => {
     if (statement.type !== 'ImportDeclaration') {
@@ -162,17 +222,6 @@ export const hasImportFrom = (
     return (
       source !== null && moduleSpecifiers.includes(source) && isRuntimeImportDeclaration(statement)
     );
-  });
-
-export const hasEffectTypeOrRuntimeImport = (program: ESTree.Program): boolean =>
-  // Matches any import from the effect stack, including type-only imports.
-  // Used by type-modeling rules that must fire even with `import type`.
-  program.body.some((statement) => {
-    if (statement.type !== 'ImportDeclaration') {
-      return false;
-    }
-    const source = getImportSource(statement);
-    return source !== null && isEffectStackModuleSource(source);
   });
 
 export const hasEffectStackImport = (program: ESTree.Program): boolean =>
@@ -201,8 +250,37 @@ export const isNamespaceImportReference = (
   return variable !== null && hasImportBindingDefinition(variable);
 };
 
-export const isEffectNamespaceImportReference = (
+// The member name of a call such as `Effect.map(...)` whose object is an import binding named in
+// `namespaceNames`; `null` for any other node.
+export const boundNamespaceCallMember = (
   context: Context,
-  identifier: IdentifierLike,
+  node: unknown,
   namespaceNames: ReadonlySet<string>,
-): boolean => isNamespaceImportReference(context, identifier, namespaceNames);
+): string | null => {
+  if (!isNodeLike(node) || node.type !== 'CallExpression') {
+    return null;
+  }
+
+  const call = getStaticMemberCall(node);
+  return call !== null && isNamespaceImportReference(context, call.object, namespaceNames)
+    ? call.propertyName
+    : null;
+};
+
+// The member of a bound v4 Atom call whose argument count selects the Effect-returning overload,
+// such as `Atom.set(atom, value)`. A spread call has an unknown count, and the curried
+// `Atom.set(value)` returns a function, so both give `null`.
+export const boundAtomEffectMember = (
+  context: Context,
+  node: unknown,
+  atomNames: ReadonlySet<string>,
+): string | null => {
+  const member = boundNamespaceCallMember(context, node, atomNames);
+  const args = isNodeLike(node) ? getNodeField(node, 'arguments') : null;
+  return member !== null &&
+    Array.isArray(args) &&
+    atomEffectArgumentCounts.get(member) === args.length &&
+    !hasSpreadArgument(args)
+    ? member
+    : null;
+};

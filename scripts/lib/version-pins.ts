@@ -6,14 +6,20 @@ import { fail, isObjectRecord, readText, repoRoot } from './script-runtime.ts';
 import {
   type CanonicalVersionInput,
   type CanonicalVersions,
+  type EffectIntegrationVersions,
   type RootPackageJson,
   parseRootPackageJson,
   readCanonicalVersionInputs,
   readCanonicalVersions,
+  readEffectIntegrationVersionInputs,
+  readEffectIntegrationVersions,
 } from './tool-versions.ts';
+import type { TsgoSnapshot } from './tsgo-snapshot.ts';
+import { readRetainedTsgoSnapshot } from './tsgo-snapshot-files.ts';
 
 const workflowPaths = [
   join(repoRoot, '.github', 'workflows', 'ci.yml'),
+  join(repoRoot, '.github', 'workflows', 'effect-integration.yml'),
   join(repoRoot, '.github', 'workflows', 'release.yml'),
 ];
 
@@ -27,7 +33,7 @@ interface WorkflowPinInput {
 }
 
 interface VersionPinContractInput extends CanonicalVersionInput {
-  readonly workflows: ReadonlyArray<WorkflowPinInput>;
+  readonly workflows: readonly WorkflowPinInput[];
 }
 
 interface RequiredActionWithStringFieldInput {
@@ -41,42 +47,58 @@ interface RequiredActionWithStringFieldInput {
 
 const exactSemverPattern = /^\d+\.\d+\.\d+$/u;
 
-const workflowSteps = (workflow: string, label: string): ReadonlyArray<Record<string, unknown>> => {
-  const document = parseDocument(workflow, { uniqueKeys: true });
-  if (document.errors.length > 0) {
-    const details = document.errors.map((error) => error.message).join('; ');
-    return fail(`${label} workflow YAML must parse without YAML errors: ${details}.`);
+// Collects steps from one job's steps array into the accumulator.
+const collectStepsFromJob = (steps: Array<Record<string, unknown>>, jobSteps: unknown[]): void => {
+  for (const step of jobSteps) {
+    if (isObjectRecord(step)) {
+      steps.push(step);
+    }
   }
+};
 
-  const parsed = document.toJS() as unknown;
-  if (!isObjectRecord(parsed)) {
-    return fail(`${label} workflow must parse to a mapping.`);
-  }
-
-  const { jobs } = parsed;
-  if (!isObjectRecord(jobs)) {
-    return fail(`${label} workflow must include jobs.`);
-  }
-
+// Iterates all jobs, validates each, and accumulates their steps.
+const collectJobSteps = (
+  jobs: Record<string, unknown>,
+  label: string,
+): Array<Record<string, unknown>> => {
   const steps: Array<Record<string, unknown>> = [];
   for (const [jobName, job] of Object.entries(jobs)) {
     if (!isObjectRecord(job)) {
       return fail(`${label} jobs.${jobName} must be a mapping.`);
     }
-
     const jobSteps = job['steps'];
     if (!Array.isArray(jobSteps)) {
       return fail(`${label} jobs.${jobName} must include steps.`);
     }
-
-    for (const step of jobSteps) {
-      if (isObjectRecord(step)) {
-        steps.push(step);
-      }
-    }
+    collectStepsFromJob(steps, jobSteps);
   }
-
   return steps;
+};
+
+// Parses and validates the YAML document, returning the jobs mapping.
+const parsedWorkflowJobs = (
+  document: ReturnType<typeof parseDocument>,
+  label: string,
+): Record<string, unknown> => {
+  if (document.errors.length > 0) {
+    const details = document.errors.map((error) => error.message).join('; ');
+    return fail(`${label} workflow YAML must parse without YAML errors: ${details}.`);
+  }
+  const parsed = document.toJS() as unknown;
+  if (!isObjectRecord(parsed)) {
+    return fail(`${label} workflow must parse to a mapping.`);
+  }
+  const { jobs } = parsed;
+  if (!isObjectRecord(jobs)) {
+    return fail(`${label} workflow must include jobs.`);
+  }
+  return jobs;
+};
+
+const workflowSteps = (workflow: string, label: string): ReadonlyArray<Record<string, unknown>> => {
+  const document = parseDocument(workflow, { uniqueKeys: true });
+  const jobs = parsedWorkflowJobs(document, label);
+  return collectJobSteps(jobs, label);
 };
 
 const actionSteps = (
@@ -124,7 +146,7 @@ const requiredActionWithStringField = ({
 const extractNodeActionVersions = (
   steps: ReadonlyArray<Record<string, unknown>>,
   label: string,
-): ReadonlyArray<string> =>
+): readonly string[] =>
   requiredActionSteps(
     steps,
     setupNodeAction,
@@ -143,7 +165,7 @@ const extractNodeActionVersions = (
 const extractPnpmActionVersions = (
   steps: ReadonlyArray<Record<string, unknown>>,
   label: string,
-): ReadonlyArray<string> => {
+): readonly string[] => {
   const versions = requiredActionSteps(
     steps,
     pnpmSetupAction,
@@ -208,35 +230,75 @@ const assertPackageEnginePins = (
   }
 };
 
-export const assertVersionPinContract = (inputs: VersionPinContractInput): void => {
-  const packageJson = parseRootPackageJson(inputs.packageJson);
-  const versions = readCanonicalVersions(inputs);
-
-  assertPackageEnginePins(packageJson, versions);
-
-  for (const { label, text: workflow } of inputs.workflows) {
-    const steps = workflowSteps(workflow, label);
-    const nodePins = extractNodeActionVersions(steps, label);
-    const pnpmPins = extractPnpmActionVersions(steps, label);
-
-    assertMiseActionInstallsTools(steps, label);
-
-    for (const nodePin of nodePins) {
-      if (nodePin !== versions.node) {
-        fail(`${label} node-version ${nodePin} does not match mise node ${versions.node}`);
-      }
+// Validates all version pins for one workflow file's steps.
+const assertWorkflowVersionPins = (
+  steps: ReadonlyArray<Record<string, unknown>>,
+  label: string,
+  versions: CanonicalVersions,
+): void => {
+  const nodePins = extractNodeActionVersions(steps, label);
+  const pnpmPins = extractPnpmActionVersions(steps, label);
+  assertMiseActionInstallsTools(steps, label);
+  for (const nodePin of nodePins) {
+    if (nodePin !== versions.node) {
+      fail(`${label} node-version ${nodePin} does not match mise node ${versions.node}`);
     }
-
-    for (const pnpmPin of pnpmPins) {
-      if (pnpmPin !== versions.pnpm) {
-        fail(
-          `${label} pnpm/action-setup version ${pnpmPin} does not match packageManager pnpm ${versions.pnpm}`,
-        );
-      }
+  }
+  for (const pnpmPin of pnpmPins) {
+    if (pnpmPin !== versions.pnpm) {
+      fail(
+        `${label} pnpm/action-setup version ${pnpmPin} does not match packageManager pnpm ${versions.pnpm}`,
+      );
     }
   }
 };
 
+export const assertVersionPinContract = (inputs: VersionPinContractInput): void => {
+  const packageJson = parseRootPackageJson(inputs.packageJson);
+  const versions = readCanonicalVersions(inputs);
+  assertPackageEnginePins(packageJson, versions);
+  for (const { label, text: workflow } of inputs.workflows) {
+    const steps = workflowSteps(workflow, label);
+    assertWorkflowVersionPins(steps, label, versions);
+  }
+};
+
+const assertSupported = (version: string, supported: readonly string[], label: string): void => {
+  if (!supported.includes(version)) {
+    fail(`${label} ${version} is not supported by the pinned tsgo (${supported.join(', ')}).`);
+  }
+};
+
+// The supported matrix comes from the pinned tsgo release itself (its tagged README table,
+// retained in the snapshot), so an integration pin bump cannot drift outside what the patch accepts.
+// The unsupported-target control must stay unsupported or it stops proving the failure mode.
+export const assertEffectIntegrationMatrix = (
+  versions: EffectIntegrationVersions,
+  snapshot: TsgoSnapshot,
+): void => {
+  if (snapshot.package.version !== versions.effectTsgo) {
+    fail(
+      `tsgo snapshot ${snapshot.package.version} does not match catalog @effect/tsgo ${versions.effectTsgo}.`,
+    );
+  }
+  const targets = snapshot.supportedTargets;
+  assertSupported(versions.oxlint, targets.oxlint, 'Integration oxlint');
+  assertSupported(
+    versions.oxlintTsgolint,
+    targets['oxlint-tsgolint'],
+    'Integration oxlint-tsgolint',
+  );
+  assertSupported(versions.tscRouteTypescript, targets.typescript, 'Integration TypeScript');
+  if (targets.oxlint.includes(versions.unsupportedOxlint)) {
+    fail(`Unsupported-target control oxlint ${versions.unsupportedOxlint} is supported by tsgo.`);
+  }
+};
+
+const readPinnedSnapshot = (versions: EffectIntegrationVersions): TsgoSnapshot =>
+  readRetainedTsgoSnapshot(join(repoRoot, 'scripts', 'references', 'tsgo'), versions.effectTsgo);
+
 export const assertWorkflowPins = (): void => {
   assertVersionPinContract(readVersionPinInputs());
+  const integration = readEffectIntegrationVersions(readEffectIntegrationVersionInputs());
+  assertEffectIntegrationMatrix(integration, readPinnedSnapshot(integration));
 };

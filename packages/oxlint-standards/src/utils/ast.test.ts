@@ -1,7 +1,3 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion --
-   Mock helpers intentionally provide only the properties exercised by the code under test. */
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -12,8 +8,14 @@ import {
   getStaticMemberExpression,
   getStringLiteralValue,
   hasAncestor,
+  hasSpreadArgument,
   isIdentifierName,
   isNodeLike,
+  isStringLiteral,
+  peelTransparentExpression,
+  staticMemberPropertyName,
+  visitSelfAndDescendants,
+  visitSelfAndDescendantsWhere,
   walkDescendants,
 } from './ast.js';
 
@@ -236,7 +238,7 @@ describe('walkDescendants()', () => {
   it('visits direct NodeLike children in array properties', () => {
     const child = mkNode('Identifier');
     const root = mkNode('Program', { body: [child] });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).toContain(child);
   });
@@ -244,7 +246,7 @@ describe('walkDescendants()', () => {
   it('skips non-NodeLike items in arrays', () => {
     const nodeChild = mkNode('Identifier');
     const root = mkNode('Program', { body: ['skip-me', nodeChild] });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).toStrictEqual([nodeChild]);
   });
@@ -253,14 +255,14 @@ describe('walkDescendants()', () => {
     const grandchild = mkNode('Identifier');
     const child = mkNode('ExpressionStatement', { expression: grandchild });
     const root = mkNode('Program', { body: [child] });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).toContain(child);
     expect(visited).toContain(grandchild);
   });
 
   it('returns immediately for a non-NodeLike input', () => {
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(null, (node) => visited.push(node));
     expect(visited).toHaveLength(0);
   });
@@ -268,7 +270,7 @@ describe('walkDescendants()', () => {
   it('skips the loc key', () => {
     const locChild = mkNode('Identifier');
     const root = mkNode('Program', { loc: locChild });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(root, (node) => visited.push(node));
     expect(visited).not.toContain(locChild);
     expect(visited).toHaveLength(0);
@@ -277,8 +279,121 @@ describe('walkDescendants()', () => {
   it('skips the parent key — parent back-links are not traversed', () => {
     const parentNode = mkNode('Program');
     const child = mkNode('ExpressionStatement', { parent: parentNode });
-    const visited: Array<NodeLike> = [];
+    const visited: NodeLike[] = [];
     walkDescendants(child, (node) => visited.push(node));
     expect(visited).not.toContain(parentNode);
+  });
+});
+
+describe('visitSelfAndDescendants()', () => {
+  it('visits the node itself before its descendants', () => {
+    const grandchild = mkNode('Identifier');
+    const child = mkNode('ExpressionStatement', { expression: grandchild });
+    const root = mkNode('Program', { body: [child] });
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendants(root, (node) => visited.push(node));
+    expect(visited).toStrictEqual([root, child, grandchild]);
+  });
+
+  it('visits nothing for a non-NodeLike input', () => {
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendants(null, (node) => visited.push(node));
+    expect(visited).toHaveLength(0);
+  });
+});
+
+describe('hasSpreadArgument()', () => {
+  it('is true only when an argument is a spread element', () => {
+    expect(hasSpreadArgument([ident('a'), mkNode('SpreadElement')])).toBe(true);
+    expect(hasSpreadArgument([ident('a'), mkNode('ArrayExpression')])).toBe(false);
+    expect(hasSpreadArgument([])).toBe(false);
+  });
+});
+
+describe('visitSelfAndDescendantsWhere()', () => {
+  it('neither visits nor descends into a node the predicate rejects', () => {
+    const hidden = mkNode('Identifier');
+    const skipped = mkNode('ArrowFunctionExpression', { body: hidden });
+    const kept = mkNode('Identifier');
+    const root = mkNode('ArrayExpression', { elements: [skipped, kept] });
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendantsWhere(
+      root,
+      (node) => node.type !== 'ArrowFunctionExpression',
+      (node) => visited.push(node),
+    );
+    expect(visited).toStrictEqual([root, kept]);
+  });
+
+  it('visits nothing when the root is rejected', () => {
+    const visited: NodeLike[] = [];
+    visitSelfAndDescendantsWhere(
+      mkNode('Identifier'),
+      () => false,
+      (node) => visited.push(node),
+    );
+    expect(visited).toHaveLength(0);
+  });
+});
+
+// ── peelTransparentExpression ─────────────────────────────────────────────────
+
+describe('peelTransparentExpression()', () => {
+  it('peels nested type assertions, satisfies, non-null, and parentheses', () => {
+    const inner = mkNode('Literal', { value: 'timeout' });
+    const wrapped = mkNode('TSAsExpression', {
+      expression: mkNode('ParenthesizedExpression', {
+        expression: mkNode('TSSatisfiesExpression', {
+          expression: mkNode('TSNonNullExpression', {
+            expression: mkNode('TSTypeAssertion', { expression: inner }),
+          }),
+        }),
+      }),
+    });
+    expect(peelTransparentExpression(wrapped)).toBe(inner);
+  });
+
+  it('leaves a runtime-changing wrapper in place', () => {
+    const chain = mkNode('ChainExpression', { expression: mkNode('Identifier', { name: 'x' }) });
+    expect(peelTransparentExpression(chain)).toBe(chain);
+  });
+});
+
+// ── isStringLiteral ───────────────────────────────────────────────────────────
+
+describe('isStringLiteral()', () => {
+  it('accepts a string literal and rejects other literals', () => {
+    expect(isStringLiteral(mkNode('Literal', { value: 'text' }))).toBe(true);
+    expect(isStringLiteral(mkNode('Literal', { value: 1 }))).toBe(false);
+    expect(isStringLiteral(mkNode('TemplateLiteral', {}))).toBe(false);
+  });
+});
+
+// ── staticMemberPropertyName ──────────────────────────────────────────────────
+
+describe('staticMemberPropertyName()', () => {
+  it('returns the name of a non-computed identifier property', () => {
+    expect(
+      staticMemberPropertyName(mkNode('MemberExpression', memberExpr(ident('e'), ident('_tag')))),
+    ).toBe('_tag');
+  });
+
+  it('returns the value of a computed string-literal property', () => {
+    const property = mkNode('Literal', { value: '_tag' });
+    expect(
+      staticMemberPropertyName(mkNode('MemberExpression', memberExpr(ident('e'), property, true))),
+    ).toBe('_tag');
+  });
+
+  it('returns null for a computed identifier key, which is read at runtime', () => {
+    expect(
+      staticMemberPropertyName(
+        mkNode('MemberExpression', memberExpr(ident('e'), ident('_tag'), true)),
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null for a non-member node', () => {
+    expect(staticMemberPropertyName(ident('_tag'))).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import {
   commandOutput,
   fail,
   runCommand,
+  withDefaultReporter,
 } from '../../lib/script-runtime.ts';
 
 export type { CommandResult };
@@ -22,7 +23,7 @@ interface WriteOxlintConfigOptions {
 
 interface RunOxlintOnSourceOptions extends WriteOxlintConfigOptions {
   readonly command?: string;
-  readonly commandPrefixArgs?: ReadonlyArray<string>;
+  readonly commandPrefixArgs?: readonly string[];
   readonly cwd: string;
   readonly source: string;
   readonly sourceFileName?: string;
@@ -103,7 +104,11 @@ export const runOxlintOnSource = ({
   mkdirSync(dirname(sourcePath), { recursive: true });
   writeFileSync(sourcePath, source);
 
-  return runCommand(command, [...commandPrefixArgs, '--config', configPath, sourcePath], { cwd });
+  return runCommand(
+    command,
+    withDefaultReporter(['--config', configPath, sourcePath], commandPrefixArgs),
+    { cwd },
+  );
 };
 
 export const diagnosticCount = (result: CommandResult, ruleName: string): number => {

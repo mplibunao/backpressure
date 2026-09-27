@@ -1,0 +1,10 @@
+{
+  "name": "rules-viewer",
+  "private": true,
+  "description": "Local viewer for the backpressure rule list.",
+  "type": "module",
+  "devDependencies": {
+    "@mplibunao/tsconfig": "workspace:*",
+    "bun-types": "catalog:"
+  }
+}

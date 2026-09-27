@@ -1,4 +1,4 @@
-/* oxlint-disable max-lines -- The catalog parity matrix intentionally keeps all rule examples together. */
+/* oxlint-disable @mplibunao/oxlint-standards/no-ts-nocheck -- string literal, not a real @ts-nocheck directive */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,8 +6,11 @@ import { join } from 'node:path';
 import { RuleTester } from 'oxlint/plugins-dev';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { Rule } from '@oxlint/plugins';
+
 import { catalogRuleDefinitions, catalogRules } from './rule-catalog.js';
-import { ruleMessage } from './rule-messages.js';
+import { hasExplicitRuleMessage, ruleMessage } from './rule-messages.js';
+import { ownershipRegistry } from './utils/effect-ownership.js';
 
 vi.setConfig({ testTimeout: 1000 });
 RuleTester.describe = describe;
@@ -21,6 +24,8 @@ interface CatalogFixture {
   readonly code: string;
   readonly expectedErrors?: number;
   readonly filename?: string;
+  // Placeholder values for a rule whose message names the reported call.
+  readonly messageData?: Readonly<Record<string, string>>;
 }
 
 const upstreamFixtureRoot = join(process.cwd(), 'test-fixtures', 'linteffect', 'tests', 'fixtures');
@@ -31,6 +36,14 @@ const sourceFixture = (ruleName: string, fileName: string): string =>
 const toCatalogFixture = (fixture: string | CatalogFixture): CatalogFixture =>
   typeof fixture === 'string' ? { code: fixture } : fixture;
 
+const requireRule = (name: string): Rule => {
+  const rule = catalogRules[name];
+  if (rule === globalThis.undefined) {
+    throw new Error(`Catalog rule missing: ${name}`);
+  }
+  return rule;
+};
+
 const run = (
   name: keyof typeof catalogRules,
   cases: {
@@ -38,23 +51,25 @@ const run = (
     readonly valid: ReadonlyArray<string | CatalogFixture>;
   },
 ): void => {
-  const rule = catalogRules[name];
-  // Name is constrained to keyof catalogRules, so this guard is a type-narrowing invariant — never fires at runtime.
-  if (typeof rule === 'undefined') {
-    throw new Error(`Catalog rule missing: ${name}`);
-  }
-  ruleTester.run(name, rule, {
+  ruleTester.run(name, requireRule(name), {
     invalid: cases.invalid.map((fixture) => {
       const catalogFixture = toCatalogFixture(fixture);
-      const { expectedErrors = 1, ...testCase } = catalogFixture;
+      const { expectedErrors = 1, messageData, ...testCase } = catalogFixture;
       return {
         ...testCase,
-        errors: Array.from({ length: expectedErrors }, () => ({ message: ruleMessage(name) })),
+        errors: Array.from({ length: expectedErrors }, () => ({
+          message: ruleMessage(name, messageData),
+        })),
       };
     }),
     valid: cases.valid.map(toCatalogFixture),
   });
 };
+
+const effectImport = "import * as Effect from 'effect/Effect';\n";
+const effectAndPipeImports = `${effectImport}import { pipe } from 'effect/Function';\n`;
+const withEffect = (body: string): string => `${effectImport}${body}`;
+const withEffectAndPipe = (body: string): string => `${effectAndPipeImports}${body}`;
 
 run('no-barrel-import', {
   invalid: [
@@ -69,115 +84,122 @@ run('no-barrel-import', {
   ],
 });
 
-run('effect-no-multiple-provide', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B));",
-    "import * as E from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(effect, E.provide(A), E.provide(B));",
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A)).pipe(Effect.provide(B));",
-    // Behavior regression: three provides across inner+outer chain must report exactly once (not twice).
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.provide(B)).pipe(Effect.provide(C));",
-    // Behavior regression: nested standalone pipe(pipe(...)) must be detected as one composed pipeline.
-    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A)), Effect.provide(B));",
-    // Guard regression: inner standalone pipe with 2+ provides must report exactly once (not twice).
-    // The inner pipe must not be reported separately, even though it also exceeds the provide threshold.
-    {
-      code: "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(pipe(effect, Effect.provide(A), Effect.provide(B)), Effect.provide(C));",
-      expectedErrors: 1,
-    },
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.provide(effect, Layer.mergeAll(A, B));",
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A), Effect.map(() => Effect.provide(B)));",
-    'const Effect = { provide: (x: unknown) => x };\neffect.pipe(Effect.provide(A), Effect.provide(B));',
-    "import * as Effect from 'effect/Effect';\nconst pipe = (...steps: Array<unknown>) => steps;\npipe(effect, Effect.provide(A), Effect.provide(B));",
-    // Ownership regression: const pipe alias with multiple provides is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\nconst run = pipe(pipe(effect, Effect.provide(A)), Effect.provide(B));",
-    // Exactly one provide across a chained member pipe must not report.
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A)).pipe(Effect.map(f));",
-    // A single provide in a simple member pipe is valid.
-    "import * as Effect from 'effect/Effect';\neffect.pipe(Effect.provide(A));",
-    // Single standalone provide — keeps the boundary test symmetric for both pipe forms.
-    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\npipe(effect, Effect.provide(A));",
-  ],
-});
+const schemaImport = "import * as Schema from 'effect/Schema';\n";
+const withSchema = (body: string): string => `${schemaImport}${body}`;
 
 run('no-inline-schema-compile', {
   invalid: [
-    "import * as Schema from 'effect/Schema';\nconst User = Schema.Struct({ name: Schema.String });\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(User)(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(Schema.Struct({ name: Schema.String }))(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(models.User)(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(User))(raw);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (raw: unknown) => Schema.decodeSync(Schema.optional(User))(raw);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (raw: unknown) => Schema.decodeSync(Schema.transform(User, f))(raw);",
-    "import * as Schema from 'effect/Schema';\nexport const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(Schema.optional(User)))(raw);",
+    withSchema(
+      'export const parseUser = (input: unknown) => Schema.decodeUnknownEffect(Schema.Struct({ name: Schema.String }))(input);',
+    ),
+    withSchema(
+      'export const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(User))(raw);',
+    ),
+    withSchema(
+      'export const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(makeSchema()))(raw);',
+    ),
+    // Building the decoder is the smell, whether it is applied at once, returned, or assigned.
+    withSchema(
+      'export const makeParser = () => Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.String }));',
+    ),
+    withSchema(
+      'function parse(raw: unknown) { const decode = Schema.decodeUnknownSync(Schema.Array(Schema.String)); return decode(raw); }',
+    ),
+    withSchema(
+      'const write = (user: User) => Schema.encodeSync(Schema.Struct({ id: Schema.String }))(user);',
+    ),
+    withSchema(
+      'const check = (raw: unknown) => Schema.decodeUnknownResult(Schema.Struct({ id: Schema.String }))(raw);',
+    ),
+    withSchema(
+      'const parse = (raw: unknown) => Schema.decodeSync(Schema.Struct({ id: Schema.String }) as Schema.Codec<User>)(raw);',
+    ),
+    "import { Schema } from 'effect';\nconst parse = (raw: unknown) => Schema.decodeSync(Schema.Struct({}))(raw);",
+    "import * as S from 'effect/Schema';\nconst parse = (raw: unknown) => S.decodeSync(S.Struct({}))(raw);",
   ],
   valid: [
-    "import * as Schema from 'effect/Schema';\nexport const parseJson = (raw: string) => Schema.decodeSync(Schema.fromJsonString(makeSchema()))(raw);",
-    "import * as Schema from 'effect/Schema';\nconst User = Schema.Struct({ name: Schema.String });\nconst decodeUser = Schema.decodeUnknownEffect(User);\nexport const parseUser = (input: unknown) => decodeUser(input);",
-    "import * as Schema from 'effect/Schema';\nexport const parseWith = <A, I>(schema: Schema.Codec<A, I>, input: unknown) => Schema.decodeUnknownEffect(schema)(input);",
-    "import * as Schema from 'effect/Schema';\nexport const makeDecoder = <A, I>(schema: Schema.Codec<A, I>) => Schema.decodeUnknownEffect(schema);",
-    "import * as Schema from 'effect/Schema';\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(makeSchema())(input);",
-  ],
-});
-
-run('no-family-collection-read', {
-  invalid: [
-    sourceFixture('no-family-collection-read', 'invalid-get.ts'),
-    sourceFixture('no-family-collection-read', 'invalid-get-get.ts'),
-    sourceFixture('no-family-collection-read', 'invalid-atom-get.ts'),
-  ],
-  valid: [
-    sourceFixture('no-family-collection-read', 'valid-keyed-source.ts'),
-    sourceFixture('no-family-collection-read', 'valid-outside-family.ts'),
-  ],
-});
-
-run('no-naked-object-state-update', {
-  invalid: [
-    sourceFixture('no-naked-object-state-update', 'invalid-spread.ts'),
-    sourceFixture('no-naked-object-state-update', 'invalid-from-entries.ts'),
-    {
-      code: sourceFixture('no-naked-object-state-update', 'invalid-object-assign.ts'),
-      expectedErrors: 2,
-    },
-    {
-      code: sourceFixture('no-naked-object-state-update', 'invalid-json-transition.ts'),
-      expectedErrors: 2,
-    },
-    "import * as Ref from 'effect/Ref';\nRef.modify(stateRef, (state) => { return { ...state, ready: true }; });",
-  ],
-  valid: [
-    sourceFixture('no-naked-object-state-update', 'valid-effect-record-set.ts'),
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => state);",
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => Object.fromEntries(entries));",
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => Object.assign(state, patch));",
-    "import * as Effect from 'effect/Effect';\nJSON.parse(payload);",
-    // ContainsObjectSpread returns false for plain object with no spread — should not flag.
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (s) => ({ count: s.count + 1 }));",
-    "import * as Ref from 'effect/Ref';\nRef.update(stateRef, (state) => { return { count: state.count + 1 }; });",
+    withSchema(
+      'const User = Schema.Struct({ name: Schema.String });\nexport const parseUser = (input: unknown) => Schema.decodeUnknownEffect(User)(input);',
+    ),
+    withSchema(
+      'export const parseUser = (input: unknown) => Schema.decodeUnknownEffect(models.User)(input);',
+    ),
+    withSchema(
+      'export const parseWith = <A, I>(schema: Schema.Codec<A, I>, input: unknown) => Schema.decodeUnknownEffect(schema)(input);',
+    ),
+    withSchema(
+      'export const makeDecoder = <A, I>(schema: Schema.Codec<A, I>) => Schema.decodeUnknownEffect(schema);',
+    ),
+    withSchema(
+      'export const decodeUser = Schema.decodeSync(Schema.Struct({ id: Schema.String }));',
+    ),
+    withSchema(
+      'export const parseUser = (input: unknown) => Schema.decodeUnknownEffect(makeSchema())(input);',
+    ),
+    // Predicates and transformation constructors are outside the decoder and encoder policy.
+    withSchema('const isUser = (value: unknown) => Schema.is(Schema.Struct({}))(value);'),
+    withSchema('const assertUser = (value: unknown) => Schema.asserts(Schema.Struct({}))(value);'),
+    withSchema('const toNumber = () => Schema.String.pipe(Schema.decodeTo(Schema.Number));'),
+    // Deliberately syntactic: a schema first assigned to a local is not tracked.
+    withSchema(
+      'const parse = (raw: unknown) => { const Local = Schema.Struct({}); return Schema.decodeSync(Local)(raw); };',
+    ),
+    'const Schema = { decodeSync: (s) => s, Struct: (s) => s };\nconst parse = (raw) => Schema.decodeSync(Schema.Struct({}))(raw);',
+    "import type * as Schema from 'effect/Schema';\nconst parse = (raw) => Schema.decodeSync(Schema.Struct({}))(raw);",
   ],
 });
 
 run('no-effect-side-effect-wrapper', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.as(setState(value), undefined);",
-    "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.as(Atom.set(atom, value), undefined);",
+    // The value slot: the second argument data-first, the only argument data-last.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, console.log('x'));",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, setState(value));",
+    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.as(console.log('x')));",
+    "import * as Effect from 'effect/Effect';\nconst replace = Effect.as(setState(value));",
+    // An Effect passed as the value is never run.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, Effect.logInfo('x'));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.as(program, Atom.set(count, 1));",
+    "import * as Effect from 'effect/Effect';\nimport * as Atom from 'effect/reactivity/Atom';\nprogram.pipe(Effect.as(Atom.set(count, 1)));",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, (() => console.log('x'))());",
+    // Invoking a function evaluates its parameter defaults, even when a generator body waits.
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), (function* (v = console.log('now')) {})());",
+    // Computed keys, static fields, and static blocks run when the class is defined.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, class { static value = console.log('now'); });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, class { static { console.log('now'); } });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, class { [console.log('key')] = 1; });",
+    // A curried Atom.set returns a function, but its arguments are still evaluated eagerly.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.as(Effect.succeed(1), Atom.set(console.log('x')));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nprogram.pipe(Effect.as(Atom.set(console.log('x'))));",
+    // Named wrappers and pipe aliases get no exemption
+    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.as(program, console.log('x'));",
+    "import * as Effect from 'effect/Effect';\nimport { pipe } from 'effect/Function';\nconst run = pipe(program, Effect.as(setState(value)));",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.as(program, value);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.zipRight(Effect.logInfo('x'), next);",
-    // Ownership regression: side-effect wrapper inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.zipRight(Effect.logInfo('x'), next), Effect.map(f));",
-  ],
-});
-
-run('no-return-in-arrow', {
-  invalid: ["import * as Effect from 'effect/Effect';\nitems.map((item) => { return item.id; });"],
-  valid: [
-    // Effect import is required because the exemption only matters when the rule is active.
-    "import * as Effect from 'effect/Effect';\nimport * as Schema from 'effect/Schema';\nSchema.filter((value) => { return value !== null; }, { message: () => 'x' });",
-    "import * as Effect from 'effect/Effect';\nimport * as S from 'effect/Schema';\nS.filter((value) => { return value !== null; }, { message: () => 'x' });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, { id: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Option from 'effect/Option';\nprogram.pipe(Effect.as(Option.some(1)));",
+    // Only the reviewed side-effect calls count; an arbitrary call is not presumed impure.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, makeValue());",
+    // The first data-first argument is the source Effect, not the value.
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.logInfo('x'), value);",
+    // A spread hides the argument count, so the overload and the value slot are unknown.
+    "import * as Effect from 'effect/Effect';\nEffect.as(...([Effect.logInfo('source'), 42] as const));",
+    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.as(...[console.log('x')]));",
+    // Defaults of a function that is never called, and instance fields, do not run.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, (v = console.log('later')) => v);",
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), class { value = console.log('later'); });",
+    "import * as Effect from 'effect/Effect';\nEffect.as(setState(value), undefined);",
+    // A function value runs only when called.
+    "import * as Effect from 'effect/Effect';\nEffect.as(program, () => console.log('x'));",
+    // Invoking a generator function only creates an iterator; its body is deferred.
+    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), (function* () { console.log('later'); })());",
+    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.as((function* () { console.log('later'); })()));",
+    // The one-argument Atom.set returns a function, not an Effect, in both Effect.as arities.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.as(Effect.succeed(1), Atom.set(1));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nprogram.pipe(Effect.as(Atom.set(1)));",
+    "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.as(program, Atom.set(count, 1));",
+    "const Effect = { as: (a, b) => b };\nEffect.as(program, console.log('x'));",
   ],
 });
 
@@ -217,11 +239,19 @@ run('no-switch-statement', {
   invalid: [
     sourceFixture('no-switch-statement', 'invalid-switch.ts'),
     sourceFixture('no-switch-statement', 'invalid-switch-submodule-import.ts'),
-    sourceFixture('no-switch-statement', 'invalid-switch-atom-react.ts'),
+    // A file whose only Effect-stack import is a v4 Atom binding is an Effect file.
+    "import { useAtomValue } from '@effect/atom-react';\nconst label = () => { switch (useAtomValue(statusAtom)) { case 'idle': return 'waiting'; default: return 'done'; } };",
+    "import { useAtom } from '@effect/atom-solid';\nswitch (state) { default: break; }",
+    "import { useAtom } from '@effect/atom-vue';\nswitch (state) { default: break; }",
   ],
   valid: [
     sourceFixture('no-switch-statement', 'valid-match-value.ts'),
     sourceFixture('no-switch-statement', 'valid-switch-without-effect.ts'),
+    // Retained upstream fixture: it imports only the v3 @effect-atom/atom-react package, which the
+    // v4-primary decision puts out of scope, so it no longer marks an Effect file.
+    sourceFixture('no-switch-statement', 'invalid-switch-atom-react.ts'),
+    "import type { AtomValue } from '@effect/atom-react';\nswitch (state) { default: break; }",
+    "import { describe } from '@effect/vitest';\nswitch (state) { default: break; }",
   ],
 });
 
@@ -234,21 +264,76 @@ run('no-arrow-ladder', {
   ],
 });
 
+const atomImports =
+  "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\n";
+const withAtom = (body: string): string => `${atomImports}${body}`;
+const atomCase = (code: string, method: string, expectedErrors = 1): CatalogFixture => ({
+  code,
+  expectedErrors,
+  messageData: { method: `Atom.${method}` },
+});
+
 run('no-atom-registry-effect-sync', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.sync(() => Atom.get(atom));",
+    atomCase(withAtom('Effect.sync(() => Atom.set(count, 1));'), 'set'),
+    atomCase(withAtom('Effect.sync(() => { Atom.refresh(count); });'), 'refresh'),
+    atomCase(withAtom('Effect.sync(() => Atom.get(count));'), 'get'),
+    atomCase(withAtom('Effect.sync(() => Atom.update(count, (n) => n + 1));'), 'update'),
+    atomCase(withAtom('Effect.sync(() => Atom.modify(count, (n) => [n, n + 1]));'), 'modify'),
+    atomCase(withAtom('Effect.sync(function () { return Atom.get(count); });'), 'get'),
+    // One diagnostic per offending call, at the call.
+    atomCase(withAtom('Effect.sync(() => { Atom.set(a, 1); Atom.set(b, 2); });'), 'set', 2),
+    // An inline function invoked on the spot runs inside the sync callback.
+    atomCase(withAtom('Effect.sync(() => (() => Atom.set(count, 1))());'), 'set'),
+    atomCase(withAtom('Effect.sync(() => (function () { return Atom.set(count, 1); })());'), 'set'),
+    // Effect.sync calls its callback, which evaluates the parameter defaults, even of a generator.
+    atomCase(withAtom('Effect.sync((v = Atom.set(count, 1)) => v);'), 'set'),
+    atomCase(withAtom('Effect.sync(function* (v = Atom.set(count, 1)) {});'), 'set'),
+    atomCase(withAtom('Effect.sync(() => class { static value = Atom.set(count, 1); });'), 'set'),
+    atomCase(
+      "import * as Effect from 'effect/Effect';\nimport * as A from 'effect/unstable/reactivity/Atom';\nEffect.sync(() => A.set(count, 1));",
+      'set',
+    ),
+    atomCase(
+      "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/reactivity';\nEffect.sync(() => Atom.set(count, 1));",
+      'set',
+    ),
+    atomCase(
+      "import { Effect } from 'effect';\nimport * as Atom from 'effect/reactivity/Atom';\nEffect.sync(() => Atom.refresh(count));",
+      'refresh',
+    ),
   ],
-  valid: ["import { Atom } from '@effect-atom/atom-react';\nAtom.get(atom);"],
+  valid: [
+    withAtom('Effect.gen(function* () { yield* Atom.set(count, 1); });'),
+    withAtom('const write = Atom.set(count, 1);'),
+    // Registry instance operations are synchronous in v4.
+    withAtom('Effect.sync(() => registry.set(count, 1));'),
+    withAtom('Effect.sync(() => atomRegistry.set(count, 1));'),
+    // A nested generator and a declared function are their own execution boundaries.
+    withAtom('Effect.sync(() => Effect.gen(function* () { yield* Atom.set(count, 1); }));'),
+    withAtom('Effect.sync(() => { const later = () => Atom.set(count, 1); return later; });'),
+    // A generator body is deferred, whether it is the callback or invoked inside it.
+    withAtom('Effect.sync(function* () { Atom.set(count, 1); });'),
+    withAtom('Effect.sync(() => (function* () { Atom.set(count, 1); })());'),
+    // Instance fields wait for instantiation; defaults of an uncalled function never run.
+    withAtom('Effect.sync(() => class { value = Atom.set(count, 1); });'),
+    withAtom('Effect.sync(() => { const later = (v = Atom.set(count, 1)) => v; return later; });'),
+    // The data-last form returns a function, not an Effect.
+    withAtom('Effect.sync(() => Atom.set(1));'),
+    withAtom('const run = (Atom) => Effect.sync(() => Atom.set(count, 1));'),
+    "import * as Effect from 'effect/Effect';\nconst Atom = { set: (a, v) => v };\nEffect.sync(() => Atom.set(count, 1));",
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.sync(() => Atom.set(count, 1));",
+    "import * as Effect from 'effect/Effect';\nimport type { Atom } from 'effect/unstable/reactivity';\nEffect.sync(() => Atom.set(count, 1));",
+  ],
 });
 
 run('no-branch-in-object', {
   invalid: [
     "import * as Option from 'effect/Option';\nconst value = { ready: Option.match(input, { onSome: () => true, onNone: () => false }) };",
     "import * as Match from 'effect/Match';\nconst value = { ready: Match.value(input).pipe(Match.when('a', () => true)) };",
-    "import * as Either from 'effect/Either';\nconst value = { ready: Either.match(input, { onRight: () => true, onLeft: () => false }) };",
     "import * as Match from 'effect/Match';\nconst value = ((branch) => ({ ready: branch }))(Match.value(input).pipe(Match.when('a', () => true)));",
     "import * as Option from 'effect/Option';\nconst value = ((branch) => { return { ready: branch }; })(Option.match(input, { onSome: () => true, onNone: () => false }));",
-    "import * as Either from 'effect/Either';\nconst value = (function (branch) { return { ready: branch }; })(Either.match(input, { onRight: () => true, onLeft: () => false }));",
+    "import * as Option from 'effect/Option';\nconst value = (function (branch) { return { ready: branch }; })(Option.match(input, { onSome: () => true, onNone: () => false }));",
     // Ownership regression: branch wrapped in a helper call inside an IIFE arg is source-covered via descendant scan.
     "import * as Option from 'effect/Option';\nconst value = ((branch) => ({ ready: branch }))(decorate(Option.match(input, { onSome: () => true, onNone: () => false })));",
   ],
@@ -256,19 +341,9 @@ run('no-branch-in-object', {
     'const value = { ready: condition ? true : false };',
     "import * as Match from 'effect/Match';\nconst value = { ready: decorate(Match.value(input).pipe(Match.when('a', () => true))) };",
     "import * as Option from 'effect/Option';\nconst value = { ready: decorate(Option.match(input, { onSome: () => true, onNone: () => false })) };",
-    "import * as Either from 'effect/Either';\nconst value = { ready: decorate(Either.match(input, { onRight: () => true, onLeft: () => false })) };",
+    // v4 has no Either module.
+    "import * as Either from 'effect/Either';\nconst value = { ready: Either.match(input, { onRight: () => true, onLeft: () => false }) };",
     "import * as Option from 'effect/Option';\nconst value = { ready: ((branch) => branch)(Option.match(input, { onSome: () => true, onNone: () => false })) };",
-  ],
-});
-
-run('no-call-tower', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.succeed(1), (n) => n);",
-    "import * as Effect from 'effect/Effect';\nEffect.catchAll(Effect.tryPromise(fetchUser), handle);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(program, (n) => n);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.succeed(value));",
   ],
 });
 
@@ -277,229 +352,64 @@ run('no-effect-all-step-sequencing', {
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.asVoid);",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.logInfo('done')], { concurrency: 1 });",
-    // Atom.set from @effect-atom/atom-react counts as a state-changing sequential step.
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    // The v4 Atom.set Effect counts as a state-changing sequential step.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Atom from 'effect/reactivity/Atom';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.interrupt(fiber)], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nimport * as SubscriptionRef from 'effect/SubscriptionRef';\nEffect.all([SubscriptionRef.set(ref, value)], { concurrency: 1 });",
-    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/unstable/reactivity/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport { Reactivity } from 'effect/reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
     // A pipeline reports when any direct step discards state-changing work with asVoid.
     "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nEffect.all([Ref.set(ref, value)]).pipe(Effect.map(f), Effect.asVoid);",
+    // A pipe alias gets no exemption: the sequential Effect.all still reports.
+    "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nconst run = pipe(Effect.all([Ref.set(ref, value)], { concurrency: 1 }), Effect.map(f));",
   ],
   valid: [
     "import * as Effect from 'effect/Effect';\nEffect.all([program], { concurrency: 2 });",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => console.log('x'))], { concurrency: 1 });",
     "import * as Effect from 'effect/Effect';\nEffect.all([Effect.sync(() => setState(value))], { concurrency: 1 });",
-    // Ownership regression: Effect.all inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nimport * as Ref from 'effect/Ref';\nconst run = pipe(Effect.all([Ref.set(ref, value)], { concurrency: 1 }), Effect.map(f));",
     "import * as Effect from 'effect/Effect';\nimport * as Fiber from 'effect/Fiber';\nEffect.all([Fiber.join(fiber)], { concurrency: 1 });",
-  ],
-});
-
-run('no-effect-async', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.async((resume) => resume(Effect.succeed(1)));",
-  ],
-  valid: [
-    'const Effect = { async: () => null };\nEffect.async();',
-    // Ownership regression: Effect.async inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.async(register), Effect.map(f));",
+    // The curried Atom.set returns a function, not a state-changing Effect step.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from 'effect/unstable/reactivity';\nEffect.all([Effect.succeed(Atom.set(1))], { concurrency: 1 });",
+    // Retired v3 modules no longer identify Atom or Reactivity.
+    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.all([Atom.set(atom, value)], { concurrency: 1 });",
+    "import * as Effect from 'effect/Effect';\nimport * as Reactivity from 'effect/Reactivity';\nEffect.all([Reactivity.invalidate(signal)], { concurrency: 1 });",
   ],
 });
 
 run('no-effect-bind', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.bind('user', loadUser);"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(program, f);",
-    // Ownership regression: Effect.bind inside pipe wrapper alias is owned by no-effect-wrapper-alias.
+  invalid: [
+    "import * as Effect from 'effect/Effect';\nEffect.bind('user', loadUser);",
+    // A pipe alias gets no exemption.
     "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.bind('user', loadUser), Effect.map(f));",
   ],
+  valid: ["import * as Effect from 'effect/Effect';\nEffect.map(program, f);"],
 });
 
-run('no-effect-call-in-effect-arg', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.succeed(1), f);",
-    "import * as Effect from 'effect/Effect';\nEffect.provide(Effect.scoped(acquire), layer);",
-    // Ownership regression: deep direct Effect arg (depth > 1) in expression-statement position has no enabled owner.
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.flatMap(Effect.succeed(1), f), g);",
-    // Ownership regression: second-arg-only deep nesting is now owned here (no-effect-ladder first-arg only).
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.zipRight(program, Effect.map(Effect.succeed(1), f));",
-    // Ownership regression: flatMap(flatMap) in expression-statement is no longer owned by no-flatmap-ladder.
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.flatMap(program, f), g);",
-    // Ownership regression: flatten(map) in expression-statement has no other enabled owner.
-    "import * as Effect from 'effect/Effect';\nEffect.flatten(Effect.map(program, f));",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, f);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.succeed(value));",
-    // Const form: still owned by no-flatmap-ladder.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.flatMap(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatten(Effect.map(program, f));",
-    "import * as Effect from 'effect/Effect';\nEffect.orElse(Effect.flatMap(program, f), fallback);",
-    "import * as Effect from 'effect/Effect';\nEffect.zipRight(Effect.logInfo('x'), next);",
-    // Ownership regression: Atom.set is a side-effect; no-effect-side-effect-wrapper owns this shape.
-    "import * as Effect from 'effect/Effect';\nimport { Atom } from '@effect-atom/atom-react';\nEffect.zipRight(Atom.set(atom, value), Effect.succeed(next));",
-    "import * as Effect from 'effect/Effect';\nEffect.as(Effect.succeed(1), value);",
-    "import * as Effect from 'effect/Effect';\nEffect.bind('user', Effect.succeed(user));",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.map(Effect.succeed(1), f); }",
-    // Ownership regression: Effect.map(Effect.succeed(...)) inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.map(Effect.succeed(1), f), Effect.map(g));",
-  ],
-});
-
-run('no-effect-do', {
-  invalid: ["import * as Effect from 'effect/Effect';\nconst program = Effect.Do;"],
-  valid: ['const Effect = { Do: {} };\nconst program = Effect.Do;'],
-});
-
-run('no-effect-ladder', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.map(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { if (ready) { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); } return fallback; }",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.succeed(1), g);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.succeed(value));",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.map(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.flatMap(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nlet program = Effect.flatMap(Effect.map(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nvar program = Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); }",
-    // Ownership regression: flatten(map) const is owned by no-flatmap-ladder, not no-effect-ladder.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatten(Effect.map(Effect.succeed(1), f));",
-    // Ownership regression: second-arg-only deep nesting is not owned by no-effect-ladder (first-arg only).
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.zipRight(program, Effect.map(Effect.succeed(1), f));",
-    // Ownership regression: single-callee rules (no-effect-as, no-effect-bind) own these shapes.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.as(Effect.map(Effect.succeed(1), f), value);",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.bind('user', Effect.map(Effect.succeed(user), f));",
-    // Ownership regression: non-first-arg deep nesting is not a ladder — first-arg depth is only 1.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.map(program, Effect.succeed(1)), g);",
-    // Ownership regression: no-effect-orElse-ladder owns this const form.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.orElse(Effect.flatMap(Effect.succeed(1), f), fallback);",
-    // Ownership regression: no-effect-side-effect-wrapper owns this const form.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.zipRight(Effect.map(Effect.logInfo('x'), f), next);",
-  ],
-});
-
-run('no-effect-never', {
-  invalid: ["import * as Effect from 'effect/Effect';\nconst program = Effect.never;"],
-  valid: ['const Effect = { never: {} };\nconst program = Effect.never;'],
-});
-
-run('no-effect-orElse-ladder', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.orElse(Effect.flatMap(program, f), fallback);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.orElse(program, fallback);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.orElse(Effect.flatMap(program, f), fallback); }",
-  ],
-});
-
-run('no-effect-succeed-variable', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(1);",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(value ?? fallback);",
-    "import * as Effect from 'effect/Effect';\nlet run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nvar run = () => Effect.succeed(value);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed({ value });",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed([value]);",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(makeValue());",
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(condition ? value : fallback);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.succeed(value); }",
-    // Regression coverage: descendant inside wrapper-owned expression must not be double-reported.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.map(Effect.succeed(value), f);",
-    // Ownership regression: Effect.succeed inside standalone pipe wrapper alias must not double-report.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.succeed(value), Effect.map(f));",
-  ],
-});
-
-run('no-effect-sync-console', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.sync(() => console.log('x'));"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => value);",
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => setState(value));",
-  ],
-});
-
-run('no-effect-type-alias', {
-  invalid: [
-    "import { Effect } from 'effect';\ntype Program = Effect.Effect<number>;",
-    // Regression coverage: type-only imports must also activate the type-modeling rule.
-    "import type { Effect } from 'effect';\ntype Program = Effect.Effect<number>;",
-    "import type * as Effect from 'effect/Effect';\ntype Program = Effect.Effect<number>;",
-  ],
-  valid: [
-    'type Program = Promise<number>;',
-    "import { Effect } from 'effect';\nfunction run(): Effect.Effect<number> { return program; }",
-    "import { Effect } from 'effect';\ninterface Service { run(): Effect.Effect<number>; }",
-    "import { Effect } from 'effect';\nfunction run(program: Effect.Effect<number>) { return program; }",
-  ],
-});
-
-run('no-effect-wrapper-alias', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nconst wrapper = pipe(Effect.succeed(1), Effect.map(f));",
-    // Ownership regression: pipe source contains an Effect call as a descendant.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(decorate(Effect.succeed(1)), Effect.map(f));",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nconst run = (value: string) => Effect.sync(() => value);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.sync(task); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.succeed(value); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.map(Effect.succeed(1), f); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.orElse(Effect.flatMap(program, f), fallback); }",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.zipRight(Effect.logInfo('x'), next);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.tryPromise(fetchUser);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.acquireRelease(acquire, release); }",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy); }",
-  ],
-  valid: [
-    // Ownership split: direct Effect.gen wrappers are owned by prefer-effect-fn, not no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.gen(function* () { yield* task; }); }",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.succeed(1);",
-    "import * as Effect from 'effect/Effect';\nconst mapped = pipe(program, Effect.map(f));",
-    // Behavior regression: member .pipe(...) alias is not source-covered; must stay valid.
-    "import * as Effect from 'effect/Effect';\nconst run = decorate(Effect.succeed(1)).pipe(Effect.map(f));",
-    // Behavior regression: const function-expression wrapper is not source-covered (source covers arrow and declaration only).
-    "import * as Effect from 'effect/Effect';\nconst run = function () { return Effect.succeed(value); };",
-    // Source parity: block-bodied const arrow wrapper is not source-covered.
-    "import * as Effect from 'effect/Effect';\nconst run = () => { return Effect.succeed(value); };",
-    "import * as Effect from 'effect/Effect';\nconst run = () => { const program = Effect.succeed(value); return program; };",
-    "import * as Effect from 'effect/Effect';\nlet run = () => Effect.succeed(value);",
-    "import * as Effect from 'effect/Effect';\nvar run = () => Effect.succeed(value);",
-  ],
-});
-
-run('no-flatmap-ladder', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(Effect.flatMap(program, f), g);",
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatten(Effect.map(program, f));",
-    // Behavior regression: flatMap in callback (second arg) position is now caught via full-arg scan.
-    "import * as Effect from 'effect/Effect';\nconst program = Effect.flatMap(program, () => Effect.flatMap(other, f));",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, f);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(Effect.flatMap(program, f), g);",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.flatMap(Effect.flatMap(program, f), g); }",
-    "import * as Effect from 'effect/Effect';\nlet program = Effect.flatMap(Effect.flatMap(program, f), g);",
-    "import * as Effect from 'effect/Effect';\nvar program = Effect.flatten(Effect.map(program, f));",
-  ],
-});
+const optionImport = "import * as Option from 'effect/Option';\n";
+const withOption = (body: string): string => `${optionImport}${body}`;
 
 run('no-fromnullable-nullish-coalesce', {
-  invalid: ["import * as Option from 'effect/Option';\nOption.fromNullable(value ?? null);"],
+  invalid: [
+    withOption('Option.fromNullishOr(value ?? null);'),
+    withOption('Option.fromUndefinedOr(value ?? undefined);'),
+    withOption('Option.fromNullishOr((value ?? null));'),
+    "import * as O from 'effect/Option';\nO.fromNullishOr(value ?? null);",
+    "import { Option } from 'effect';\nOption.fromUndefinedOr(value ?? undefined);",
+  ],
   valid: [
-    "import * as Option from 'effect/Option';\nOption.fromNullable(value);",
-    "import * as Option from 'effect/Option';\nOption.fromNullable(value || null);",
-    "import * as Option from 'effect/Option';\nOption.fromNullable(value && null);",
+    withOption('Option.fromNullishOr(value);'),
+    withOption('Option.fromUndefinedOr(value);'),
+    withOption('Option.fromUndefinedOr(value ?? fallback);'),
+    withOption('Option.fromNullishOr(value || null);'),
+    // Each constructor has its own redundant fallback; the pairs are not merged.
+    withOption('Option.fromNullishOr(value ?? undefined);'),
+    withOption('Option.fromUndefinedOr(value ?? null);'),
+    // `undefined` must be the global value.
+    withOption('const read = (undefined) => Option.fromUndefinedOr(value ?? undefined);'),
+    'const Option = { fromNullishOr: (x) => x };\nOption.fromNullishOr(value ?? null);',
+    // The removed v3 constructor belongs to tsgo's outdated-API check.
+    withOption('Option.fromNullable(value ?? null);'),
   ],
 });
 
@@ -508,34 +418,6 @@ run('no-iife-wrapper', {
   valid: [
     '(() => value)();',
     "import * as Effect from 'effect/Effect';\n((x) => ((y) => y)(x))(value);",
-  ],
-});
-
-run('no-inline-runtime-provide', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { const live = yield* runtime.pipe(Effect.provide(Live)); return live; });",
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { return yield* runtime.pipe(Effect.provide(Live)); });",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.provide(program, Live);",
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* runtime.pipe(Effect.provide(Live)); });",
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* runtime.pipe(Effect.provide(program, Live)); });",
-    "import * as Effect from 'effect/Effect';\nruntime.pipe(Effect.provide(Live));",
-  ],
-});
-
-run('no-manual-effect-channels', {
-  invalid: [
-    "import { Effect } from 'effect';\nfunction run(): Effect.Effect<number, Error, Env> { return program; }",
-    "import { Layer } from 'effect';\ninterface Service { readonly layer: Layer.Layer<Service, Error, Env>; }",
-    "import { Layer } from 'effect';\ntype Live = Layer.Layer<Service, Error, Env>;",
-    // Regression coverage: type-only imports must also activate the type-modeling rule.
-    "import type { Effect } from 'effect';\nfunction run(): Effect.Effect<number, Error, Env> { return program; }",
-    "import type { Layer } from 'effect';\ntype Live = Layer.Layer<Service, Error, Env>;",
-  ],
-  valid: [
-    "import { Effect } from 'effect';\ntype Program = Effect.Effect<number, Error, Env>;",
-    "import { Effect } from 'effect';\ntype Program = Effect.Effect;",
   ],
 });
 
@@ -557,42 +439,6 @@ run('no-match-effect-branch', {
     "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => pipe(value, f)));",
     // Behavior regression: member .pipe() is not source sequencing; Effect call alone is not enough.
     "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('a', () => Effect.succeed(value).pipe(f)));",
-  ],
-});
-
-run('no-match-void-branch', {
-  invalid: [
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when(true, () => Effect.void));",
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when(false, () => Effect.void));",
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.orElse(() => Effect.void));",
-  ],
-  valid: [
-    "import * as Match from 'effect/Match';\nMatch.value(kind).pipe(Match.when(true, () => undefined));",
-    "import * as Match from 'effect/Match';\nimport * as Effect from 'effect/Effect';\nMatch.value(kind).pipe(Match.when('not-found', () => Effect.void));",
-  ],
-});
-
-run('no-nested-effect-call', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.flatMap(Effect.succeed(1), f), g);",
-    "import * as Effect from 'effect/Effect';\nEffect.repeat(Effect.catchAll(Effect.tryPromise(fetchUser), handle), policy);",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.map(Effect.succeed(1), g);",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.succeed(value));",
-    // Behavior regression: second-arg deep nesting not caught after first-arg ladder-depth fix.
-    "import * as Effect from 'effect/Effect';\nEffect.map(program, Effect.flatMap(Effect.succeed(1), f));",
-  ],
-});
-
-run('no-nested-effect-gen', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.gen(function* () { yield* task; }); });",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* task; });",
-    // Ownership regression: nested Effect.gen inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.gen(function* () { yield* Effect.gen(function* () { yield* task; }); }), Effect.map(f));",
   ],
 });
 
@@ -621,30 +467,22 @@ run('no-option-boolean-normalization', {
   ],
 });
 
-run('no-pipe-ladder', {
+run('no-react-state', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\npipe(value, pipe(other, f));",
-    "import * as Effect from 'effect/Effect';\npipe(pipe(source, f), g);",
-    // Ownership regression: nested member .pipe(...) in a standalone pipe step must also be caught.
-    "import * as Effect from 'effect/Effect';\npipe(value, other.pipe(f));",
-    // Ownership regression: nested member .pipe(...) inside a member pipe step must also be caught.
-    "import * as Effect from 'effect/Effect';\nsource.pipe(other.pipe(f));",
+    'useEffect(() => {}, []);',
+    'React.useEffect(() => {}, []);',
+    'React.useReducer(reducer, initial);',
+    'useContext(ThemeContext);',
+    'React.useCallback(() => {}, []);',
+    'useSyncExternalStore(subscribe, getSnapshot);',
   ],
   valid: [
-    "import * as Effect from 'effect/Effect';\npipe(value, f);",
-    "import * as Effect from 'effect/Effect';\nsource.pipe(f).pipe(g);",
-    // Ownership regression: const pipe alias whose source contains an Effect call is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(pipe(Effect.succeed(1), f), g);",
-    // A non-pipe function call in a pipe step must not be detected as a nested pipe.
-    "import * as Effect from 'effect/Effect';\npipe(value, doSomething(x));",
-    // A non-pipe outer function call must not be detected as a pipe expression.
-    "import * as Effect from 'effect/Effect';\ndoSomething(effect, pipe(a, b));",
+    'const [value] = useState(0);',
+    'const [open] = React.useState(false);',
+    'useAtom(atom);',
+    "import * as Effect from 'effect/Effect';\nconst [value] = useState(0);",
+    "import { useAtom } from '@effect/atom-react';\nconst [count] = useAtom(countAtom);",
   ],
-});
-
-run('no-react-state', {
-  invalid: ['const [value] = useState(0);', 'React.useEffect(() => {}, []);'],
-  valid: ['useAtom(atom);'],
 });
 
 run('no-render-side-effects', {
@@ -658,49 +496,59 @@ run('no-render-side-effects', {
   ],
 });
 
-run('no-return-in-callback', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nitems.map(function itemToId(item) { return item.id; });",
-  ],
-  valid: [
-    'items.map(function itemToId(item) { return item.id; });',
-    "import * as Effect from 'effect/Effect';\nitems.map((item) => { return item.id; });",
-    "import * as Effect from 'effect/Effect';\n(function () { return value; })();",
-  ],
-});
-
 run('no-return-null', {
-  invalid: ["import * as Effect from 'effect/Effect';\nfunction value() { return null; }"],
-  valid: ['function value() { return null; }'],
-});
-
-run('no-runtime-runfork', {
-  invalid: ["import * as Runtime from 'effect/Runtime';\nRuntime.runFork(runtime, program);"],
-  valid: ['const Runtime = { runFork: () => null };\nRuntime.runFork(runtime, program);'],
-});
-
-run('no-string-sentinel-const', {
-  invalid: ["import * as Effect from 'effect/Effect';\nconst status = 'ready';"],
-  valid: [
-    "const status = 'ready';",
-    "import * as Effect from 'effect/Effect';\nlet status = 'ready';",
-    "import * as Effect from 'effect/Effect';\nvar status = 'ready';",
-  ],
-});
-
-run('no-string-sentinel-return', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nlet run = () => Effect.succeed('ready');",
-    "import * as Effect from 'effect/Effect';\nvar run = () => Effect.succeed('ready');",
+    withEffect('Effect.gen(function* () { return null; });'),
+    withEffect('Effect.gen({ self: this }, function* () { return null; });'),
+    withEffect('Effect.gen(function* () { if (missing) { return null; } return 1; });'),
+    withEffect("Effect.fn('load')(function* () { return null; });"),
+    // A string constant or an unknown binding is a span name.
+    withEffect("const span = 'load';\nEffect.fn(span)(function* () { return null; });"),
+    withEffect('Effect.fn(`load`)(function* () { return null; });'),
+    withEffect(
+      // An interpolated template, assembled so the fixture itself is not a template.
+      'const span = `load.$' +
+        '{kind}`;\nEffect.fn(span, { attributes })(function* () { return null; });',
+    ),
+    withEffect("Effect.fn('load', { attributes })(function* () { return null; }, Effect.orDie);"),
+    withEffect('Effect.fn(function* () { return null; });'),
+    withEffect('Effect.succeed(null);'),
+    withEffect('const load = () => Effect.succeed(null as never);'),
+    "import { Effect as E } from 'effect';\nE.succeed(null);",
   ],
   valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.succeed(status);",
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.succeed('ready');",
-    // Regression coverage: string sentinel nested inside wrapper-owned expression must not double-report.
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.map(Effect.succeed('ready'), f);",
-    // Ownership regression: string sentinel inside standalone pipe wrapper alias must not double-report.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.succeed('ready'), Effect.map(f));",
+    // React components and nullable boundary helpers keep returning null.
+    withEffect('export const View = () => { return null; };'),
+    withEffect('function find(): User | null { return null; }'),
+    // A nested ordinary helper is its own function boundary.
+    withEffect('Effect.gen(function* () { const pick = () => { return null; }; return pick(); });'),
+    withEffect(
+      "import * as Option from 'effect/Option';\nEffect.gen(function* () { return Option.none(); });",
+    ),
+    withEffect('const none = Effect.succeedNone;'),
+    withEffect('Effect.succeed(value);'),
+    withEffect('Effect.gen(function* () { return undefined; });'),
+    withEffect('function* values() { return null; }'),
+    withEffect('Effect.fnUntraced(function* () { return null; });'),
+    // With two arguments, Effect.gen takes the body second; the first is its options.
+    withEffect('Effect.gen(function* () { return null; }, extra);'),
+    // A traced function called with a generator argument is not the Effect.fn factory.
+    withEffect('Effect.fn(function* () { return 1; })(function* () { return null; });'),
+    // So is a traced function whose body is a provable function binding.
+    withEffect(
+      'const body = function* () { return 1; };\nEffect.fn(body)(function* () { return null; });',
+    ),
+    withEffect('function* body() { return 1; }\nEffect.fn(body)(function* () { return null; });'),
+    // An unresolved first argument leaves the Effect.fn overload unknown.
+    withEffect(
+      'export const make = (spanName: string) => Effect.fn(spanName)(function* () { return null; });',
+    ),
+    withEffect(
+      "import { spanName } from './names';\nEffect.fn(spanName)(function* () { return null; });",
+    ),
+    withEffect("let span = 'load';\nEffect.fn(span)(function* () { return null; });"),
+    'const Effect = { gen: (f) => f };\nEffect.gen(function* () { return null; });',
+    "import type * as Effect from 'effect/Effect';\nEffect.succeed(null);",
   ],
 });
 
@@ -714,41 +562,11 @@ run('no-try-catch', {
   ],
 });
 
-run('no-wrapgraphql-catchall', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nwrapGraphqlCall(request).pipe(Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\npipe(wrapGraphqlCall(request), Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.flatMap(applyResponse), Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(applyResponse), Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(wrapGraphqlCall(request)).pipe(Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\npipe(pipe(program, Effect.flatMap(applyResponse)), Effect.catchAll(handle));",
-    // A GraphQL source can appear among other pipeline steps before catchAll.
-    "import * as Effect from 'effect/Effect';\npipe(program, Effect.map(value, f), wrapGraphqlCall(request), Effect.catchAll(handle));",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.catchAll(handle));",
-    "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.catchAll((error) => applyResponse(error)));",
-    "import * as Effect from 'effect/Effect';\nEffect.catchAll(program, (error) => applyResponse(error));",
-    // A non-wrapGraphqlCall function call at the pipe source must not fire.
-    "import * as Effect from 'effect/Effect';\ndoSomething(request).pipe(Effect.catchAll(handle));",
-  ],
-});
-
-run('warn-effect-sync-wrapper', {
-  invalid: ["import * as Effect from 'effect/Effect';\nEffect.sync(() => setState(value));"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => console.log('x'));",
-    // Behavior regression: block-bodied return is not expression-bodied; source parity excludes it.
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => { return setState(value); });",
-    // Ownership regression: Effect.sync inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.sync(() => setState(value)), Effect.map(f));",
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => console.warn('x'));",
-    "import * as Effect from 'effect/Effect';\nEffect.sync(() => console.debug('x'));",
-  ],
-});
-
 run('no-json-parse', {
-  invalid: ["import * as Effect from 'effect/Effect';\nJSON.parse(payload);"],
+  invalid: [
+    "import * as Effect from 'effect/Effect';\nJSON.parse(payload);",
+    "import { useAtomValue } from '@effect/atom-react';\nJSON.parse(payload);",
+  ],
   valid: [
     'Schema.decodeUnknownSync(User)(payload);',
     'JSON.parse(payload);',
@@ -814,38 +632,21 @@ run('no-instanceof-tagged-error', {
   ],
 });
 
-run('no-manual-tag-check', {
-  invalid: ["import * as Effect from 'effect/Effect';\nif ('_tag' in error) handle(error);"],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nPredicate.isTagged('DomainError')(error);",
-    "if ('_tag' in error) handle(error);",
-    "import * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);",
-    "import type { Effect } from 'effect';\nif ('_tag' in error) handle(error);",
-  ],
-});
-
 run('no-effect-internal-tags', {
   invalid: [
-    "import * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);",
     "import { Option } from 'effect';\nif (option._tag === 'Some') use(option);",
-    "import * as Result from 'effect/Result';\nif (result._tag === 'Left') use(result);",
-    "import { Result } from 'effect';\nif (result._tag === 'Right') use(result);",
-    // Option/None (tests the 'None' tag string in effectDataModuleTags).
     "import * as Option from 'effect/Option';\nif (option._tag === 'None') use(option);",
-    // Either module tags.
-    "import * as Either from 'effect/Either';\nif (either._tag === 'Left') use(either);",
-    "import * as Either from 'effect/Either';\nif (either._tag === 'Right') use(either);",
-    // Exit module tags.
+    "import * as Result from 'effect/Result';\nif (result._tag === 'Success') use(result);",
+    "import { Result } from 'effect';\nif (result._tag === 'Failure') use(result);",
     "import * as Exit from 'effect/Exit';\nif (exit._tag === 'Success') use(exit);",
     "import * as Exit from 'effect/Exit';\nif (exit._tag === 'Failure') use(exit);",
+    // A v4 Cause is untagged; each of its reasons carries the tag.
     {
-      code: "import * as Cause from 'effect/Cause';\nif (c._tag==='Fail') f();\nif (c._tag==='Die') f();\nif (c._tag==='Interrupt') f();\nif (c._tag==='Sequential') f();\nif (c._tag==='Parallel') f();\nif (c._tag==='Then') f();\nif (c._tag==='Both') f();\nif (c._tag==='Empty') f();",
-      expectedErrors: 8,
+      code: "import * as Cause from 'effect/Cause';\nif (reason._tag === 'Fail') f();\nif (reason._tag === 'Die') f();\nif (reason._tag === 'Interrupt') f();",
+      expectedErrors: 3,
     },
-    // Barrel imports for modules not yet individually tested via `import { M } from 'effect'`.
-    "import { Either } from 'effect';\nif (either._tag === 'Left') use(either);",
     "import { Exit } from 'effect';\nif (exit._tag === 'Success') use(exit);",
-    "import { Cause } from 'effect';\nif (cause._tag === 'Fail') use(cause);",
+    "import { Cause } from 'effect';\nif (reason._tag === 'Fail') use(reason);",
   ],
   valid: [
     "if (option._tag === 'Custom') use(option);",
@@ -854,42 +655,14 @@ run('no-effect-internal-tags', {
     "import * as Exit from 'effect/Exit';\nif (option._tag === 'Some') use(option);",
     // Cause import with a non-internal tag comparison is fine.
     "import * as Cause from 'effect/Cause';\nif (cause._tag === 'CustomCause') use(cause);",
+    // v3 representations: the combinator Cause tags, Either, and Result Left/Right.
+    "import * as Cause from 'effect/Cause';\nif (cause._tag === 'Sequential') use(cause);",
+    "import * as Either from 'effect/Either';\nif (either._tag === 'Left') use(either);",
+    "import * as Result from 'effect/Result';\nif (result._tag === 'Left') use(result);",
     "import type { Option } from 'effect';\nif (option._tag === 'Some') use(option);",
     "import type * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);",
-  ],
-});
-
-run('no-unknown-error-message', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nString(error);",
-    "import * as Effect from 'effect/Effect';\nerror.message;",
-    "import * as Effect from 'effect/Effect';\nconst { message } = error;",
-    "import * as Effect from 'effect/Effect';\nString(cause);",
-    "import * as Effect from 'effect/Effect';\nerr.message;",
-    "import * as Effect from 'effect/Effect';\nString(reason);",
-    "import * as Effect from 'effect/Effect';\nString(unknownError);",
-    "import * as Effect from 'effect/Effect';\ne.message;",
-  ],
-  valid: [
-    'String(error);',
-    "import * as Effect from 'effect/Effect';\nString(value);",
-    "import * as Effect from 'effect/Effect';\ndomain.message;",
-    "import * as Effect from 'effect/Effect';\nconst { message } = userNotification;",
-  ],
-});
-
-run('prefer-yield-tagged-error', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(new DomainError()); });",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* new DomainError(); });",
-    // Non-delegate yield does not trigger the rule (delegate check must be === true).
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield Effect.fail(new DomainError()); });",
-    // Non-constructor arg: yield* Effect.fail(variable) cannot be simplified to yield* variable.
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(existingError); });",
-    // Plain Error construction must stay distinct from tagged domain errors.
-    "import * as Effect from 'effect/Effect';\nEffect.gen(function* () { yield* Effect.fail(new Error('msg')); });",
+    // A computed identifier key is a runtime key, not a static _tag read.
+    "import * as Option from 'effect/Option';\nif (option[_tag] === 'Some') use(option);",
   ],
 });
 
@@ -927,13 +700,25 @@ run('no-redundant-primitive-cast', {
 
 run('no-effect-escape-hatch', {
   invalid: [
-    "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
-    "import * as Effect from 'effect/Effect';\nEffect.die(program);",
-    "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
-    "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+    withEffect('Effect.orDie(program);'),
+    withEffect('Effect.die(reason);'),
+    // A member reference reports as well as a call.
+    withEffect('program.pipe(Effect.orDie);'),
+    withEffect('const boom = () => Effect.orDie(program);'),
+    withEffect('function boom() { return Effect.orDie(program); }'),
+    // A pipe alias gets no exemption.
+    withEffectAndPipe('const run = pipe(program, Effect.orDie);'),
+    withEffect('const run = pipe(Effect.orDie(program), Effect.map(f));'),
+    "import { Effect } from 'effect';\nEffect.die(reason);",
   ],
   valid: [
-    "import * as Effect from 'effect/Effect';\nEffect.catch(program, handler);",
+    withEffect('Effect.catch(program, handler);'),
+    withEffect('Effect.fail(new DomainError());'),
+    'const Effect = { orDie: (value) => value };\nEffect.orDie(program);',
+    "import type * as Effect from 'effect/Effect';\nEffect.orDie(program);",
+    // v4 exports only die and orDie; the removed names belong to tsgo's outdated-API check.
+    withEffect("Effect.dieMessage('fatal');"),
+    withEffect('Effect.orDieWith(program, mapError);'),
     {
       code: "import * as Effect from 'effect/Effect';\nEffect.orDie(program);",
       filename: `${process.cwd()}/src/program.test.ts`,
@@ -953,29 +738,13 @@ run('no-effect-escape-hatch', {
       filename: 'tests/program.ts',
     },
     {
-      code: "import * as Effect from 'effect/Effect';\nEffect.orDieWith(program, mapError);",
+      code: "import * as Effect from 'effect/Effect';\nprogram.pipe(Effect.orDie);",
       filename: 'test/program.ts',
     },
     {
-      code: "import * as Effect from 'effect/Effect';\nEffect.dieMessage('fatal');",
+      code: "import * as Effect from 'effect/Effect';\nEffect.die(reason);",
       filename: 'src/program.test.mts',
     },
-    // Ownership regression: Effect.orDie inside pipe alias is owned by no-effect-wrapper-alias.
-    "import * as Effect from 'effect/Effect';\nconst run = pipe(Effect.orDie(program), Effect.map(f));",
-  ],
-});
-
-run('prefer-effect-fn', {
-  invalid: [
-    "import * as Effect from 'effect/Effect';\nconst run = () => Effect.gen(function* () { yield* task; });",
-    "import * as Effect from 'effect/Effect';\nfunction run() { return Effect.gen(function* () { yield* task; }); }",
-  ],
-  valid: [
-    "import * as Effect from 'effect/Effect';\nconst run = Effect.gen(function* () { yield* task; });",
-    "import * as Effect from 'effect/Effect';\nconst run = () => { const program = Effect.gen(function* () { yield* task; }); return program; };",
-    "import * as Effect from 'effect/Effect';\nEffect.flatMap(program, () => Effect.gen(function* () { yield* task; }));",
-    "import * as Effect from 'effect/Effect';\npipe(program, Effect.flatMap(() => Effect.gen(function* () { yield* task; })));",
-    'const Effect = { gen: (value: unknown) => value };\nconst run = () => Effect.gen(function* () { yield* task; });',
   ],
 });
 
@@ -1084,9 +853,11 @@ describe('catalog rule definitions export', () => {
 });
 
 describe('catalog rule metadata', () => {
-  it('each rule has a description, recommended severity, and type', () => {
-    for (const [, rule] of Object.entries(catalogRules)) {
-      expect(rule.meta?.docs?.description).not.toBe(ruleMessage(''));
+  it('each rule has a written description, recommended severity, and type', () => {
+    for (const [name, rule] of Object.entries(catalogRules)) {
+      expect(hasExplicitRuleMessage(name)).toBe(true);
+      expect(rule.meta?.docs?.description).toMatch(new RegExp(`^Rule: ${name}\\. Why: `));
+      expect(rule.meta?.docs?.description).not.toMatch(/\{\{\w+\}\}/);
       expect(rule.meta?.docs?.recommended).toMatch(/^(error|warn)$/);
       expect(rule.meta?.type).toMatch(/^(problem|suggestion)$/);
     }
@@ -1152,3 +923,821 @@ run('no-cross-package-relative-imports', {
     },
   ],
 });
+
+run('no-effect-call-in-effect-arg', {
+  invalid: [
+    withEffect('Effect.map(Effect.succeed(1), f);'),
+    withEffect('Effect.flatMap(Effect.succeed(1), f);'),
+    withEffect('Effect.flatten(Effect.map(work, f));'),
+    withEffect('Effect.catch(Effect.tryPromise(work), recover);'),
+    withEffect('Effect.flatMap(Effect.flatMap(program, f), g);'),
+    withEffect('Effect.tap(Effect.succeed(1), log);'),
+    withEffect('Effect.andThen(Effect.succeed(1), next);'),
+    withEffect("Effect.catchTag(Effect.tryPromise(work), 'NotFound', recover);"),
+    withEffect('Effect.catchTags(Effect.tryPromise(work), { NotFound: recover });'),
+    withEffect('Effect.zip(Effect.succeed(1), Effect.succeed(2));'),
+    withEffect('Effect.zip(Effect.succeed(1), other, { concurrent: true });'),
+    // A data-first transformation is itself a provable Effect value.
+    withEffect('Effect.zip(Effect.succeed(1), Effect.flatten(work));'),
+    withEffect('Effect.map(Effect.all([first, second]), f);'),
+    // A dual member's data-first call is an Effect source whatever the member.
+    withEffect('Effect.map(Effect.as(work, 1), f);'),
+    withEffect('Effect.map(Effect.provide(work, layer), f);'),
+    withEffect('Effect.flatMap(Effect.forkChild(work), f);'),
+    // Captured members with no annotation in source, or a conditional return, are still sources.
+    withEffect('Effect.map(Effect.tx(work), f);'),
+    withEffect('Effect.map(Effect.fromOption(maybe), f);'),
+    // provide's verified discriminator is its first argument, which is provably an Effect here.
+    withEffect('Effect.zip(Effect.succeed(1), Effect.provide(Effect.succeed(2), layer));'),
+    // Const, named-function return, and pipe-alias placements get no exemption.
+    withEffect('const program = Effect.map(Effect.succeed(1), f);'),
+    withEffect('const program = Effect.flatten(Effect.map(program, f));'),
+    withEffect('function run() { return Effect.map(Effect.succeed(1), f); }'),
+    withEffectAndPipe('const run = pipe(Effect.map(Effect.succeed(1), f), Effect.map(g));'),
+    // An exempt runner, fork, or resource helper does not hide the transformation inside it.
+    withEffect('Effect.runPromise(Effect.map(Effect.succeed(1), f));'),
+    withEffect('Effect.forkChild(Effect.flatMap(Effect.succeed(1), f));'),
+    withEffect('Effect.scoped(Effect.map(Effect.succeed(1), f));'),
+    withEffect(
+      'const program = Effect.repeat(Effect.catch(Effect.tryPromise(fetchUser), handle), policy);',
+    ),
+    withEffect('const program = Effect.as(Effect.map(Effect.succeed(1), f), value);'),
+    withEffect('const program = Effect.zipRight(program, Effect.map(Effect.succeed(1), f));'),
+    "import { Effect as Fx } from 'effect';\nFx.map(Fx.succeed(1), f);",
+    "import * as Fx from 'effect/Effect';\nFx.map(Fx.succeed(1), f);",
+  ],
+  valid: [
+    withEffect('Effect.map(work, f);'),
+    withEffect('Effect.flatMap(work, () => Effect.succeed(value));'),
+    // Data-last calls whose first argument is an Effect continuation, not the source.
+    withEffect('Effect.andThen(Effect.succeed(2));'),
+    withEffect('Effect.tap(Effect.log(message));'),
+    withEffect('Effect.zip(Effect.succeed(2));'),
+    withEffect('Effect.zip(Effect.succeed(2), { concurrent: true });'),
+    withEffect("Effect.catchTag('NotFound', () => Effect.succeed(fallback));"),
+    // Runners, forks, and resource helpers may take an Effect directly.
+    withEffect('Effect.runPromise(Effect.gen(function* () { return 1; }));'),
+    withEffect('Effect.forkChild(Effect.gen(function* () { return 1; }));'),
+    withEffect('Effect.acquireRelease(Effect.sync(acquire), release);'),
+    withEffect('Effect.scoped(Effect.gen(function* () { return 1; }));'),
+    withEffect('Effect.ensuring(work, Effect.sync(cleanup));'),
+    withEffect('Effect.provide(Effect.scoped(acquire), layer);'),
+    // Non-transforming or non-v4 outer calls.
+    withEffect('Effect.as(Effect.succeed(1), value);'),
+    withEffect('Effect.orElse(Effect.flatMap(program, f), fallback);'),
+    withEffect("Effect.bind('user', Effect.succeed(user));"),
+    withEffect("Effect.zipRight(Effect.logInfo('x'), next);"),
+    // A second argument that may be options cannot prove the zip data-first overload.
+    withEffect('Effect.zip(Effect.succeed(1), other);'),
+    // A runner result or a data-last pipeable function is not a provable Effect value.
+    withEffect(
+      'Effect.zip(Effect.succeed(1), Effect.runSync(Effect.succeed({ concurrent: true })));',
+    ),
+    withEffect('Effect.zip(Effect.succeed(1), Effect.map(f));'),
+    withEffect('Effect.map(Effect.runSync(work), f);'),
+    withEffect('Effect.map(Effect.runPromise(work), f);'),
+    // A data-last dual call is a pipeable function, not an Effect source.
+    withEffect('Effect.map(Effect.as(1), f);'),
+    withEffect('Effect.zip(Effect.succeed(1), Effect.provide(layer));'),
+    // fromOption has no Effect-typed discriminator, so it cannot prove the zip data-first overload.
+    withEffect('Effect.zip(Effect.succeed(1), Effect.fromOption(maybe));'),
+    // A spread hides the argument count, so the overload is unknown.
+    withEffect('Effect.andThen(Effect.succeed(1), ...([] as const));'),
+    withEffect('Effect.zip(Effect.succeed(1), ...rest);'),
+    // Binding controls: a shadowing parameter, a type-only import, and a lookalike object.
+    withEffect('const run = (Effect) => Effect.map(Effect.succeed(1), f);'),
+    "import type * as Effect from 'effect/Effect';\nEffect.map(Effect.succeed(1), f);",
+    'const Effect = { map, succeed };\nEffect.map(Effect.succeed(1), f);',
+  ],
+});
+
+run('no-effect-ladder', {
+  invalid: [
+    withEffect('const program = Effect.flatMap(Effect.flatMap(Effect.succeed(1), f), g);'),
+    withEffect(
+      'const program = Effect.map(Effect.catch(Effect.tryPromise(fetchUser), handle), f);',
+    ),
+    withEffect(
+      'function run() { if (ready) { return Effect.map(Effect.catch(Effect.tryPromise(fetchUser), handle), f); } return fallback; }',
+    ),
+    // Named wrappers get no exemption.
+    withEffect('function run() { return Effect.flatMap(Effect.map(Effect.succeed(1), f), g); }'),
+  ],
+  valid: [
+    withEffect('Effect.flatMap(Effect.succeed(1), g);'),
+    withEffect('Effect.flatMap(program, () => Effect.succeed(value));'),
+    withEffect('Effect.flatMap(Effect.map(Effect.succeed(1), f), g);'),
+    withEffect('let program = Effect.flatMap(Effect.map(Effect.succeed(1), f), g);'),
+    withEffect('var program = Effect.map(Effect.catch(Effect.tryPromise(fetchUser), handle), f);'),
+    // The outer call must satisfy the data-first transforming contract.
+    withEffect(
+      'const program = Effect.repeat(Effect.catch(Effect.tryPromise(fetchUser), handle), policy);',
+    ),
+    withEffect('const program = Effect.as(Effect.map(Effect.succeed(1), f), value);'),
+    withEffect('const program = Effect.orElse(Effect.flatMap(Effect.succeed(1), f), fallback);'),
+    withEffect("const program = Effect.bind('user', Effect.map(Effect.succeed(user), f));"),
+    withEffect("const program = Effect.zipRight(Effect.map(Effect.logInfo('x'), f), next);"),
+    // Only the first-argument source chain counts as ladder depth.
+    withEffect('const program = Effect.zipRight(program, Effect.map(Effect.succeed(1), f));'),
+    withEffect('const program = Effect.flatMap(Effect.map(program, Effect.succeed(1)), g);'),
+  ],
+});
+
+run('no-flatmap-ladder', {
+  invalid: [
+    withEffect('const program = Effect.flatMap(program, () => Effect.flatMap(other, f));'),
+    withEffect(
+      'const program = Effect.flatMap(program, (value) => { return Effect.flatMap(other, f); });',
+    ),
+    // Named wrappers get no exemption.
+    withEffect(
+      'function run() { return Effect.flatMap(program, () => Effect.flatMap(other, f)); }',
+    ),
+  ],
+  valid: [
+    withEffect('Effect.flatMap(program, f);'),
+    withEffect('Effect.flatMap(program, () => Effect.flatMap(other, f));'),
+    withEffect('let program = Effect.flatMap(program, () => Effect.flatMap(other, f));'),
+    // no-pipe-ladder reports a closure ladder at its inner continuation.
+    withEffect(
+      'const program = Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y)));',
+    ),
+    withEffect(
+      'function run() { return Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y))); }',
+    ),
+    // The error-level owners report these shapes; the warning never replaces them.
+    withEffect('const program = Effect.flatten(Effect.map(program, f));'),
+    withEffect('function run() { return Effect.flatMap(Effect.flatMap(program, f), g); }'),
+  ],
+});
+
+// The stress table of docs/analysis/effect-nesting-rules-first-principles.md, section 5: its own
+// S and D snippets, each checked against both rules with the table's L and D columns.
+const stressSnippets = {
+  S1: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.map((posts) => ({ user, posts })))));',
+  S2: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save({ user, posts })))));',
+  S3: 'Effect.flatMap(getUser, (user) => Effect.flatMap(fetchPosts(user.id), (posts) => save({ user, posts })));',
+  S4: 'pipe(getUser, Effect.flatMap((user) => pipe(fetchPosts(user.id), Effect.tap((posts) => log(posts)))));',
+  S5: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id)), Effect.tap((posts) => log(posts)), Effect.map((posts) => posts.length));',
+  S6: "Effect.gen(function* () { const posts = yield* fetchPosts(id).pipe(Effect.timeout('1 second'), Effect.mapError((cause) => new NotFound(cause))); return posts; });",
+  S7: "Effect.gen(function* () { return yield* getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.tap(() => log('done'))))); });",
+  S8: 'work.pipe(Effect.catch((error) => log(error).pipe(Effect.as(0))));',
+  S9: "work.pipe(Effect.catchTag('NotFound', (error) => log(error).pipe(Effect.andThen(Effect.succeed(0)))));",
+  S10: 'Effect.forEach(items, (item) => fetchPosts(item).pipe(Effect.map((posts) => posts.length)));',
+  S11: 'Effect.forEach(items, (item) => fetchPosts(item).pipe(Effect.flatMap((posts) => save({ item, posts }))));',
+  S12: "Effect.all([work.pipe(Effect.map(String)), work.pipe(Effect.mapError((cause) => new NotFound(cause)))], { concurrency: 'unbounded' });",
+  S13: 'getUser.pipe(Effect.flatMap((user) => Effect.gen(function* () { const posts = yield* fetchPosts(user.id); yield* save(posts); return posts; })));',
+  S14: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts).pipe(Effect.andThen(log(user)))))));',
+  S15: 'getUser.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap(save))));',
+  S16: 'getUser.pipe(Effect.flatMap((user) => Effect.all(items.map((item) => fetchPosts(item).pipe(Effect.flatMap((posts) => save({ user, posts })))))));',
+  D1: "work.pipe(Effect.catch(() => log('failed')));",
+  D2: 'work.pipe(Effect.catch(() => Effect.succeed(0)));',
+  D3: 'work.pipe(Effect.orElseSucceed(() => 0));',
+  D4: 'work.pipe(Effect.catch((error) => log(error).pipe(Effect.as(0))));',
+  D5: "work.pipe(Effect.catchTag('NotFound', () => Effect.succeed(0)));",
+  D6: 'work.pipe(Effect.tapError((error) => log(error)), Effect.catch(() => Effect.succeed(0)));',
+  D7: 'work.pipe(Effect.catchCause(() => Effect.void));',
+  D8: 'work.pipe(Effect.mapError(() => new NotFound()));',
+  D9: 'work.pipe(Effect.mapError((cause) => new NotFound(cause)));',
+  D10: "Effect.tryPromise({ try: () => fetch('x'), catch: () => new NotFound() });",
+  D11: 'work.pipe(Effect.match({ onFailure: () => null, onSuccess: (n) => n }));',
+  D12: 'work.pipe(Effect.catch((_) => Effect.succeed(0)));',
+  D13: 'work.pipe(Effect.catch(({ message }) => log(message)));',
+  D14: 'Effect.catch(Effect.tapError(work, (e) => log(e)), () => Effect.succeed(0));',
+} as const;
+type StressRow = keyof typeof stressSnippets;
+const stressRows = Object.keys(stressSnippets) as StressRow[];
+// The rows whose L or D column says "yes"; every other row is valid for that rule.
+const ladderRows: ReadonlySet<StressRow> = new Set(['S2', 'S3', 'S4', 'S7', 'S11', 'S14', 'S16']);
+const discardRows: ReadonlySet<StressRow> = new Set(['D1', 'D2', 'D7', 'D8', 'D10', 'D11', 'D12']);
+// S8 and D4 are the same snippet, and RuleTester rejects a repeated case.
+const stressCases = (reported: ReadonlySet<StressRow>, expected: boolean): string[] => [
+  ...new Set(
+    stressRows
+      .filter((row) => reported.has(row) === expected)
+      .map((row) => withEffectAndPipe(stressSnippets[row])),
+  ),
+];
+
+// Repo rows (R1 to R27) whose shape no stress snippet covers; R4 shares S12's shape.
+run('no-pipe-ladder', {
+  invalid: [
+    ...stressCases(ladderRows, true),
+    // Inline andThen in its data-first spelling.
+    withEffect('Effect.forEach(items, (item) => Effect.andThen(load(item), (x) => save(x)));'),
+    // Each offending level of a pyramid reports once.
+    {
+      code: withEffect(
+        'a.pipe(Effect.flatMap((x) => b.pipe(Effect.flatMap((y) => c.pipe(Effect.flatMap((z) => d(x, y, z)))))));',
+      ),
+      expectedErrors: 2,
+    },
+    // A nested step callback is judged on its own: its ladder is not also the outer callback's.
+    withEffect(
+      'work.pipe(Effect.flatMap((x) => other(x).pipe(Effect.catch((e) => log(e).pipe(Effect.flatMap(() => fallback(x)))))));',
+    ),
+    // Two continuations in one callback are one ladder.
+    withEffect(
+      'Effect.flatMap((x) => a.pipe(Effect.tap((y) => f(y)), Effect.flatMap((z) => g(x, z))));',
+    ),
+    // R6: t3code apps/server/src/provider/Layers/CodexSessionRuntime.ts:2404.
+    withEffect(
+      'child.exitCode.pipe(Effect.flatMap((exitCode) => Ref.get(closedRef).pipe(Effect.flatMap((closed) => { if (closed) { return Effect.void; } return report(exitCode); }))));',
+    ),
+    // R8: t3code apps/server/src/provider/makeManagedServerProvider.ts:252.
+    withEffect(
+      'getRefreshInterval.pipe(Effect.flatMap((refreshInterval) => Effect.raceFirst(tick, change).pipe(Effect.flatMap((intervalElapsed) => refresh(intervalElapsed, refreshInterval)))));',
+    ),
+    // R9: t3code apps/desktop/src/app/DesktopObservability.ts:291 (also a discard).
+    withEffect(
+      'work.pipe(Effect.catch(() => refreshFileSize(fs, path).pipe(Effect.flatMap((size) => Ref.set(currentSize, size)))));',
+    ),
+    // R18: executor packages/core/api/src/observability.ts:107, a handler callback.
+    withEffect(
+      "work.pipe(Effect.catchTag('StorageError', (err) => resolveCapture.pipe(Effect.flatMap((c) => c.captureException(Cause.fail(err))), Effect.flatMap((traceId) => Effect.fail(new InternalError({ traceId }))))));",
+    ),
+    // R23: effect-solutions packages/website/scripts/generate-og/browser.ts:11, a release callback.
+    withEffect(
+      "Effect.acquireRelease(launch, (browser) => Effect.promise(() => browser.close()).pipe(Effect.tap(() => Console.log('Browser closed'))));",
+    ),
+    // R24: effect packages/effect/test/encoding/SchemaBinary.test.ts:312.
+    withEffect(
+      "Effect.forEach(values, (value) => encode(value).pipe(Effect.flatMap((bytes) => Effect.yieldNow.pipe(Effect.as(bytes)))), { concurrency: 'unbounded' });",
+    ),
+    // Other step members: tapError, acquireUseRelease, catchCause.
+    withEffect('work.pipe(Effect.tapError((e) => report(e).pipe(Effect.tap((id) => log(id)))));'),
+    withEffect(
+      'Effect.acquireUseRelease(open, (handle) => read(handle).pipe(Effect.flatMap((data) => parse(data))), close);',
+    ),
+    withEffect(
+      'work.pipe(Effect.catchCause((cause) => Effect.flatMap(Effect.log(cause), () => fallback)));',
+    ),
+    // Handler-object values of catchTags, catchReasons, matchEffect, and matchCauseEffect, in
+    // both layouts, method syntax, and through a satisfies wrapper.
+    withEffect(
+      'Effect.catchTags(work, { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) });',
+    ),
+    withEffect(
+      'work.pipe(Effect.catchTags({ Failure(e) { return log(e).pipe(Effect.andThen(() => save(e))); } }));',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) } satisfies Handlers);',
+    ),
+    withEffect(
+      "Effect.catchReasons(work, 'AiError', { RateLimit: (r) => wait(r).pipe(Effect.flatMap(() => retry(r))) });",
+    ),
+    withEffect(
+      'work.pipe(Effect.matchEffect({ onFailure: (e) => log(e).pipe(Effect.flatMap(() => fallback)), onSuccess: Effect.succeed }));',
+    ),
+    withEffect(
+      'Effect.matchCauseEffect(work, { onFailure: Effect.failCause, onSuccess: (a) => save(a).pipe(Effect.tap((id) => log(id))) });',
+    ),
+    // Type assertions around either callback, and a computed tag key, are no escape.
+    withEffect(
+      'work.pipe(Effect.flatMap(((user) => fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(user, posts)))) as Handler));',
+    ),
+    withEffect(
+      'work.pipe(Effect.flatMap((user) => fetchPosts(user.id).pipe(Effect.flatMap(((posts) => save(user, posts)) satisfies Next))));',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { [tag]: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) });',
+    ),
+    // Barrel and aliased Effect bindings.
+    "import { Effect as Fx } from 'effect';\nwork.pipe(Fx.flatMap((x) => other(x).pipe(Fx.flatMap((y) => save(x, y)))));",
+  ],
+  valid: [
+    ...stressCases(ladderRows, false),
+    // Without a runtime Effect binding no call is bound: no import, type-only imports, a shadow.
+    stressSnippets.S2,
+    `import type * as Effect from 'effect/Effect';\n${stressSnippets.S2}`,
+    `import { type Effect } from 'effect';\n${stressSnippets.S2}`,
+    withEffect(`const run = (Effect) => ${stressSnippets.S2}`),
+    // R19: executor packages/core/sdk/src/executor.ts:3215, a value map in a loop body.
+    withEffect(
+      'Effect.forEach(rows, (row) => describeAuthMethodsForRow(row).pipe(Effect.map((authMethods) => rowToIntegration(row, authMethods))));',
+    ),
+    // R1: t3code apps/server/src/serverRuntimeStartup.ts:161, a one-step handler.
+    withEffect(
+      "getCounts().pipe(Effect.catch((cause) => Effect.logWarning('failed', { cause }).pipe(Effect.as({ threadCount: 0, projectCount: 0 }))));",
+    ),
+    // R3: t3code scripts/sync-reference-repos.ts:240, and structural members around a continuation.
+    withEffect(
+      "Effect.all([collect(child.stdout), collect(child.stderr), child.exitCode.pipe(Effect.map(Number))], { concurrency: 'unbounded' });",
+    ),
+    withEffect('Effect.all([a.pipe(Effect.flatMap((x) => b(x)))]);'),
+    withEffect('Effect.forkChild(a.pipe(Effect.flatMap((x) => b(x))));'),
+    withEffect('Effect.scoped(a.pipe(Effect.flatMap((x) => b(x))));'),
+    // A generator frame holds its own continuations.
+    withEffect(
+      'getUser.pipe(Effect.flatMap((user) => Effect.gen(function* () { return yield* fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(posts))); })));',
+    ),
+    // R5 (t3code apps/server/src/provider/Layers/ProviderRegistry.ts:556) and R11 (t3code
+    // apps/server/src/desktopUpdate/DesktopAppUpdate.ts:92): opaque or value continuations.
+    withEffect(
+      'providerSource.refresh.pipe(Effect.flatMap((nextProvider) => correlate(providerSource, nextProvider).pipe(Effect.flatMap(syncProvider))));',
+    ),
+    withEffect(
+      'current.pipe(Effect.flatMap((previous) => previous === stage ? Effect.void : Ref.set(lastStage, stage).pipe(Effect.andThen(reportProgress(stage)))));',
+    ),
+    // R7 (t3code apps/server/src/pullRequest/PullRequestService.ts:2542): one closure, adornment.
+    withEffect(
+      'Effect.flatMap(Clock.currentTimeMillis, (now) => { const recorded = record(now); return revalidate(recorded).pipe(Effect.as(snapshot.value)); });',
+    ),
+    // R10 (t3code apps/server/src/provider/Layers/CodexAdapter.ts:2713): a flat finalizer.
+    withEffect(
+      'Effect.acquireRelease(Effect.void, () => stopAll().pipe(Effect.andThen(Queue.shutdown(q)), Effect.andThen(close), Effect.ignore));',
+    ),
+    // R15 (t3code apps/server/src/resourceTelemetry/NativeTelemetryClient.ts:758).
+    withEffect(
+      'Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Ref.update(state, markUnavailable).pipe(Effect.andThen(publishHealth)));',
+    ),
+    // Shapes the pipeline-nesting contract used to report: a one-step pipeline in a callback, a
+    // pipeline in argument position, nested standalone pipes, adornment-only handler-map values,
+    // and a pipeline in a conditional receiver.
+    withEffect('work.pipe(Effect.flatMap((x) => other.pipe(Effect.map(f), Effect.catch(g))));'),
+    withEffect('work.pipe(Effect.zip(other.pipe(Effect.map(f))));'),
+    withEffectAndPipe('pipe(pipe(work, Effect.map(f)), Effect.catch(g));'),
+    withEffect('Effect.catchTags(work, { Failure: () => fallback.pipe(Effect.map(f)) });'),
+    withEffect('(cond ? other.pipe(Effect.map(f)) : fallback).pipe(Effect.catch(recover));'),
+    `${effectImport}import * as Schedule from 'effect/Schedule';\nEffect.retry(work, Schedule.exponential('1 second').pipe(Schedule.both(Schedule.recurs(3))));`,
+    // A continuation outside any step callback, including inside a non-Effect callback.
+    withEffect('a.pipe(Effect.flatMap((x) => b(x)));'),
+    withEffect('items.map((item) => load(item).pipe(Effect.flatMap((x) => save(x))));'),
+    // Members outside the step set own no ladder: map transforms a value, sync runs no effect,
+    // and match handlers return values.
+    withEffect('work.pipe(Effect.map((x) => other(x).pipe(Effect.flatMap((y) => save(y)))));'),
+    withEffect('Effect.sync(() => a.pipe(Effect.flatMap((x) => b(x))));'),
+    withEffect(
+      'Effect.match(work, { onFailure: (e) => log(e).pipe(Effect.flatMap(() => fallback)), onSuccess: f });',
+    ),
+    // Function declarations, class bodies, and generator methods stop the search.
+    withEffect(
+      'work.pipe(Effect.flatMap(() => { function helper() { return a.pipe(Effect.flatMap((x) => b(x))); } return helper(); }));',
+    ),
+    withEffect(
+      'work.pipe(Effect.flatMap(() => new (class { run() { return a.pipe(Effect.flatMap((x) => b(x))); } })().run()));',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { *Failure() { return yield* a.pipe(Effect.flatMap((x) => b(x))); } });',
+    ),
+    // Only a verified handler-object position is followed: not an unrelated object, a nested
+    // object, or a getter.
+    withEffect(
+      'const handlers = { Failure: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) };',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { Failure: { nested: (e) => log(e).pipe(Effect.flatMap((id) => save(id))) } });',
+    ),
+    withEffect(
+      'Effect.catchTags(work, { get Failure() { return log(e).pipe(Effect.flatMap((id) => save(id))); } });',
+    ),
+  ],
+});
+
+// The report sits on the inner continuation, not on the outer step call.
+ruleTester.run('no-pipe-ladder location', requireRule('no-pipe-ladder'), {
+  invalid: [
+    {
+      code: withEffect(
+        'getUser.pipe(\n  Effect.flatMap((user) =>\n    fetchPosts(user.id).pipe(Effect.flatMap((posts) => save(user, posts))),\n  ),\n);',
+      ),
+      // oxlint's RuleTester columns are zero-based.
+      errors: [{ column: 29, line: 4, message: ruleMessage('no-pipe-ladder') }],
+    },
+  ],
+  valid: [],
+});
+
+run('no-discarded-failure', {
+  invalid: [
+    ...stressCases(discardRows, true),
+    // R9: t3code apps/desktop/src/app/DesktopObservability.ts:291 (also a ladder).
+    withEffect(
+      'work.pipe(Effect.catch(() => refreshFileSize(fs, path).pipe(Effect.flatMap((size) => Ref.set(currentSize, size)))));',
+    ),
+    // R12: t3code packages/client-runtime/src/authorization/service.ts:204.
+    withEffect(
+      "proof.pipe(Effect.mapError(() => new ConnectionBlockedError({ reason: 'configuration', detail: 'Could not create the websocket authorization proof.' })));",
+    ),
+    // R14: t3code scripts/mock-update-server.ts:63; R21: effect-solutions update-notifier.ts:40.
+    withEffect('Effect.try({ try: () => decodeURIComponent(rawPath), catch: () => null });'),
+    withEffect("Effect.tryPromise({ try: () => readFile(file, 'utf8'), catch: () => null });"),
+    // R16: executor registry.ts:135; R17: executor executor.ts:3147.
+    withEffect('fs.stat(cacheFile).pipe(Effect.catch(() => Effect.succeed(undefined)));'),
+    withEffect('listSources.pipe(Effect.catchCause(() => Effect.succeed([])));'),
+    // R20: executor hosted-http-client.ts:144 and R26: effect ai-docs 10_creating-effects.ts:61,
+    // content-free sources (accepted limitation D).
+    withEffect(
+      "Effect.try({ try: () => new URL(value), catch: () => new HostedOutboundRequestBlocked({ url: value, reason: 'URL is invalid' }) });",
+    ),
+    withEffect(
+      'Effect.fromNullishOr(header).pipe(Effect.mapError(() => new MissingWorkspaceId()));',
+    ),
+    // R22: effect-solutions packages/cli/src/cli.ts:197 as the table quotes it, without the
+    // tapError the real site has; R25: effect HttpServerRequest.test.ts:18.
+    withEffect('main.pipe(Effect.catch(() => Effect.sync(() => process.exit(1))));'),
+    withEffect('Effect.tryPromise({ try: () => webRequest.formData(), catch: () => undefined });'),
+    // R27: effect ai-docs 01_error-handling.ts:29, only the final blanket catch reports.
+    withEffect(
+      "loadPort('invalid').pipe(Effect.catchTag('ReservedPortError', (_) => Effect.succeed(3000)), Effect.catch((_) => Effect.succeed(3000)));",
+    ),
+    // Every blanket member and handler key, data-first layouts, and function syntax.
+    withEffect('Effect.catchDefect(work, () => Effect.succeed(0));'),
+    withEffect('work.pipe(Effect.catchEager(() => Effect.succeed(0)));'),
+    withEffect('Effect.mapError(work, () => new Failure());'),
+    withEffect('Effect.catch(work, function () { return fallback; });'),
+    withEffect('Effect.matchCause(work, { onFailure: () => 0, onSuccess: (n) => n });'),
+    withEffect(
+      'work.pipe(Effect.matchEffect({ onFailure: () => Effect.succeed(0), onSuccess: Effect.succeed }));',
+    ),
+    withEffect(
+      'work.pipe(Effect.matchCauseEffect({ onFailure: () => Effect.succeed(0), onSuccess: Effect.succeed }));',
+    ),
+    withEffect('Effect.matchEager(work, { onFailure: () => 0, onSuccess: (n) => n });'),
+    withEffect('work.pipe(Effect.mapBoth({ onFailure: () => new Failure(), onSuccess: f }));'),
+    withEffect('Effect.try({ try: work, catch() { return null; } });'),
+    withEffect("Effect.try({ try: work, 'catch': () => null });"),
+    withEffect('Effect.tryPromise({ try: work, catch: () => null } satisfies Options);'),
+    // A type assertion around the handler is no escape.
+    withEffect('work.pipe(Effect.catch((() => fallback) as RecoveryHandler));'),
+    withEffect('Effect.try({ try: work, catch: (() => null) satisfies Handler });'),
+    // The last definition of the handler property is the effective one.
+    withEffect('Effect.try({ try: work, catch: (cause) => wrap(cause), catch: () => null });'),
+    // A plain parameter the body never references is unread, including one with a default, one
+    // spelled only as an object key or member property, and beside a TypeScript this parameter.
+    withEffect('work.pipe(Effect.catch((error) => fallback));'),
+    withEffect('work.pipe(Effect.mapError((error = fallback) => new Failure()));'),
+    withEffect('work.pipe(Effect.mapError((error) => new Failure({ error: true })));'),
+    withEffect('work.pipe(Effect.mapError((cause) => new Failure({ detail: state.cause })));'),
+    withEffect('Effect.catch(work, function (this: Context) { return this.fallback; });'),
+    // A name inside type syntax reads nothing at runtime.
+    withEffect('work.pipe(Effect.mapError((cause) => ({}) as { cause?: string }));'),
+    withEffect('work.pipe(Effect.mapError((error) => new Failure() as Failure<typeof error>));'),
+    // A tap after the recovery, in an enclosing pipeline, or unbound records nothing first.
+    withEffect('work.pipe(Effect.catch(() => fallback), Effect.tapError(log));'),
+    withEffect(
+      'work.pipe(Effect.tapError(log), Effect.flatMap(() => other.pipe(Effect.catch(() => fallback))));',
+    ),
+    withEffect('work.pipe(tapError(log), Effect.catch(() => fallback));'),
+    // Barrel and aliased Effect bindings.
+    "import { Effect as Fx } from 'effect';\nwork.pipe(Fx.catch(() => Fx.succeed(0)));",
+  ],
+  valid: [
+    ...stressCases(discardRows, false),
+    // Without a runtime Effect binding no call is bound: no import, type-only imports, a shadow.
+    stressSnippets.D2,
+    `import type * as Effect from 'effect/Effect';\n${stressSnippets.D2}`,
+    `import { type Effect } from 'effect';\n${stressSnippets.D2}`,
+    withEffect(`const run = (Effect) => ${stressSnippets.D2}`),
+    // R13 (t3code apps/desktop/src/settings/DesktopAppSettings.ts:409) and the other named
+    // discards (accepted limitation C).
+    withEffect(
+      'decode(raw).pipe(Effect.map(normalize), Effect.orElseSucceed(() => defaultSettings));',
+    ),
+    withEffect(
+      'work.pipe(Effect.ignore, Effect.ignoreCause, Effect.option, Effect.result, Effect.exit);',
+    ),
+    // R1, R2 (t3code apps/server/src/auth/SessionStore.ts:589), and R15: the error is read.
+    withEffect(
+      "getCounts().pipe(Effect.catch((cause) => Effect.logWarning('failed', { cause }).pipe(Effect.as(0))));",
+    ),
+    withEffect(
+      "Effect.catchCause((cause) => Effect.logError('failed').pipe(Effect.annotateLogs({ sessionId, cause })));",
+    ),
+    withEffect(
+      'Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Ref.update(state, markUnavailable));',
+    ),
+    // The other tag- or predicate-scoped members.
+    withEffect('work.pipe(Effect.catchTags({ NotFound: () => Effect.succeed(0) }));'),
+    withEffect("work.pipe(Effect.catchReason('AiError', 'RateLimit', () => Effect.succeed(0)));"),
+    withEffect('work.pipe(Effect.catchIf(isRetryable, () => Effect.succeed(0)));'),
+    withEffect('work.pipe(Effect.catchFilter(filter, () => Effect.succeed(0)));'),
+    // Recorded first by the other failure taps, through a standalone pipe, and before a match.
+    withEffect(
+      'work.pipe(Effect.tapCause(log), Effect.map(f), Effect.catchCause(() => Effect.void));',
+    ),
+    withEffect('work.pipe(Effect.tapDefect(log), Effect.catchDefect(() => Effect.void));'),
+    withEffectAndPipe('pipe(work, Effect.tapError(log), Effect.catch(() => fallback));'),
+    withEffect(
+      'work.pipe(Effect.tapError((error) => Effect.logDebug(error)), Effect.match({ onFailure: () => undefined, onSuccess: (value) => value }));',
+    ),
+    // Rest, destructured, shorthand, and computed-member reads.
+    withEffect('work.pipe(Effect.catch((...failures) => fallback));'),
+    withEffect('work.pipe(Effect.catch(([first]) => log(first)));'),
+    withEffect('work.pipe(Effect.mapError((error) => new Failure({ error })));'),
+    withEffect('work.pipe(Effect.mapError((key) => new Failure(messages[key])));'),
+    withEffect('work.pipe(Effect.mapError((cause) => wrap(cause) as Failure));'),
+    // Name matching does not model shadowing (accepted limitation F).
+    withEffect('work.pipe(Effect.catch((e) => items.map((e) => e.id)));'),
+    // A named handler, a thunk-only tryPromise, and the onSuccess handler are out of reach.
+    withEffect('work.pipe(Effect.catch(handler));'),
+    withEffect("Effect.tryPromise(() => fetch('x'));"),
+    withEffect('work.pipe(Effect.match({ onFailure: (e) => e.message, onSuccess: () => 0 }));'),
+    // A later definition, spread, or runtime-computed key replaces or may replace the handler.
+    withEffect('Effect.try({ try: work, catch: () => null, catch: (cause) => wrap(cause) });'),
+    withEffect('Effect.try({ try: work, catch: () => null, ...overrides });'),
+    withEffect('Effect.try({ try: work, catch: () => null, [key]: other });'),
+    // Only a verified options object is followed: not an unrelated object or a getter.
+    withEffect('const options = { catch: () => null };'),
+    withEffect('Effect.try({ try: work, get catch() { return () => null; } });'),
+  ],
+});
+
+run('no-manual-tag-check', {
+  invalid: [
+    withEffect("if (error._tag === 'DomainError') handle(error);"),
+    withEffect("if ('DomainError' !== error._tag) handle(error);"),
+    withEffect("if ('_tag' in error) handle(error);"),
+    withEffect("if (error.reason._tag === 'StatusCodeError') handle(error);"),
+    withEffect("if (error['_tag'] == 'DomainError') handle(error);"),
+    withEffect("if (error?._tag != 'DomainError') handle(error);"),
+    withEffect("const kind = error._tag === 'DomainError' ? 'domain' : 'other';"),
+    // One comparison is one diagnostic, even with a tag read on both sides.
+    withEffect('if (left._tag === right._tag) handle(left);'),
+  ],
+  valid: [
+    withEffect('Effect.log(error._tag);'),
+    withEffect(`const label = \`failed with \${error._tag}\`;`),
+    withEffect("Effect.catchTag('DomainError', handler);"),
+    "import * as Match from 'effect/Match';\nMatch.tag('DomainError', handler);",
+    withEffect('if (key in error) handle(error);'),
+    withEffect('if (_tag in error) handle(error);'),
+    withEffect("if (error[key] === 'DomainError') handle(error);"),
+    withEffect("if (error[_tag] === 'DomainError') handle(error);"),
+    "if ('_tag' in error) handle(error);",
+    "import type { Effect } from 'effect';\nif ('_tag' in error) handle(error);",
+  ],
+});
+
+run('no-unknown-error-message', {
+  invalid: [
+    withEffect('try { run(); } catch (problem) { use(problem.message); }'),
+    withEffect('try { run(); } catch (problem) { use(String(problem)); }'),
+    withEffect(
+      'try { run(); } catch (problem) { const { message: detail } = problem; use(detail); }',
+    ),
+    withEffect('try { run(); } catch ({ message }) { use(message); }'),
+    withEffect('Effect.tryPromise({ try: work, catch: (problem) => problem.message });'),
+    withEffect('Effect.try({ try: work, catch: (problem) => String(problem) });'),
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: ({ message }) => new Failure({ message }) });',
+    ),
+    withEffect("Effect.try({ try: work, catch(problem) { return problem['message']; } });"),
+    withEffect('Effect.try({ try: work, catch: function (problem) { return problem.message; } });'),
+    withEffect(
+      'const toFailure = (problem) => problem.message;\nEffect.tryPromise({ try: work, catch: toFailure });',
+    ),
+    // A hoisted handler declared after its use is still the direct handler.
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: toFailure });\nfunction toFailure(problem) { return problem.message; }',
+    ),
+    // A closure still reads the raw caught binding.
+    withEffect('try { run(); } catch (problem) { const later = () => problem.message; later(); }'),
+    // A cast or a rename-free wrapper does not make the value safe.
+    withEffect('try { run(); } catch (problem) { use((problem as Error).message); }'),
+    // Guards do not cross a function boundary, do not survive reassignment, and do not cover the
+    // alternate branch or a different operation.
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) { const later = () => problem.message; later(); } }',
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { problem = normalize(problem); if (problem instanceof Error) use(problem.message); }',
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) { use(1); } else { use(problem.message); } }',
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) use(String(problem)); }',
+    ),
+    withEffect(
+      'class Error {}\ntry { run(); } catch (problem) { if (problem instanceof Error) use(problem.message); }',
+    ),
+    // A handler shared by two Effect.try calls is one caught binding and one diagnostic.
+    withEffect(
+      'const toFailure = ({ message }) => new Failure({ message });\nEffect.try({ try: work, catch: toFailure });\nEffect.tryPromise({ try: work, catch: toFailure });',
+    ),
+    // One declaration is one diagnostic, even with several message properties.
+    // A parameter named undefined is not the global, so it proves nothing.
+    withEffect(
+      'function handle(undefined) { try { run(); } catch (problem) { if (problem === undefined) use(String(problem)); } }',
+    ),
+    // A catch after a spread still wins, and among duplicate keys the last one wins.
+    withEffect(
+      'Effect.tryPromise({ ...defaults, try: work, catch: (problem) => problem.message });',
+    ),
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: (cause) => new Failure({ cause }), catch: (problem) => problem.message });',
+    ),
+    // Assignment destructuring extracts from the unknown value like a declaration does.
+    withEffect(
+      'try { run(); } catch (problem) { let detail; ({ message: detail } = problem); use(detail); }',
+    ),
+    // Compound and logical assignments read the message first.
+    withEffect("try { run(); } catch (problem) { problem.message += '!'; }"),
+    withEffect("try { run(); } catch (problem) { problem.message ??= 'fallback'; }"),
+    withEffect('try { run(); } catch (problem) { const { message, message: again } = problem; }'),
+    // A redeclaring var initializer replaces the value, so the earlier guard proves nothing.
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) { var problem = replacement; use(problem.message); } }',
+    ),
+    withEffect(
+      "Effect.try({ try: work, catch: (problem) => { if (problem instanceof Error) { var problem = replacement; return problem.message; } return 'unknown'; } });",
+    ),
+    // A later plain catch property replaces an earlier accessor, so it is the handler.
+    withEffect(
+      'Effect.tryPromise({ try: work, get catch() { return recover; }, catch: (problem) => problem.message });',
+    ),
+    withEffect(
+      'Effect.tryPromise({ try: work, set catch(problem) { record(problem); }, catch: (problem) => problem.message });',
+    ),
+    // An optional-chain read still reads the message.
+    withEffect('try { run(); } catch (problem) { use(problem?.message); }'),
+    // A defaulted handler parameter still binds the caught value.
+    withEffect('Effect.try({ try: work, catch: (problem = fallback) => problem.message });'),
+    withEffect(
+      "Effect.tryPromise({ try: work, catch: ({ message } = { message: 'fallback' }) => message });",
+    ),
+    // A computed key or a default value inside a destructuring target is evaluated, so it reads.
+    withEffect(
+      'try { run(); } catch (problem) { ({ [problem.message]: detail } = notification); }',
+    ),
+    withEffect('try { run(); } catch (problem) { ({ value = problem.message } = notification); }'),
+  ],
+  valid: [
+    withEffect("Effect.catchTag('Failure', (error) => Effect.succeed(error.message));"),
+    withEffect('const error = notification;\nuse(error.message);'),
+    withEffect('try { run(); } catch (problem) { const helper = (problem) => problem.message; }'),
+    withEffect(
+      'try { run(); } catch (problem) { const decoded = decodeProblem(problem); use(decoded.message); }',
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) { use(problem.message); } }',
+    ),
+    withEffect(
+      "try { run(); } catch (problem) { use(problem instanceof Error ? problem.message : 'unknown'); }",
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { use(problem instanceof Error && problem.message); }',
+    ),
+    withEffect(
+      "try { run(); } catch (problem) { if (typeof problem === 'object' && problem !== null && 'message' in problem) { use(problem.message); } }",
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) { const { message } = problem; use(message); } }',
+    ),
+    withEffect(
+      "try { run(); } catch (problem) { if (typeof problem === 'string') { use(String(problem)); } }",
+    ),
+    withEffect(
+      "const String = (value: unknown) => 'text';\ntry { run(); } catch (problem) { use(String(problem)); }",
+    ),
+    // A catch property outside a bound Effect.try options object is not a caught input.
+    withEffect('const handlers = { catch: (problem) => problem.message };'),
+    withEffect(
+      'const run = (Effect) => Effect.tryPromise({ try: work, catch: (problem) => problem.message });',
+    ),
+    // Mutable handler wiring is not followed.
+    withEffect(
+      'let toFailure = (problem) => problem.message;\nEffect.tryPromise({ try: work, catch: toFailure });',
+    ),
+    withEffect('function show(error: Error) { return error.message; }'),
+    withEffect(
+      'try { run(); } catch (problem) { if (problem === undefined) { use(String(problem)); } }',
+    ),
+    // A reassigned or overridable handler binding is not the body that receives the caught value.
+    withEffect(
+      'function describe(problem) { return problem.message; }\ndescribe = validatedHandler;\nEffect.tryPromise({ try: work, catch: describe });',
+    ),
+    withEffect(
+      'function describe(problem) { return problem.message; }\nEffect.tryPromise({ try: work, catch: describe, ...replacementHandlers });',
+    ),
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: (problem) => problem.message, [handlerKey]: recover });',
+    ),
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: (problem) => problem.message, catch: (cause) => new Failure({ cause }) });',
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { let detail; if (problem instanceof Error) { ({ message: detail } = problem); } use(detail); }',
+    ),
+    withEffect("try { run(); } catch (problem) { problem.message = 'replaced'; }"),
+    withEffect('try { run(); } catch (problem) { delete problem.message; }'),
+    withEffect('try { run(); } catch (problem) { delete problem?.message; }'),
+    // A catch accessor after a plain catch handler is the effective definition, so the wiring is unknown.
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: (problem) => problem.message, get catch() { return recover; } });',
+    ),
+    withEffect(
+      'Effect.tryPromise({ try: work, catch: (cause) => new Failure({ cause }), set catch(problem) { use(problem.message); } });',
+    ),
+    // Destructuring and loop-head targets only write the member, directly or through a wrapper.
+    withEffect('try { run(); } catch (problem) { ({ value: problem.message } = notification); }'),
+    withEffect('try { run(); } catch (problem) { [problem.message] = values; }'),
+    withEffect(
+      "try { run(); } catch (problem) { ({ value: problem.message = 'fallback' } = notification); }",
+    ),
+    withEffect(
+      'try { run(); } catch (problem) { ({ outer: { inner: problem.message } } = notification); }',
+    ),
+    withEffect('try { run(); } catch (problem) { [...problem.message] = values; }'),
+    withEffect('try { run(); } catch (problem) { ({ value: (problem.message) } = notification); }'),
+    withEffect("try { run(); } catch (problem) { (problem.message as string) = 'replaced'; }"),
+    withEffect('try { run(); } catch (problem) { for (problem.message of values) {} }'),
+    // Only a redeclaration of the caught binding voids a guard; another var does not.
+    withEffect(
+      'try { run(); } catch (problem) { if (problem instanceof Error) { var detail = problem.message; use(detail); } }',
+    ),
+    // A defaulted parameter keeps guard proofs.
+    withEffect(
+      "Effect.try({ try: work, catch: (problem = fallback) => (problem instanceof Error ? problem.message : 'unknown') });",
+    ),
+    'try { run(); } catch (problem) { use(problem.message); }',
+  ],
+});
+
+run('no-string-error-channel', {
+  invalid: [
+    withEffect("Effect.fail('error');"),
+    withEffect("Effect.fail('error' as const);"),
+    withEffect("Effect.fail(('error'));"),
+    withEffect("Effect.fail('error' satisfies string);"),
+    withEffect(`Effect.fail(\`error \${code}\`);`),
+    withEffect('Effect.fail(`error`);'),
+    withEffect("const failWith = () => Effect.fail('boom');"),
+    withEffect("Effect.flatMap(work, () => Effect.fail('boom'));"),
+    withEffectAndPipe("const run = pipe(work, Effect.flatMap(() => Effect.fail('boom')));"),
+    { code: withEffect("Effect.fail('boom');"), filename: `${process.cwd()}/src/program.test.ts` },
+    "import { Effect as Fx } from 'effect';\nFx.fail('boom');",
+  ],
+  valid: [
+    withEffect('Effect.fail(new DomainError({ reason }));'),
+    withEffect('Effect.fail(error);'),
+    withEffect("const reason = 'boom';\nEffect.fail(reason);"),
+    withEffect("Effect.succeed('ready');"),
+    withEffect('Effect.fail(sql`select 1`);'),
+    withEffect('Effect.fail(...reasons);'),
+    withEffect(
+      "import * as Data from 'effect/Data';\nclass Timeout extends Data.TaggedError('Timeout')<{}> {}\nEffect.gen(function* () { return yield* new Timeout(); });",
+    ),
+    withEffect("const run = (Effect) => Effect.fail('boom');"),
+    "const Effect = { fail: (value: string) => value };\nEffect.fail('boom');",
+    "import type * as Effect from 'effect/Effect';\nEffect.fail('boom');",
+  ],
+});
+
+// Each registry edge names a shape the owner reports and the reporter leaves alone. An edge
+// without an example here fails, so a new suppression cannot land without its proof.
+const ownershipEdgeExamples = new Map<string, string>([
+  [
+    'no-effect-call-in-effect-arg|no-effect-ladder',
+    withEffect('const program = Effect.flatMap(Effect.map(Effect.succeed(1), f), g);'),
+  ],
+  [
+    'no-effect-call-in-effect-arg|no-effect-call-in-effect-arg',
+    withEffect('Effect.map(Effect.flatMap(Effect.succeed(1), f), g);'),
+  ],
+  [
+    'no-flatmap-ladder|no-effect-call-in-effect-arg',
+    withEffect('const program = Effect.flatMap(Effect.flatMap(program, f), g);'),
+  ],
+  [
+    'no-flatmap-ladder|no-effect-ladder',
+    withEffect('const program = Effect.flatten(Effect.map(Effect.succeed(1), f));'),
+  ],
+  [
+    'no-flatmap-ladder|no-pipe-ladder',
+    withEffect(
+      'const program = Effect.flatMap(work, (x) => Effect.flatMap(other(x), (y) => save(x, y)));',
+    ),
+  ],
+  [
+    'no-manual-tag-check|no-effect-internal-tags',
+    "import * as Option from 'effect/Option';\nif (option._tag === 'Some') use(option);",
+  ],
+]);
+
+const ownershipEdgeKeys = ownershipRegistry.flatMap((edge) =>
+  edge.owners.map((owner) => `${edge.reporter}|${owner}`),
+);
+
+describe('ownership registry examples', () => {
+  it('cover every reporter and owner pair in the registry', () => {
+    expect([...ownershipEdgeExamples.keys()].toSorted()).toStrictEqual(
+      [...new Set(ownershipEdgeKeys)].toSorted(),
+    );
+  });
+});
+
+for (const [key, code] of ownershipEdgeExamples) {
+  const [reporter = '', owner = ''] = key.split('|');
+  ruleTester.run(`ownership ${key}: owner reports`, requireRule(owner), {
+    invalid: [{ code, errors: [{ message: ruleMessage(owner) }] }],
+    valid: [],
+  });
+  if (reporter !== owner) {
+    ruleTester.run(`ownership ${key}: reporter defers`, requireRule(reporter), {
+      invalid: [],
+      valid: [code],
+    });
+  }
+}

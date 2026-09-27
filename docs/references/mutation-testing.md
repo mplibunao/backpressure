@@ -85,7 +85,7 @@ Production source files, Stryker artifacts (`reports/mutation/`), and unexpected
 
 The primary target class is pure-function rule logic and AST helpers: deterministic transformations over ESTree nodes, side-effect-free with clear behavioral contracts. Exact mutate globs and exclusion rationale live in `stryker.config.mjs`, the source of truth.
 
-- **Rule logic**: `rule-catalog.ts` and extracted rule files under `rules/effect/`
+- **Rule logic**: `rule-catalog.ts`
 - **AST helpers**: shared utilities under `utils/` for node traversal, import analysis, and Effect-specific pattern detection
 - **Preset assembly**: `presets/shared.ts` (constructs preset configs from the manifest)
 
@@ -123,6 +123,6 @@ Static/equivalent data files (message strings, manifest metadata, plugin identit
 
 **Now (v0):** full sweep over rule logic (`rule-catalog.ts`, extracted rule files) and AST helpers (`utils/*.ts`) gates the first publish. Run as an agent workflow via the orchestrator/worker skills.
 
-**Later:** expand as new packages and rule domains are added. Tracked in tech-debt-tracker.
+**Later:** expand as new packages and rule domains are added. Tracked as hand-managed records under `docs/records/` (see `docs/records/README.md`).
 
 **Not now:** CI gating. Mutation testing is an agent-run quality gate, never wired into CI.

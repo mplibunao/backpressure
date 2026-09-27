@@ -5,6 +5,7 @@ import { repoRoot } from '../../lib/script-runtime.ts';
 import { buildOxlintStandards, oxlintPackageDir, oxlintPackageName } from './package.ts';
 import { runNpmPackDryRunJson } from '../../lib/npm-pack.ts';
 import {
+  assertOxlintDistArtifact,
   assertOxlintPackageJsonAllowlist,
   assertOxlintPackedArtifact,
 } from './artifact-assertions.ts';
@@ -12,6 +13,7 @@ import {
 const npmCacheDir = join(repoRoot, '.npm-cache');
 
 buildOxlintStandards();
+assertOxlintDistArtifact();
 assertOxlintPackageJsonAllowlist();
 const packed = runNpmPackDryRunJson({
   cache: npmCacheDir,

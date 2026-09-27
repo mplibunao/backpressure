@@ -8,7 +8,7 @@ interface NpmPackFile {
 
 export interface NpmPackEntry {
   readonly filename?: string;
-  readonly files: ReadonlyArray<NpmPackFile>;
+  readonly files: readonly NpmPackFile[];
 }
 
 interface RunNpmPackJsonBaseOptions {
@@ -26,7 +26,7 @@ interface RunNpmPackTarballJsonOptions extends RunNpmPackJsonBaseOptions {
 export interface NpmPackJsonResult {
   readonly entry: NpmPackEntry;
   readonly filename: string;
-  readonly files: ReadonlyArray<string>;
+  readonly files: readonly string[];
   readonly tarballPath?: string;
 }
 
@@ -42,11 +42,11 @@ const isNpmPackFile = (value: unknown): value is NpmPackFile =>
 
 const isNpmPackEntry = (value: unknown): value is NpmPackEntry =>
   isObjectRecord(value) &&
-  (typeof value['filename'] === 'undefined' || typeof value['filename'] === 'string') &&
+  (value['filename'] === globalThis.undefined || typeof value['filename'] === 'string') &&
   Array.isArray(value['files']) &&
   value['files'].every(isNpmPackFile);
 
-export const parseNpmPackEntries = (stdout: string): ReadonlyArray<NpmPackEntry> => {
+export const parseNpmPackEntries = (stdout: string): readonly NpmPackEntry[] => {
   const entries: unknown = (() => {
     try {
       return JSON.parse(stdout);
@@ -66,7 +66,7 @@ export const parseNpmPackEntries = (stdout: string): ReadonlyArray<NpmPackEntry>
 export const parseSingleNpmPackEntry = (stdout: string): NpmPackEntry => {
   const packEntries = parseNpmPackEntries(stdout);
   const packEntry = packEntries.at(0);
-  if (packEntries.length !== 1 || typeof packEntry === 'undefined') {
+  if (packEntries.length !== 1 || packEntry === globalThis.undefined) {
     return fail(`Expected exactly one npm pack entry, got ${packEntries.length}.`);
   }
 
@@ -74,7 +74,7 @@ export const parseSingleNpmPackEntry = (stdout: string): NpmPackEntry => {
 };
 
 export const requireNpmPackFilename = (packEntry: NpmPackEntry): string => {
-  if (typeof packEntry.filename === 'undefined') {
+  if (packEntry.filename === globalThis.undefined) {
     return fail('npm pack did not report a tarball filename.');
   }
 
@@ -83,11 +83,11 @@ export const requireNpmPackFilename = (packEntry: NpmPackEntry): string => {
 
 const runNpmPackJson = (
   options: RunNpmPackJsonBaseOptions,
-  args: ReadonlyArray<string>,
+  args: readonly string[],
 ): NpmPackJsonResult => {
   const npmArgs = ['pack', '--json', ...args];
 
-  if (typeof options.cache !== 'undefined') {
+  if (options.cache !== globalThis.undefined) {
     npmArgs.push('--cache', options.cache);
   }
 

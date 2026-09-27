@@ -41,30 +41,36 @@ export const releasePackages = [
     packageName: '@mplibunao/tsconfig',
     smokeCommand: 'pnpm smoke:tsconfig-packed-consumer',
   },
-] as const satisfies ReadonlyArray<ReleasePackageContract>;
+] as const satisfies readonly ReleasePackageContract[];
 
+export const effectPolicyCheckCommand = 'pnpm effect-policy:check';
+export const effectIntegrationScriptName = 'check:effect-integration';
+
+// `release:prepare` does not run `pnpm check`, so the offline policy check appears here as well as
+// in `check`. The isolated integration reuses the build `release:prepare` already made.
 export const releasePreparationCommands = [
   'pnpm build',
+  'pnpm typecheck',
   'bun scripts/checks/check-npm-publish-client.ts',
   'bun scripts/checks/check-changesets-release-state.ts',
   ...releasePackages.map((releasePackage) => releasePackage.allowlistCommand),
   ...releasePackages.map((releasePackage) => releasePackage.smokeCommand),
+  effectPolicyCheckCommand,
+  `SKIP_BUILD=true pnpm ${effectIntegrationScriptName}`,
 ] as const;
 
 export const expectedReleaseScript = 'pnpm release:prepare && changeset publish';
 export const expectedReleasePrepareScript = releasePreparationCommands.join(' && ');
 
-export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => {
+const assertNoForbiddenToken = (workflow: string): void => {
   for (const tokenName of forbiddenTokenNames) {
     if (workflow.includes(tokenName)) {
       fail(`release workflow must not include ${tokenName}.`);
     }
   }
+};
 
-  if (workflow.toLowerCase().includes(forbiddenAuthTokenSnippet)) {
-    fail('release workflow must not configure npm registry auth tokens.');
-  }
-
+const assertDotSecretReferences = (workflow: string): void => {
   for (const match of workflow.matchAll(dotSecretReferencePattern)) {
     const [, secretName] = match;
     if (secretName !== githubTokenSecretName) {
@@ -73,17 +79,26 @@ export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => 
       );
     }
   }
+};
 
+const assertBracketSecretReferences = (workflow: string): void => {
   for (const match of workflow.matchAll(bracketSecretReferencePattern)) {
     const bracketExpression = match[1] ?? '';
-    if (githubTokenBracketExpressionPattern.test(bracketExpression)) {
-      continue;
+    if (!githubTokenBracketExpressionPattern.test(bracketExpression)) {
+      const literalSecretName = literalBracketSecretNamePattern.exec(bracketExpression)?.[1];
+      const rejectedSecret = literalSecretName ?? `[${bracketExpression}]`;
+      fail(
+        `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${rejectedSecret}.`,
+      );
     }
-
-    const literalSecretName = literalBracketSecretNamePattern.exec(bracketExpression)?.[1];
-    const rejectedSecret = literalSecretName ?? `[${bracketExpression}]`;
-    fail(
-      `release workflow may only reference secrets.${githubTokenSecretName}, not secrets.${rejectedSecret}.`,
-    );
   }
+};
+
+export const assertNoForbiddenReleaseWorkflowAuth = (workflow: string): void => {
+  assertNoForbiddenToken(workflow);
+  if (workflow.toLowerCase().includes(forbiddenAuthTokenSnippet)) {
+    fail('release workflow must not configure npm registry auth tokens.');
+  }
+  assertDotSecretReferences(workflow);
+  assertBracketSecretReferences(workflow);
 };

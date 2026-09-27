@@ -1,0 +1,23 @@
+{
+  "extends": "@mplibunao/tsconfig/server.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2023"],
+    "rootDir": "../..",
+    "tsBuildInfoFile": "../../.tsbuildinfo/rules-viewer-server.tsbuildinfo"
+  },
+  "include": [
+    "src/server.ts",
+    "../../scripts/lib/effective-config.ts",
+    "../../scripts/lib/rule-list.ts",
+    "../../scripts/lib/rules-collector.ts",
+    "../../scripts/lib/script-runtime.ts",
+    "../../scripts/lib/stable-json.ts",
+    "../../scripts/lib/tsgo-snapshot.ts",
+    "../../scripts/lib/tsgo-snapshot-files.ts",
+    "../../scripts/packages/oxlint-standards/package.ts",
+    "../oxlint-standards/src/generated/tsgo-policy.ts",
+    "../oxlint-standards/src/rule-manifest.ts",
+    "../oxlint-standards/src/rule-messages.ts"
+  ]
+}

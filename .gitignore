@@ -1,6 +1,8 @@
 node_modules/
 dist/
 coverage/
+.oxlint-drift-*/
+.oxlint-effective-*/
 .pnpm-store/
 .stryker-tmp/
 reports/mutation/

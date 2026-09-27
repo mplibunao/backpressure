@@ -50,5 +50,6 @@ pnpm
 repo
 repos
 tsconfig
+tsgo
 vite-plus
 vocab

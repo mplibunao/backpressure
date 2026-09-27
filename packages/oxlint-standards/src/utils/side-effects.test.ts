@@ -1,5 +1,3 @@
-/* eslint-disable vitest/prefer-to-be-falsy, vitest/prefer-to-be-truthy --
-   vitest/prefer-strict-boolean-matchers takes precedence for boolean-typed return values. */
 import type { Context } from '@oxlint/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -13,13 +11,10 @@ vi.setConfig({ testTimeout: 1000 });
 // Range presence (not its value) satisfies the `'range' in value` check in isNodeLike
 const RANGE: [number, number] = [0, 1];
 
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion --
-   Mock helpers intentionally provide only the properties exercised by the code under test. */
-
 const id = (name: string): NodeLike =>
   ({ type: 'Identifier', name, range: RANGE }) as unknown as NodeLike;
 
-const memberCall = (obj: string, prop: string): NodeLike =>
+const memberCall = (obj: string, prop: string, args: readonly NodeLike[] = []): NodeLike =>
   ({
     type: 'CallExpression',
     callee: {
@@ -29,7 +24,7 @@ const memberCall = (obj: string, prop: string): NodeLike =>
       property: id(prop),
       range: RANGE,
     },
-    arguments: [],
+    arguments: args,
     range: RANGE,
   }) as unknown as NodeLike;
 
@@ -42,7 +37,7 @@ const identifierCall = (name: string): NodeLike =>
   }) as unknown as NodeLike;
 
 // Context where the given names are resolved as namespace import bindings
-const importCtx = (...names: Array<string>): Context => {
+const importCtx = (...names: string[]): Context => {
   const vars = new Map(names.map((varName) => [varName, { defs: [{ type: 'ImportBinding' }] }]));
   return {
     sourceCode: { getScope: () => ({ set: vars, upper: null }) },
@@ -53,8 +48,6 @@ const importCtx = (...names: Array<string>): Context => {
 const bareCtx: Context = {
   sourceCode: { getScope: () => ({ set: new Map(), upper: null }) },
 } as unknown as Context;
-
-/* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
 
 const effects = new Set(['Effect']);
 const atoms = new Set(['Atom']);
@@ -78,10 +71,9 @@ describe('side-effect call detection — true cases', () => {
     expect(isSideEffectCall(bareCtx, memberCall('console', 'warn'), effects, atoms)).toBe(true);
   });
 
-  it('calling Atom.set() identifies as a side effect when Atom is a namespace import', () => {
-    expect(isSideEffectCall(importCtx('Atom'), memberCall('Atom', 'set'), effects, atoms)).toBe(
-      true,
-    );
+  it('calling Atom.set(atom, value) identifies as a side effect when Atom is a namespace import', () => {
+    const call = memberCall('Atom', 'set', [id('atom'), id('value')]);
+    expect(isSideEffectCall(importCtx('Atom'), call, effects, atoms)).toBe(true);
   });
 
   it('calling Effect.log() identifies as a side effect when Effect is a namespace import', () => {
@@ -115,7 +107,13 @@ describe('side-effect call detection — false cases', () => {
 
   it('calling Atom.set() without an import reference is not a side effect', () => {
     // Atom.set only counts when Atom resolves to an actual namespace import.
-    expect(isSideEffectCall(bareCtx, memberCall('Atom', 'set'), effects, atoms)).toBe(false);
+    const call = memberCall('Atom', 'set', [id('atom'), id('value')]);
+    expect(isSideEffectCall(bareCtx, call, effects, atoms)).toBe(false);
+  });
+
+  it('the curried Atom.set(value) returns a function, so it is not a side effect', () => {
+    const call = memberCall('Atom', 'set', [id('value')]);
+    expect(isSideEffectCall(importCtx('Atom'), call, effects, atoms)).toBe(false);
   });
 
   it('calling Atom.get() is not a side effect — property must equal "set"', () => {
@@ -162,6 +160,64 @@ describe('side-effect containment', () => {
       range: RANGE,
     };
     expect(containsSideEffectCall(bareCtx, node, effects, atoms)).toBe(true);
+  });
+
+  it('skips a function value, whose body runs only when it is called', () => {
+    const arrow = {
+      type: 'ArrowFunctionExpression',
+      body: identifierCall('setState'),
+      params: [],
+      range: RANGE,
+    };
+    const call = { type: 'CallExpression', callee: id('later'), arguments: [arrow], range: RANGE };
+    Object.assign(arrow, { parent: call });
+    expect(containsSideEffectCall(bareCtx, arrow, effects, atoms)).toBe(false);
+    expect(containsSideEffectCall(bareCtx, call, effects, atoms)).toBe(false);
+  });
+
+  it('skips an invoked generator body, whose code runs only when its iterator advances', () => {
+    const body = memberCall('console', 'log');
+    const generator = {
+      type: 'FunctionExpression',
+      generator: true,
+      body,
+      params: [],
+      range: RANGE,
+    };
+    const call = { type: 'CallExpression', callee: generator, arguments: [], range: RANGE };
+    Object.assign(generator, { parent: call });
+    Object.assign(body, { parent: generator });
+    expect(containsSideEffectCall(bareCtx, call, effects, atoms)).toBe(false);
+  });
+
+  it('enters the parameter defaults of an invoked generator, which run at the call', () => {
+    const fallback = memberCall('console', 'log');
+    const param = { type: 'AssignmentPattern', left: id('v'), right: fallback, range: RANGE };
+    const body = { type: 'BlockStatement', body: [], range: RANGE };
+    const generator = {
+      type: 'FunctionExpression',
+      generator: true,
+      body,
+      params: [param],
+      range: RANGE,
+    };
+    const call = { type: 'CallExpression', callee: generator, arguments: [], range: RANGE };
+    Object.assign(generator, { parent: call });
+    Object.assign(body, { parent: generator });
+    Object.assign(param, { parent: generator });
+    expect(containsSideEffectCall(bareCtx, call, effects, atoms)).toBe(true);
+  });
+
+  it('enters a function invoked on the spot', () => {
+    const arrow = {
+      type: 'ArrowFunctionExpression',
+      body: memberCall('console', 'log'),
+      params: [],
+      range: RANGE,
+    };
+    const iife = { type: 'CallExpression', callee: arrow, arguments: [], range: RANGE };
+    Object.assign(arrow, { parent: iife });
+    expect(containsSideEffectCall(bareCtx, iife, effects, atoms)).toBe(true);
   });
 
   it('preserves found=true after a subsequent non-side-effect descendant', () => {

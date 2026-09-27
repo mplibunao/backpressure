@@ -8,11 +8,8 @@ export const assertPackagePackScriptsUseBun = (
   scripts: Readonly<Record<string, string>>,
 ): void => {
   for (const [scriptName, command] of Object.entries(scripts)) {
-    if (!scriptName.startsWith('pack:')) {
-      continue;
-    }
-
     if (
+      scriptName.startsWith('pack:') &&
       repoAuthoredTypeScriptPathPattern.test(command) &&
       !bunRepoAuthoredTypeScriptPattern.test(command)
     ) {

@@ -23,7 +23,7 @@ export const writeTempConsumerPackageJson = (consumerDir: string, name: string):
 
 export const installConsumerDevDependencies = (
   consumerDir: string,
-  dependencies: ReadonlyArray<string>,
+  dependencies: readonly string[],
   label: string,
 ): void => {
   const result = runCommand('pnpm', ['add', '--save-dev', ...dependencies, '--ignore-scripts'], {
