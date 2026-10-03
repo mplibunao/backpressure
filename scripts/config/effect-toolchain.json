@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "integration": {
-    "effect": "4.0.0-rc.115",
-    "oxlint": "1.82.0",
-    "oxlint-tsgolint": "7.0.2001",
+    "effect": "4.0.0-rc.117",
+    "oxlint": "1.85.0",
+    "oxlint-tsgolint": "7.0.2003",
     "typescript": "7.0.2",
-    "vite-plus": "0.3.2"
+    "vite-plus": "0.3.3"
   },
   "controls": {
     "unsupportedOxlint": "1.81.0"
