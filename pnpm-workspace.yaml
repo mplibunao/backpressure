@@ -4,7 +4,7 @@ blockExoticSubdeps: true
 catalog:
   '@changesets/cli': 2.31.0
   '@effect/tsgo': 0.46.1
-  '@oxlint/plugins': 1.58.0
+  '@oxlint/plugins': 1.86.0
   '@stryker-mutator/core': 9.6.1
   '@stryker-mutator/vitest-runner': 9.6.1
   '@types/node': 25.5.2
