@@ -35,7 +35,7 @@
     "pack:dry-run:no-build": "bun ../../scripts/packages/tsconfig/check-package-allowlist.ts"
   },
   "peerDependencies": {
-    "@effect/tsgo": "0.46.1"
+    "@effect/tsgo": "0.48.0"
   },
   "peerDependenciesMeta": {
     "@effect/tsgo": {
