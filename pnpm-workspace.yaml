@@ -3,17 +3,17 @@ packages:
 blockExoticSubdeps: true
 catalog:
   '@changesets/cli': 2.31.0
-  '@effect/tsgo': 0.46.1
+  '@effect/tsgo': 0.48.0
   '@oxlint/plugins': 1.58.0
   '@stryker-mutator/core': 9.6.1
   '@stryker-mutator/vitest-runner': 9.6.1
   '@types/node': 25.5.2
   bun-types: 1.3.11
   oxfmt: 0.43.0
-  oxlint: 1.58.0
+  oxlint: 1.86.0
   tsdown: 0.22.2
   typescript: 6.0.2
-  vite-plus: 0.1.15
+  vite-plus: 0.3.3
   vitest: 4.1.2
   yaml: 2.9.0
 catalogMode: strict
@@ -34,7 +34,7 @@ minimumReleaseAgeExclude:
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeStrict: true
 overrides:
-  oxlint-tsgolint: 0.18.1
+  oxlint-tsgolint: 0.25.0
   # Range override (not exact pin): semver is used by pnpm internals and many
   # transitive deps. A range allows compatible patch releases to coexist without
   # lockfile churn while blocking the known 6.x API break. Upgrade to an exact
