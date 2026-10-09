@@ -7,7 +7,7 @@ catalog:
   '@oxlint/plugins': 1.58.0
   '@stryker-mutator/core': 9.6.1
   '@stryker-mutator/vitest-runner': 9.6.1
-  '@types/node': 25.5.2
+  '@types/node': 25.9.9
   bun-types: 1.3.11
   oxfmt: 0.43.0
   oxlint: 1.58.0
